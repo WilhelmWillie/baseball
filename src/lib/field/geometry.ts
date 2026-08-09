@@ -232,17 +232,6 @@ export function onDeckSpot(batSide: "R" | "L"): Vector3 {
   return fp(batSide === "R" ? -34 : 34, -14);
 }
 
-/** Dugouts sit just past the foul lines, home on the third-base side. */
-export const DUGOUT_SPOTS = {
-  home: fp(-88, 46),
-  away: fp(88, 46),
-};
-
-export const BULLPEN_SPOTS = {
-  home: fp(-186, 205),
-  away: fp(186, 205),
-};
-
 /**
  * Gameday hit coordinates come from a 2D field diagram. These constants are the
  * long-established mapping from that diagram back into feet.

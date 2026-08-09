@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Sky } from "@react-three/drei";
 import { Vector3, type WebGLRenderer } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { Park } from "./Park";
+import { Field } from "./Field";
 import { Ball } from "./Ball";
-import { VoxelPlayer } from "./VoxelPlayer";
+import { Player } from "./Player";
 
 /** Drives the animation clock and promotes feed state once the queue drains. */
 function Engine() {
@@ -65,7 +66,7 @@ function Actors({ director }: { director: Director }) {
           actor.role === "runner" ||
           actor.positionKey === "pitcher";
         return (
-          <VoxelPlayer
+          <Player
             key={actor.key}
             actor={actor}
             uniform={team.uniform}
@@ -88,33 +89,46 @@ function RendererBridge({ onReady }: { onReady: (gl: WebGLRenderer) => void }) {
 }
 
 export interface SceneProps {
-  quality: "pixel" | "crisp";
   onRenderer?: (gl: WebGLRenderer) => void;
 }
 
-export function Scene({ quality, onRenderer }: SceneProps) {
+export function Scene({ onRenderer }: SceneProps) {
   const director = useGameStore((s) => s.director);
   const cameraFree = useGameStore((s) => s.cameraFree);
 
   return (
     <Canvas
-      shadows={false}
-      dpr={quality === "pixel" ? 0.42 : 1}
+      shadows
+      dpr={[1, 2]}
       gl={{
-        antialias: false,
+        antialias: true,
         // Required so the snapshot button can read pixels back out.
         preserveDrawingBuffer: true,
         powerPreference: "high-performance",
       }}
-      camera={{ fov: 50, near: 1, far: 3000, position: [0, 92, 132] }}
-      style={{ imageRendering: "pixelated" }}
+      camera={{ fov: 50, near: 2, far: 4000, position: [0, 92, 132] }}
     >
-      <color attach="background" args={["#79bdf0"]} />
-      <hemisphereLight args={["#cfe8ff", "#3c5a34", 0.85]} />
-      <ambientLight intensity={0.42} />
-      <directionalLight position={[-260, 340, 190]} intensity={1.15} />
-      <directionalLight position={[220, 180, -260]} intensity={0.28} color="#ffe9c2" />
+      <Sky sunPosition={[-260, 190, 190]} turbidity={5} rayleigh={1.2} />
 
+      <hemisphereLight args={["#cfe6ff", "#42663a", 0.8]} />
+      <ambientLight intensity={0.3} />
+      <directionalLight
+        position={[-300, 380, 220]}
+        intensity={1.25}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-near={100}
+        shadow-camera-far={900}
+        shadow-camera-left={-320}
+        shadow-camera-right={320}
+        shadow-camera-top={320}
+        shadow-camera-bottom={-320}
+        shadow-bias={-0.0006}
+      />
+      <directionalLight position={[240, 190, -280]} intensity={0.25} color="#ffe6bd" />
+
+      <Field />
       <Park />
       <Actors director={director} />
       <Ball director={director} />
@@ -127,7 +141,7 @@ export function Scene({ quality, onRenderer }: SceneProps) {
           target={[0, 0, -70]}
           maxPolarAngle={Math.PI / 2.06}
           minDistance={40}
-          maxDistance={700}
+          maxDistance={800}
         />
       )}
       {onRenderer && <RendererBridge onReady={onRenderer} />}

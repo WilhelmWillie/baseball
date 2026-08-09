@@ -19,12 +19,6 @@ body {
   font-family: var(--font-mono);
 }
 
-/* The 3D canvas is rendered small and scaled up; keep the pixels hard. */
-canvas {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-
 @keyframes callout {
   0% {
     transform: scale(0.82) translateY(-6px);

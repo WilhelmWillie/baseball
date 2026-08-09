@@ -7,6 +7,7 @@ import type { WebGLRenderer } from "three";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { useGameStore } from "@/store/gameStore";
 import { captureSnapshot, shareOrDownload } from "@/lib/snapshot";
+import { sfx } from "@/lib/audio/sfx";
 import { Scorebug } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
 
@@ -64,7 +65,7 @@ export function Viewer({
   const cameraFree = useGameStore((s) => s.cameraFree);
   const setCameraFree = useGameStore((s) => s.setCameraFree);
 
-  const [quality, setQuality] = useState<"pixel" | "crisp">("pixel");
+  const [soundOn, setSoundOn] = useState(true);
   const [flash, setFlash] = useState<string | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const rendererRef = useRef<WebGLRenderer | null>(null);
@@ -97,9 +98,25 @@ export function Viewer({
     return () => clearTimeout(timer);
   }, [flash]);
 
+  // Audio cannot start until the page has been interacted with, so the first
+  // gesture anywhere wakes the context and brings up the crowd.
+  useEffect(() => {
+    const wake = () => {
+      sfx.resume();
+      sfx.startAmbience();
+    };
+    window.addEventListener("pointerdown", wake, { once: true });
+    window.addEventListener("keydown", wake, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", wake);
+      window.removeEventListener("keydown", wake);
+      sfx.stopAmbience();
+    };
+  }, []);
+
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-slate-900">
-      <Scene quality={quality} onRenderer={onRenderer} />
+      <Scene onRenderer={onRenderer} />
 
       {/* Top-left: scoreboard */}
       <div className="absolute left-4 top-4 z-10">
@@ -134,11 +151,16 @@ export function Viewer({
             {cameraFree ? "FREE CAM" : "AUTO CAM"}
           </ControlButton>
           <ControlButton
-            onClick={() => setQuality(quality === "pixel" ? "crisp" : "pixel")}
-            active={quality === "pixel"}
-            title="Toggle the chunky pixel look"
+            onClick={() => {
+              const next = !soundOn;
+              setSoundOn(next);
+              sfx.setMuted(!next);
+              if (next) sfx.resume();
+            }}
+            active={soundOn}
+            title="Bat, mitt and crowd audio"
           >
-            {quality === "pixel" ? "PIXELS" : "SMOOTH"}
+            {soundOn ? "🔊 SOUND" : "🔇 MUTED"}
           </ControlButton>
           <ControlButton onClick={() => setShowRoster(!showRoster)} active={showRoster}>
             LINEUP

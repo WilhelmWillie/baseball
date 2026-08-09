@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { Director } from "@/lib/anim/director";
+import { sfx } from "@/lib/audio/sfx";
 import { extractEvents, seedCursor } from "@/lib/game/events";
 import { buildSnapshot } from "@/lib/game/normalize";
 import { EMPTY_CURSOR, type FeedCursor, type GameSnapshot } from "@/lib/game/types";
@@ -47,6 +48,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           ? { snapshot: { ...state.snapshot, count: { ...state.snapshot.count, ...count } } }
           : {},
       );
+    director.onSound = (name, intensity) => sfx.play(name, { intensity });
     director.onPlayResolved = (result) =>
       set((state) =>
         state.snapshot

@@ -1,6 +1,6 @@
 # MLB 3D
 
-Pick a live MLB game and watch it unfold as a tiny block ballpark. Pitches,
+Pick a live MLB game and watch it unfold in a low-poly 3D ballpark. Pitches,
 batted balls and baserunners are driven by the real MLB Stats API — the app
 doesn't simulate baseball, it interprets MLB's event stream and animates it.
 
@@ -28,8 +28,14 @@ first. If nothing is in progress it says so plainly and offers the simulated
 game instead.
 
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
-their positions, the batter, on-deck hitter, baserunners and both benches. The
-scorebug carries score, inning, count, outs, bases, batter and pitcher.
+their positions, the batter, on-deck hitter and baserunners. The scorebug
+carries score, inning, count, outs, bases, batter and pitcher.
+
+**Sound** — bat crack, mitt pop, pitch whoosh and a crowd that swells on hits
+and erupts on home runs, over a continuous low murmur. Everything is
+synthesized with Web Audio; there are no audio files. Browsers block audio
+until the page is interacted with, so the first click anywhere starts it. The
+🔊 button mutes.
 
 **Snapshot** — the 📸 button composites the current frame with a baked-in
 scorebug and hands you a PNG (shared via the Web Share API on mobile, copied to
@@ -85,19 +91,25 @@ same.
 
 ### The ballpark
 
-`src/lib/field/park.ts` generates the entire stadium as a flat list of boxes —
-surface tiles, base paths, chalk, wall, seats, spectators, light towers,
-dugouts. `Park.tsx` draws all ~25,000 of them in a single `InstancedMesh`, so
-the stadium costs one draw call.
+The playing surface is shaped geometry, not a grid: `src/lib/field/surfaces.ts`
+builds the grass, foul ground, warning track and infield dirt (an arc centred on
+the mound with the grass diamond punched out of it) as `THREE.Shape`s in field
+space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
+repeating texture rather than per-tile color.
 
-Players are built from boxes too, with jersey numbers painted onto the back face
-of the torso. Uniforms come from a hardcoded palette keyed by MLB team id (the
-API doesn't publish club colors); if both clubs' primaries are too close to tell
-apart, the visitors fall back to their secondary.
+Everything vertical — outfield wall, the raked seating bowl, the crowd, light
+towers, the center-field scoreboard — is generated in `src/lib/field/park.ts` as
+a flat list of boxes and drawn by `Park.tsx` in a single `InstancedMesh`, so the
+whole stadium costs one draw call.
 
-The pixel look is a genuinely low-resolution render (`dpr` 0.42) scaled up with
-nearest-neighbour filtering, not a post-process filter. The PIXELS button
-toggles it.
+Players are low-poly figures with jointed knees and elbows, rounded heads, and
+caps or batting helmets depending on role, with jersey numbers painted onto the
+back face of the torso. Uniforms come from a hardcoded palette keyed by MLB team
+id (the API doesn't publish club colors); if both clubs' primaries are too close
+to tell apart, the visitors fall back to their secondary.
+
+The scene renders at full device resolution with antialiasing and a single
+shadow-casting sun.
 
 ### Cameras
 
@@ -108,6 +120,8 @@ camera behind the AUTO CAM / FREE CAM toggle.
 ## Known gaps
 
 - Defensive shifts aren't modelled; fielders stand in standard positions.
+- There are no dugouts or bench figures in the 3D scene; the bench is listed in
+  the LINEUP panel instead.
 - Every park uses the same generic dimensions rather than the real venue's.
 - Fielders converge on the ball and throw, but relays and rundowns are a single
   generic throw.

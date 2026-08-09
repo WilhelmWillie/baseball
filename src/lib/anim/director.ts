@@ -2,7 +2,6 @@ import { Vector3 } from "three";
 import {
   BASE_ORDER,
   BASE_POSITIONS,
-  DUGOUT_SPOTS,
   FIELDING_SPOTS,
   MOUND_HEIGHT,
   POSITION_KEYS,
@@ -14,6 +13,7 @@ import {
   type BaseId,
   type PositionKey,
 } from "@/lib/field/geometry";
+import type { SoundName } from "@/lib/audio/sfx";
 import { foulBallFor, runnerProgress } from "@/lib/game/events";
 import type {
   BattedBall,
@@ -35,8 +35,7 @@ export type Pose =
   | "swing"
   | "catch"
   | "celebrate"
-  | "dejected"
-  | "sit";
+  | "dejected";
 
 export interface Actor {
   key: string;
@@ -45,7 +44,7 @@ export interface Actor {
   shortName: string;
   number?: string;
   side: TeamSide;
-  role: "fielder" | "batter" | "ondeck" | "runner" | "bench";
+  role: "fielder" | "batter" | "ondeck" | "runner";
   positionKey?: PositionKey;
   /** Resting spot the actor returns to. */
   home: Vector3;
@@ -181,6 +180,20 @@ interface RunnerTrack {
   scored: boolean;
 }
 
+/**
+ * Fires a callback the first time an animation passes a given moment. Sounds
+ * are cued off the animation clock, not off event arrival, so the crack lands
+ * with the swing rather than with the poll that reported it.
+ */
+class Cue {
+  private fired = new Set<string>();
+  at(key: string, t: number, when: number, run: () => void) {
+    if (t < when || this.fired.has(key)) return;
+    this.fired.add(key);
+    run();
+  }
+}
+
 interface Anim {
   duration: number;
   /** Advance the animation. `t` is seconds since it started. */
@@ -217,6 +230,8 @@ export class Director {
    */
   onCount?: (count: { balls: number; strikes: number }) => void;
   onPlayResolved?: (result: PlayResultEvent) => void;
+  /** Fired at the moment a sound should be heard, not when an event arrives. */
+  onSound?: (name: SoundName, intensity?: number) => void;
 
   private queue: NormalizedEvent[] = [];
   private current: Anim | null = null;
@@ -291,28 +306,6 @@ export class Director {
         home: spot,
         facing: yawToward(spot, basePathPoint(BASE_ORDER.indexOf(base) + 1)),
         pose: "ready",
-      });
-    }
-
-    for (const side of ["home", "away"] as const) {
-      const dugout = DUGOUT_SPOTS[side];
-      // Line the bench up along the dugout's own axis rather than the world's.
-      const theta = (side === "home" ? -1 : 1) * (Math.PI / 4);
-      const along = new Vector3(Math.cos(theta), 0, Math.sin(theta));
-      const outward = new Vector3(Math.sin(theta), 0, -Math.cos(theta));
-      snapshot.bench[side].slice(0, 7).forEach((player, i) => {
-        const actorKey = `bench:${side}:${i}`;
-        seen.add(actorKey);
-        const spot = dugout
-          .clone()
-          .addScaledVector(along, ((i % 4) - 1.5) * 8)
-          .addScaledVector(outward, Math.floor(i / 4) * 6 + 4);
-        this.upsert(actorKey, player, {
-          role: "bench",
-          home: spot,
-          facing: yawToward(spot, fp(0, 40)),
-          pose: "sit",
-        });
       });
     }
 
@@ -511,6 +504,7 @@ export class Director {
     plateTime: number;
     update: (t: number) => void;
   } {
+    const cue = new Cue();
     const windupEnd = 0.62;
     const plateTime = windupEnd + 0.46;
     const release = this.releasePoint();
@@ -540,6 +534,7 @@ export class Director {
           this.ball.visible = false;
           return;
         }
+        cue.at("release", t, windupEnd, () => this.onSound?.("pitch"));
         if (t <= plateTime) {
           const u = clamp01((t - windupEnd) / (plateTime - windupEnd));
           const inv = 1 - u;
@@ -573,6 +568,7 @@ export class Director {
   }
 
   private compilePitch(pitch: PitchEvent): Anim {
+    const cue = new Cue();
     const flight = this.pitchFlight(pitch);
     const swings =
       pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
@@ -592,6 +588,11 @@ export class Director {
         if (swings || pitch.outcome === "in_play") {
           this.swingAt(t, flight.plateTime - 0.16, false);
         }
+
+        cue.at("plate", t, flight.plateTime, () => {
+          if (foul) this.onSound?.("foul");
+          else this.onSound?.("mitt");
+        });
 
         if (t > flight.plateTime) {
           const u = clamp01((t - flight.plateTime) / (foul ? 1.1 : 0.32));
@@ -640,6 +641,7 @@ export class Director {
 
   /** A pitch that was put in play, plus everything that followed. */
   private compileAtBat(pitch: PitchEvent, result: PlayResultEvent): Anim {
+    const cue = new Cue();
     const flight = this.pitchFlight(pitch);
     const contactAt = flight.plateTime;
     const inner = this.compileResult(result);
@@ -649,6 +651,7 @@ export class Director {
       duration: contactAt + inner.duration,
       onStart: () => inner.onStart?.(),
       update: (t) => {
+        cue.at("crack", t, contactAt, () => this.onSound?.("crack"));
         if (t <= contactAt) {
           flight.update(t);
           this.swingAt(t, contactAt - 0.16, true);
@@ -686,7 +689,21 @@ export class Director {
     const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
     const startPoint = CONTACT.clone();
+    const cue = new Cue();
     let landed = false;
+
+    // When the crowd reacts, and how hard.
+    const firstRun = tracks.find((r) => r.scored);
+    const reaction: { at: number; sound: SoundName; intensity: number } | null =
+      result.kind === "home_run"
+        ? { at: ballDuration * 0.8, sound: "bigCheer", intensity: 1 }
+        : result.kind === "single" || result.kind === "double" || result.kind === "triple"
+          ? { at: ballDuration, sound: "cheer", intensity: result.kind === "triple" ? 0.9 : 0.6 }
+          : result.kind === "strikeout"
+            ? { at: 0.1, sound: "strikeout", intensity: 0.6 }
+            : result.kind === "walk" || result.kind === "hit_by_pitch"
+              ? null
+              : { at: Math.max(0.2, ballDuration), sound: "groan", intensity: 0.5 };
 
     return {
       label: `result:${result.id}`,
@@ -699,6 +716,16 @@ export class Director {
         this.announce(result);
       },
       update: (t, dt) => {
+        if (reaction) {
+          cue.at("reaction", t, reaction.at, () =>
+            this.onSound?.(reaction.sound, reaction.intensity),
+          );
+        }
+        // A run crossing the plate gets its own lift from the crowd.
+        if (firstRun && result.kind !== "home_run") {
+          cue.at("run", t, firstRun.end, () => this.onSound?.("cheer", 0.75));
+        }
+
         // --- Ball ---
         if (ball && landing) {
           if (t <= ballDuration) {
@@ -841,7 +868,7 @@ export class Director {
   private actorKeyForRunner(move: RunnerMove, fromProgress: number): string | null {
     // Already on the field somewhere?
     for (const [key, actor] of this.actors) {
-      if (actor.playerId === move.playerId && actor.role !== "bench") return key;
+      if (actor.playerId === move.playerId) return key;
     }
     // The batter becoming a runner.
     const batter = this.batter();
@@ -968,7 +995,7 @@ export class Director {
         const follow = this.cameraFollow;
         const target = fp(0, 140, 6).lerp(ball, follow);
         return {
-          position: fp(ball.x * follow * 0.22, -132, 92),
+          position: fp(ball.x * follow * 0.22, -120, 84),
           target,
           lerp: 3.0,
         };
@@ -977,8 +1004,8 @@ export class Director {
         return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
       default:
         return {
-          position: fp(0, -138, 98),
-          target: fp(0, 148, 0),
+          position: fp(0, -116, 78),
+          target: fp(0, 138, 2),
           lerp: 1.6,
         };
     }

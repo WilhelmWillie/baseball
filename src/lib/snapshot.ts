@@ -1,10 +1,10 @@
 import type { WebGLRenderer } from "three";
 import type { GameSnapshot } from "@/lib/game/types";
 
-const TARGET_WIDTH = 1440;
+const TARGET_WIDTH = 1600;
 const FOOTER = 168;
 
-function pixelText(
+function text(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
@@ -49,10 +49,7 @@ function drawDiamond(
   }
 }
 
-/**
- * Compose a shareable PNG: the pixel scene upscaled with nearest-neighbour
- * sampling so it keeps its blocky edges, plus a scorebug baked into the image.
- */
+/** Compose a shareable PNG: the rendered frame plus a baked-in scorebug. */
 export async function captureSnapshot(
   gl: WebGLRenderer,
   snapshot: GameSnapshot,
@@ -60,16 +57,19 @@ export async function captureSnapshot(
   // preserveDrawingBuffer keeps the last rendered frame readable, and R3F
   // renders every frame, so the buffer already holds what the user sees.
   const source = gl.domElement;
-  const scale = Math.max(1, Math.round(TARGET_WIDTH / source.width));
-  const width = source.width * scale;
-  const height = source.height * scale;
+  // Scale toward a comfortable sharing size without going past the rendered
+  // resolution by more than a little.
+  const scale = Math.min(2, Math.max(1, TARGET_WIDTH / source.width));
+  const width = Math.round(source.width * scale);
+  const height = Math.round(source.height * scale);
 
   const out = document.createElement("canvas");
   out.width = width;
   out.height = height + FOOTER;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Could not create snapshot canvas");
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   ctx.drawImage(source, 0, 0, width, height);
 
@@ -93,16 +93,16 @@ export async function captureSnapshot(
     ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.lineWidth = 3;
     ctx.strokeRect(40, y - 26, 32, 32);
-    pixelText(ctx, team.abbrev, 90, y, 30, "#f4f6f8");
-    pixelText(ctx, String(runs), 250, y, 34, "#ffffff", "right");
+    text(ctx, team.abbrev, 90, y, 30, "#f4f6f8");
+    text(ctx, String(runs), 250, y, 34, "#ffffff", "right");
   }
 
   const batting = snapshot.battingSide === "away" ? baseY : baseY + 58;
-  pixelText(ctx, "●", 272, batting, 22, "#fcd34d");
+  text(ctx, "●", 272, batting, 22, "#fcd34d");
 
   // Inning + count.
   const midX = 360;
-  pixelText(
+  text(
     ctx,
     `${snapshot.isTopInning ? "TOP" : "BOT"} ${snapshot.inningOrdinal.toUpperCase()}`,
     midX,
@@ -110,7 +110,7 @@ export async function captureSnapshot(
     26,
     "#fcd34d",
   );
-  pixelText(
+  text(
     ctx,
     `${snapshot.count.balls}-${snapshot.count.strikes}   ${snapshot.count.outs} OUT`,
     midX,
@@ -122,8 +122,8 @@ export async function captureSnapshot(
 
   // Matchup.
   const rightX = width - 40;
-  pixelText(ctx, `AB  ${snapshot.batter?.name ?? "—"}`, rightX, height + 52, 24, "#f4f6f8", "right");
-  pixelText(
+  text(ctx, `AB  ${snapshot.batter?.name ?? "—"}`, rightX, height + 52, 24, "#f4f6f8", "right");
+  text(
     ctx,
     `P   ${snapshot.defense.pitcher?.name ?? "—"}`,
     rightX,
@@ -132,7 +132,7 @@ export async function captureSnapshot(
     "rgba(244,246,248,0.75)",
     "right",
   );
-  pixelText(
+  text(
     ctx,
     snapshot.venue.toUpperCase(),
     rightX,
@@ -141,7 +141,7 @@ export async function captureSnapshot(
     "rgba(244,246,248,0.45)",
     "right",
   );
-  pixelText(ctx, "MLB 3D LIVE", 40, height + 140, 18, "rgba(244,246,248,0.4)");
+  text(ctx, "MLB 3D LIVE", 40, height + 140, 18, "rgba(244,246,248,0.4)");
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     out.toBlob((b) => (b ? resolve(b) : reject(new Error("Snapshot encoding failed"))), "image/png");
@@ -151,6 +151,10 @@ export async function captureSnapshot(
   return { blob, dataUrl: out.toDataURL("image/png"), filename };
 }
 
+/**
+ * Hand the image to the user. The download always happens; copying to the
+ * clipboard is a bonus on top of it.
+ */
 export async function shareOrDownload(
   blob: Blob,
   filename: string,
@@ -166,22 +170,30 @@ export async function shareOrDownload(
       await navigator.share({ files: [file], title: "MLB 3D Live" });
       return "shared";
     } catch {
-      // Fall through to the download path.
+      // Dismissed or unsupported - fall through to the download path.
     }
   }
 
-  try {
-    if (navigator.clipboard && "write" in navigator.clipboard && window.ClipboardItem) {
-      await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
-      triggerDownload(blob, filename);
-      return "copied";
-    }
-  } catch {
-    // Clipboard is best-effort.
-  }
-
+  // Save first. Clipboard access can stall indefinitely when the document is
+  // not focused, and losing the file to that would be the worst outcome.
   triggerDownload(blob, filename);
-  return "downloaded";
+  return (await copyToClipboard(blob)) ? "copied" : "downloaded";
+}
+
+async function copyToClipboard(blob: Blob): Promise<boolean> {
+  if (!navigator.clipboard || !("write" in navigator.clipboard) || !window.ClipboardItem) {
+    return false;
+  }
+  try {
+    const write = navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("clipboard timeout")), 1500),
+    );
+    await Promise.race([write, timeout]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function triggerDownload(blob: Blob, filename: string) {

@@ -127,7 +127,7 @@ export function GameList() {
           MLB<span className="text-amber-300">3D</span>
         </h1>
         <p className="mt-3 max-w-xl font-mono text-xs leading-relaxed tracking-wide text-white/50">
-          PICK A LIVE GAME AND WATCH IT UNFOLD AS A TINY BLOCK BALLPARK. PITCHES, HITS AND
+          PICK A LIVE GAME AND WATCH IT UNFOLD IN A LOW-POLY 3D BALLPARK. PITCHES, HITS AND
           BASERUNNERS ARE DRIVEN BY THE REAL MLB STATS API.
         </p>
       </header>

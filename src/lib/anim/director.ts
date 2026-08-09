@@ -1,0 +1,990 @@
+import { Vector3 } from "three";
+import {
+  BASE_ORDER,
+  BASE_POSITIONS,
+  DUGOUT_SPOTS,
+  FIELDING_SPOTS,
+  MOUND_HEIGHT,
+  POSITION_KEYS,
+  batterSpot,
+  fp,
+  onDeckSpot,
+  standingSpot,
+  wallDistance,
+  type BaseId,
+  type PositionKey,
+} from "@/lib/field/geometry";
+import { foulBallFor, runnerProgress } from "@/lib/game/events";
+import type {
+  BattedBall,
+  GameSnapshot,
+  NormalizedEvent,
+  PitchEvent,
+  PlayResultEvent,
+  PlayerRef,
+  RunnerMove,
+  TeamSide,
+} from "@/lib/game/types";
+
+export type Pose =
+  | "idle"
+  | "ready"
+  | "run"
+  | "windup"
+  | "throw"
+  | "swing"
+  | "catch"
+  | "celebrate"
+  | "dejected"
+  | "sit";
+
+export interface Actor {
+  key: string;
+  playerId: number;
+  name: string;
+  shortName: string;
+  number?: string;
+  side: TeamSide;
+  role: "fielder" | "batter" | "ondeck" | "runner" | "bench";
+  positionKey?: PositionKey;
+  /** Resting spot the actor returns to. */
+  home: Vector3;
+  position: Vector3;
+  facing: number;
+  pose: Pose;
+  /** 0..1 through the current pose, for limb animation. */
+  poseT: number;
+  visible: boolean;
+  label: string | null;
+}
+
+export interface BallState {
+  position: Vector3;
+  visible: boolean;
+  /** Radius scale, so a pitch reads smaller than a towering fly. */
+  scale: number;
+  trail: Vector3[];
+}
+
+export type CameraMode = "broadcast" | "wide" | "ball" | "base" | "free";
+
+export interface CallOut {
+  text: string;
+  detail?: string;
+  tone: "neutral" | "good" | "bad" | "big";
+  at: number;
+}
+
+const RELEASE_HEIGHT = 5.9;
+const RELEASE_DEPTH = 54.5;
+const PLATE_DEPTH = 1.35;
+const CONTACT = fp(0, 2.6, 3.1);
+
+/** Seconds a runner takes to cover one base. Tuned for watchability. */
+const RUN_PER_BASE = 1.05;
+const TROT_PER_BASE = 1.5;
+
+function yawToward(from: Vector3, to: Vector3): number {
+  return Math.atan2(to.x - from.x, to.z - from.z);
+}
+
+/** The count after a pitch lands. `pitch.count` is the count before it. */
+function countAfter(pitch: PitchEvent): { balls: number; strikes: number } {
+  const { balls, strikes } = pitch.count;
+  // A scoreboard never shows ball four or strike three - the play result
+  // resets the count a moment later.
+  switch (pitch.outcome) {
+    case "ball":
+      return { balls: Math.min(3, balls + 1), strikes };
+    case "called_strike":
+    case "swinging_strike":
+    case "foul":
+      return { balls, strikes: Math.min(2, strikes + 1) };
+    default:
+      return { balls, strikes };
+  }
+}
+
+function clamp01(t: number): number {
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+function easeOut(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+/** Position along the basepaths. 0 = home, 1 = first, ... 4 = scored. */
+export function basePathPoint(progress: number, bow = 0): Vector3 {
+  const p = Math.max(0, Math.min(4, progress));
+  const i = Math.min(3, Math.floor(p));
+  const f = p - i;
+  const from = BASE_POSITIONS[BASE_ORDER[i % 4]];
+  const to = BASE_POSITIONS[BASE_ORDER[(i + 1) % 4]];
+  const point = from.clone().lerp(to, f);
+  if (bow > 0) {
+    // Runners round the bag in an arc rather than cutting the corner.
+    const outward = point.clone().sub(fp(0, 63.64)).setY(0);
+    if (outward.lengthSq() > 0) {
+      outward.normalize().multiplyScalar(bow * Math.sin(f * Math.PI) * 6);
+      point.add(outward);
+    }
+  }
+  return point;
+}
+
+function apexFor(ball: BattedBall): number {
+  if (ball.isHomeRun) return 78 + Math.min(60, ball.distance / 8);
+  switch (ball.trajectory) {
+    case "ground_ball":
+      return 2.5;
+    case "bunt":
+      return 3;
+    case "line_drive":
+      return 11;
+    case "popup":
+      return 95;
+    case "fly_ball":
+      return 42 + Math.min(50, ball.distance / 7);
+    default:
+      return Math.max(6, Math.min(70, ball.distance / 6));
+  }
+}
+
+function flightDuration(ball: BattedBall): number {
+  if (ball.isHomeRun) return 3.1;
+  switch (ball.trajectory) {
+    case "ground_ball":
+    case "bunt":
+      return 1.15;
+    case "line_drive":
+      return 1.25;
+    case "popup":
+      return 3.0;
+    case "fly_ball":
+      return 2.5;
+    default:
+      return 1.8;
+  }
+}
+
+interface RunnerTrack {
+  actorKey: string;
+  from: number;
+  to: number;
+  start: number;
+  end: number;
+  isOut: boolean;
+  scored: boolean;
+}
+
+interface Anim {
+  duration: number;
+  /** Advance the animation. `t` is seconds since it started. */
+  update(t: number, dt: number): void;
+  onStart?(): void;
+  onEnd?(): void;
+  label: string;
+}
+
+export class Director {
+  actors = new Map<string, Actor>();
+  ball: BallState = {
+    position: fp(0, 60, 5),
+    visible: false,
+    scale: 1,
+    trail: [],
+  };
+  cameraMode: CameraMode = "broadcast";
+  /** How hard the ball camera pans off the broadcast framing, 0..1. */
+  cameraFollow = 0.35;
+  cameraFocus = fp(0, 60, 4);
+  cameraPosition = fp(0, -84, 44);
+  callout: CallOut | null = null;
+  snapshot: GameSnapshot | null = null;
+  /** Set while an animation is playing, so the store holds back new state. */
+  busy = false;
+  queueLength = 0;
+  /** Bumped whenever the actor roster changes, so React can re-render. */
+  rosterVersion = 0;
+
+  /**
+   * Fired as each animation resolves so the scoreboard advances in step with
+   * what is on screen, rather than jumping ahead to the feed's latest state.
+   */
+  onCount?: (count: { balls: number; strikes: number }) => void;
+  onPlayResolved?: (result: PlayResultEvent) => void;
+
+  private queue: NormalizedEvent[] = [];
+  private current: Anim | null = null;
+  private currentTime = 0;
+  private currentStart = 0;
+  private idleTime = 0;
+  private freeCamera = false;
+
+  private now(): number {
+    return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  setFreeCamera(free: boolean) {
+    this.freeCamera = free;
+  }
+
+  isFreeCamera() {
+    return this.freeCamera;
+  }
+
+  /** Replace the world with authoritative state. Only called when idle. */
+  applySnapshot(snapshot: GameSnapshot) {
+    this.snapshot = snapshot;
+    const seen = new Set<string>();
+    const batSide = snapshot.batter?.batSide ?? "R";
+
+    for (const key of POSITION_KEYS) {
+      const player = snapshot.defense[key];
+      if (!player) continue;
+      const actorKey = `def:${key}`;
+      seen.add(actorKey);
+      const spot = FIELDING_SPOTS[key];
+      this.upsert(actorKey, player, {
+        role: "fielder",
+        positionKey: key,
+        home: spot,
+        facing: key === "catcher" ? 0 : yawToward(spot, fp(0, 0)),
+        pose: key === "catcher" ? "catch" : "ready",
+      });
+    }
+
+    if (snapshot.batter) {
+      seen.add("bat");
+      const spot = batterSpot(batSide);
+      this.upsert("bat", snapshot.batter, {
+        role: "batter",
+        home: spot,
+        facing: batSide === "R" ? Math.PI / 2 : -Math.PI / 2,
+        pose: "ready",
+      });
+    }
+
+    if (snapshot.onDeck) {
+      seen.add("deck");
+      const spot = onDeckSpot(batSide);
+      this.upsert("deck", snapshot.onDeck, {
+        role: "ondeck",
+        home: spot,
+        facing: yawToward(spot, fp(0, 0)),
+        pose: "idle",
+      });
+    }
+
+    for (const base of ["first", "second", "third"] as const) {
+      const runner = snapshot.runners[base];
+      if (!runner) continue;
+      const actorKey = `run:${base}`;
+      seen.add(actorKey);
+      const spot = standingSpot(base);
+      this.upsert(actorKey, runner, {
+        role: "runner",
+        home: spot,
+        facing: yawToward(spot, basePathPoint(BASE_ORDER.indexOf(base) + 1)),
+        pose: "ready",
+      });
+    }
+
+    for (const side of ["home", "away"] as const) {
+      const dugout = DUGOUT_SPOTS[side];
+      // Line the bench up along the dugout's own axis rather than the world's.
+      const theta = (side === "home" ? -1 : 1) * (Math.PI / 4);
+      const along = new Vector3(Math.cos(theta), 0, Math.sin(theta));
+      const outward = new Vector3(Math.sin(theta), 0, -Math.cos(theta));
+      snapshot.bench[side].slice(0, 7).forEach((player, i) => {
+        const actorKey = `bench:${side}:${i}`;
+        seen.add(actorKey);
+        const spot = dugout
+          .clone()
+          .addScaledVector(along, ((i % 4) - 1.5) * 8)
+          .addScaledVector(outward, Math.floor(i / 4) * 6 + 4);
+        this.upsert(actorKey, player, {
+          role: "bench",
+          home: spot,
+          facing: yawToward(spot, fp(0, 40)),
+          pose: "sit",
+        });
+      });
+    }
+
+    let changed = false;
+    for (const key of [...this.actors.keys()]) {
+      if (!seen.has(key)) {
+        this.actors.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) this.rosterVersion++;
+  }
+
+  private upsert(
+    key: string,
+    player: PlayerRef,
+    config: {
+      role: Actor["role"];
+      home: Vector3;
+      facing: number;
+      pose: Pose;
+      positionKey?: PositionKey;
+    },
+  ) {
+    const existing = this.actors.get(key);
+    if (existing && existing.playerId === player.id) {
+      existing.home = config.home.clone();
+      existing.position.copy(config.home);
+      existing.facing = config.facing;
+      existing.pose = config.pose;
+      existing.poseT = 0;
+      existing.visible = true;
+      existing.role = config.role;
+      existing.positionKey = config.positionKey;
+      return;
+    }
+    this.actors.set(key, {
+      key,
+      playerId: player.id,
+      name: player.name,
+      shortName: player.shortName,
+      number: player.number,
+      side: player.side,
+      role: config.role,
+      positionKey: config.positionKey,
+      home: config.home.clone(),
+      position: config.home.clone(),
+      facing: config.facing,
+      pose: config.pose,
+      poseT: 0,
+      visible: true,
+      label: null,
+    });
+    this.rosterVersion++;
+  }
+
+  enqueue(events: NormalizedEvent[]) {
+    this.queue.push(...events);
+    // A long backlog means we fell behind (tab was hidden, feed hiccup).
+    // Drop the play-by-play detail and keep the outcomes.
+    if (this.queue.length > 14) {
+      this.queue = this.queue.filter((e) => e.type !== "pitch").slice(-8);
+    }
+    this.queueLength = this.queue.length;
+  }
+
+  clearQueue() {
+    this.queue = [];
+    this.current = null;
+    this.currentTime = 0;
+    this.queueLength = 0;
+    this.busy = false;
+  }
+
+  isIdle(): boolean {
+    return !this.current && this.queue.length === 0;
+  }
+
+  update(dt: number) {
+    // Animations are timed against the wall clock, not accumulated frame
+    // deltas. A slow frame rate then costs smoothness rather than putting the
+    // whole game into slow motion and backing the event queue up forever.
+    const now = this.now();
+
+    if (this.current) {
+      this.currentTime = (now - this.currentStart) / 1000;
+      this.current.update(this.currentTime, dt);
+      if (this.currentTime >= this.current.duration) {
+        this.current.onEnd?.();
+        this.current = null;
+        this.currentTime = 0;
+      }
+    }
+
+    if (!this.current && this.queue.length > 0) {
+      const anim = this.compileNext();
+      if (anim) {
+        this.current = anim;
+        this.currentTime = 0;
+        this.currentStart = this.now();
+        this.idleTime = 0;
+        anim.onStart?.();
+        anim.update(0, 0);
+      }
+    }
+
+    this.busy = !this.isIdle();
+    this.queueLength = this.queue.length;
+
+    if (this.isIdle()) {
+      this.idleTime += dt;
+      this.restIdle(dt);
+    }
+
+    if (this.callout && Date.now() - this.callout.at > 4200) {
+      this.callout = null;
+    }
+
+    // Trail fades even when the ball is parked.
+    if (this.ball.trail.length > 0 && !this.ball.visible) {
+      this.ball.trail.length = Math.max(0, this.ball.trail.length - 1);
+    }
+  }
+
+  /** Gentle drift back to resting positions between plays. */
+  private restIdle(dt: number) {
+    const k = Math.min(1, dt * 3);
+    for (const actor of this.actors.values()) {
+      if (!actor.visible) continue;
+      actor.position.lerp(actor.home, k);
+      if (actor.pose === "run" || actor.pose === "throw" || actor.pose === "swing") {
+        actor.poseT += dt;
+        if (actor.poseT > 0.6) {
+          actor.pose = actor.role === "fielder" ? "ready" : "idle";
+          actor.poseT = 0;
+        }
+      } else {
+        actor.poseT += dt;
+      }
+    }
+    if (this.idleTime > 0.6 && !this.freeCamera && this.cameraMode !== "broadcast") {
+      this.cameraMode = "broadcast";
+    }
+    if (this.ball.visible && this.idleTime > 1.2) {
+      this.ball.visible = false;
+    }
+  }
+
+  private compileNext(): Anim | null {
+    const next = this.queue.shift();
+    if (!next) return null;
+
+    switch (next.type) {
+      case "pitch": {
+        // A ball in play flows straight into its result, so compile them as one.
+        if (next.startsPlay && this.queue[0]?.type === "play_result") {
+          const result = this.queue.shift() as PlayResultEvent;
+          return this.compileAtBat(next, result);
+        }
+        return this.compilePitch(next);
+      }
+      case "play_result":
+        return this.compileResult(next);
+      case "action":
+        return this.compileAction(next);
+      case "inning_change":
+        return this.compileInningChange(next);
+      default:
+        return null;
+    }
+  }
+
+  private setCallout(text: string, tone: CallOut["tone"], detail?: string) {
+    this.callout = { text, tone, detail, at: Date.now() };
+  }
+
+  private pitcher(): Actor | undefined {
+    return this.actors.get("def:pitcher");
+  }
+
+  private batter(): Actor | undefined {
+    return this.actors.get("bat");
+  }
+
+  private releasePoint(): Vector3 {
+    const hand = this.snapshot?.defense.pitcher?.pitchHand ?? "R";
+    return fp(hand === "R" ? -1.7 : 1.7, RELEASE_DEPTH, RELEASE_HEIGHT);
+  }
+
+  /**
+   * Windup, flight to the plate, and the reaction. Returns the time at which
+   * the ball reaches the plate so callers can chain contact onto it.
+   */
+  private pitchFlight(pitch: PitchEvent): {
+    windupEnd: number;
+    plateTime: number;
+    update: (t: number) => void;
+  } {
+    const windupEnd = 0.62;
+    const plateTime = windupEnd + 0.46;
+    const release = this.releasePoint();
+    const plate = fp(pitch.plate.x, PLATE_DEPTH, Math.max(0.4, pitch.plate.z));
+    // A control point off the straight line gives the pitch some late shape.
+    const control = release
+      .clone()
+      .lerp(plate, 0.55)
+      .add(new Vector3(pitch.plate.x * 0.5, 1.1, 0));
+
+    return {
+      windupEnd,
+      plateTime,
+      update: (t: number) => {
+        const pitcher = this.pitcher();
+        if (pitcher) {
+          if (t < windupEnd) {
+            pitcher.pose = "windup";
+            pitcher.poseT = clamp01(t / windupEnd);
+          } else if (t < plateTime + 0.5) {
+            pitcher.pose = "throw";
+            pitcher.poseT = clamp01((t - windupEnd) / 0.5);
+          }
+        }
+
+        if (t < windupEnd) {
+          this.ball.visible = false;
+          return;
+        }
+        if (t <= plateTime) {
+          const u = clamp01((t - windupEnd) / (plateTime - windupEnd));
+          const inv = 1 - u;
+          this.ball.position
+            .copy(release)
+            .multiplyScalar(inv * inv)
+            .addScaledVector(control, 2 * inv * u)
+            .addScaledVector(plate, u * u);
+          this.ball.visible = true;
+          this.ball.scale = 1.9;
+          this.pushTrail();
+        }
+      },
+    };
+  }
+
+  private pushTrail() {
+    this.ball.trail.push(this.ball.position.clone());
+    if (this.ball.trail.length > 14) this.ball.trail.shift();
+  }
+
+  private swingAt(t: number, swingStart: number, contact: boolean) {
+    const batter = this.batter();
+    if (!batter) return;
+    if (t >= swingStart && t < swingStart + 0.55) {
+      batter.pose = "swing";
+      batter.poseT = clamp01((t - swingStart) / 0.55);
+    } else if (t >= swingStart + 0.55 && !contact) {
+      batter.pose = "ready";
+    }
+  }
+
+  private compilePitch(pitch: PitchEvent): Anim {
+    const flight = this.pitchFlight(pitch);
+    const swings =
+      pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
+    const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
+    const catcherSpot = fp(0, -5.5, 2.6);
+    const tail = foul ? 1.5 : 0.75;
+    const duration = flight.plateTime + tail;
+
+    return {
+      label: `pitch:${pitch.id}`,
+      duration,
+      onStart: () => {
+        if (!this.freeCamera) this.cameraMode = "broadcast";
+      },
+      update: (t) => {
+        flight.update(t);
+        if (swings || pitch.outcome === "in_play") {
+          this.swingAt(t, flight.plateTime - 0.16, false);
+        }
+
+        if (t > flight.plateTime) {
+          const u = clamp01((t - flight.plateTime) / (foul ? 1.1 : 0.32));
+          if (foul) {
+            // Foul: kick the ball up and back out of play.
+            const target = fp(foul.lateral, foul.depth, 0);
+            const p = fp(pitch.plate.x, PLATE_DEPTH, pitch.plate.z)
+              .lerp(target, easeOut(u));
+            p.y = Math.max(0.4, pitch.plate.z + 46 * u * (1 - u) * 2.2 - u * u * 2);
+            this.ball.position.copy(p);
+            this.ball.visible = true;
+            this.pushTrail();
+          } else {
+            this.ball.position.lerp(catcherSpot, Math.min(1, u * 1.4));
+            this.ball.visible = u < 0.9;
+          }
+        }
+      },
+      onEnd: () => {
+        const speed = pitch.speed ? `${Math.round(pitch.speed)} MPH` : undefined;
+        const detail = [pitch.pitchType, speed].filter(Boolean).join(" · ");
+        switch (pitch.outcome) {
+          case "ball":
+            this.setCallout("BALL", "neutral", detail);
+            break;
+          case "called_strike":
+            this.setCallout("STRIKE", "bad", detail || "Called");
+            break;
+          case "swinging_strike":
+            this.setCallout("SWING & MISS", "bad", detail);
+            break;
+          case "foul":
+            this.setCallout("FOUL", "neutral", detail);
+            break;
+          case "hit_by_pitch":
+            this.setCallout("HIT BY PITCH", "neutral", detail);
+            break;
+          default:
+            break;
+        }
+        this.ball.visible = false;
+        this.onCount?.(countAfter(pitch));
+      },
+    };
+  }
+
+  /** A pitch that was put in play, plus everything that followed. */
+  private compileAtBat(pitch: PitchEvent, result: PlayResultEvent): Anim {
+    const flight = this.pitchFlight(pitch);
+    const contactAt = flight.plateTime;
+    const inner = this.compileResult(result);
+
+    return {
+      label: `atbat:${result.id}`,
+      duration: contactAt + inner.duration,
+      onStart: () => inner.onStart?.(),
+      update: (t) => {
+        if (t <= contactAt) {
+          flight.update(t);
+          this.swingAt(t, contactAt - 0.16, true);
+        } else {
+          inner.update(t - contactAt, 0);
+        }
+      },
+      onEnd: () => inner.onEnd?.(),
+    };
+  }
+
+  /**
+   * The batted ball, the defense converging on it, and every runner move.
+   * The returned animation always starts at t = 0.
+   */
+  private compileResult(result: PlayResultEvent): Anim {
+    const ball = result.ball;
+    const tracks = this.prepareRunners(result);
+    const runnerEnd = tracks.reduce((max, r) => Math.max(max, r.end), 0);
+
+    const landing = ball ? fp(ball.lateral, ball.depth, 0) : null;
+    const ballDuration = ball ? flightDuration(ball) : 0;
+    const apex = ball ? apexFor(ball) : 0;
+    const fielderKey = ball && !ball.isHomeRun ? `def:${ball.fielder}` : null;
+    const throwStart = ball ? ballDuration + 0.25 : 0;
+    const throwEnd = throwStart + 0.55;
+
+    // Where a throw goes: the base an out was recorded at, else first.
+    const outTrack = tracks.find((r) => r.isOut);
+    const throwTarget = outTrack
+      ? basePathPoint(outTrack.to).setY(2.5)
+      : BASE_POSITIONS.first.clone().setY(2.5);
+
+    const holdAfter = result.kind === "home_run" ? 1.4 : 0.85;
+    const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
+
+    const startPoint = CONTACT.clone();
+    let landed = false;
+
+    return {
+      label: `result:${result.id}`,
+      duration,
+      onStart: () => {
+        if (!this.freeCamera && ball) {
+          this.cameraFollow = result.kind === "home_run" ? 0.6 : 0.32;
+          this.cameraMode = "ball";
+        }
+        this.announce(result);
+      },
+      update: (t, dt) => {
+        // --- Ball ---
+        if (ball && landing) {
+          if (t <= ballDuration) {
+            const u = clamp01(t / ballDuration);
+            const flat = startPoint.clone().lerp(landing, u);
+            const height = ball.isHomeRun
+              ? apex * Math.sin(Math.PI * Math.min(1, u * 0.92)) + 2
+              : apex * 4 * u * (1 - u) + 1.2;
+            this.ball.position.set(flat.x, Math.max(0.45, height), flat.z);
+            this.ball.visible = true;
+            this.ball.scale = 2.8;
+            this.pushTrail();
+          } else if (ball.isHomeRun) {
+            // Carry it into the seats.
+            const u = clamp01((t - ballDuration) / 1.2);
+            const beyond = landing
+              .clone()
+              .setY(0)
+              .multiplyScalar(1 + 0.16 * u);
+            this.ball.position.set(beyond.x, Math.max(1, 26 * (1 - u)), beyond.z);
+            this.ball.visible = true;
+            this.pushTrail();
+          } else if (t <= throwEnd) {
+            if (!landed) {
+              landed = true;
+              this.ball.position.copy(landing).setY(0.6);
+            }
+            if (t >= throwStart) {
+              const u = clamp01((t - throwStart) / (throwEnd - throwStart));
+              const p = landing.clone().setY(3.2).lerp(throwTarget, easeInOut(u));
+              p.y = 3.2 + 6 * u * (1 - u) * 4;
+              this.ball.position.copy(p);
+              this.pushTrail();
+            }
+          } else {
+            this.ball.visible = false;
+          }
+        }
+
+        // --- Defense ---
+        if (fielderKey && landing) {
+          const fielder = this.actors.get(fielderKey);
+          if (fielder) {
+            const u = clamp01(t / Math.max(0.35, ballDuration));
+            const target = landing.clone().setY(0);
+            fielder.position.lerp(target, Math.min(1, u * 0.16 + dt * 2.2));
+            fielder.facing = yawToward(fielder.position, target.distanceTo(fielder.position) > 1 ? target : fp(0, 0));
+            if (t < ballDuration) {
+              fielder.pose = "run";
+              fielder.poseT = (fielder.poseT + dt * 2.4) % 1;
+            } else if (t < throwStart) {
+              fielder.pose = "catch";
+              fielder.poseT = clamp01((t - ballDuration) / 0.25);
+            } else if (t < throwEnd) {
+              fielder.pose = "throw";
+              fielder.poseT = clamp01((t - throwStart) / 0.55);
+            } else {
+              fielder.pose = "ready";
+            }
+          }
+        }
+
+        // --- Runners ---
+        for (const track of tracks) {
+          const actor = this.actors.get(track.actorKey);
+          if (!actor) continue;
+          if (t < track.start) continue;
+          const u = clamp01((t - track.start) / Math.max(0.001, track.end - track.start));
+          const progress = track.from + (track.to - track.from) * easeInOut(u);
+          const bow = track.to - track.from > 1 ? 1 : 0;
+          const point = basePathPoint(progress, bow);
+          const ahead = basePathPoint(Math.min(4, progress + 0.08), bow);
+          actor.position.set(point.x, 0, point.z);
+          actor.facing = yawToward(actor.position, ahead);
+          actor.visible = true;
+          if (u < 1) {
+            actor.pose = "run";
+            actor.poseT = (actor.poseT + dt * 3.4) % 1;
+          } else {
+            actor.pose = track.isOut ? "dejected" : track.scored ? "celebrate" : "ready";
+            if (track.isOut) actor.visible = t < track.end + 0.6;
+            if (track.scored) actor.visible = t < track.end + 0.9;
+          }
+        }
+
+        // --- Camera ---
+        if (!this.freeCamera && ball) {
+          if (result.kind === "home_run" && t > ballDuration + 0.9) {
+            this.cameraMode = "wide";
+          } else if (t > (ball ? throwEnd : 0)) {
+            this.cameraMode = "broadcast";
+          }
+        }
+      },
+      onEnd: () => {
+        this.ball.visible = false;
+        for (const track of tracks) {
+          const actor = this.actors.get(track.actorKey);
+          if (actor && (track.isOut || track.scored)) actor.visible = false;
+        }
+        this.onPlayResolved?.(result);
+      },
+    };
+  }
+
+  /**
+   * Bind each runner move to an actor. Existing actors are reused where we can
+   * so nobody pops out of existence mid-stride.
+   */
+  private prepareRunners(result: PlayResultEvent): RunnerTrack[] {
+    const tracks: RunnerTrack[] = [];
+    const moves = [...result.runners].sort((a, b) => {
+      const pa = runnerProgress(a);
+      const pb = runnerProgress(b);
+      return pb.from - pa.from; // Lead runners break first.
+    });
+
+    for (const move of moves) {
+      const { from, to } = runnerProgress(move);
+      if (to === from && !move.isScoring && move.to !== "out") continue;
+      const actorKey = this.actorKeyForRunner(move, from);
+      if (!actorKey) continue;
+
+      const bases = Math.max(0.5, to - from);
+      const perBase = result.kind === "home_run" ? TROT_PER_BASE : RUN_PER_BASE;
+      const start = from === 0 ? 0.12 : 0.02;
+      tracks.push({
+        actorKey,
+        from,
+        to,
+        start,
+        end: start + bases * perBase,
+        isOut: move.to === "out",
+        scored: move.isScoring,
+      });
+    }
+    return tracks;
+  }
+
+  private actorKeyForRunner(move: RunnerMove, fromProgress: number): string | null {
+    // Already on the field somewhere?
+    for (const [key, actor] of this.actors) {
+      if (actor.playerId === move.playerId && actor.role !== "bench") return key;
+    }
+    // The batter becoming a runner.
+    const batter = this.batter();
+    if (fromProgress === 0 && batter) return "bat";
+
+    // Fall back to a transient actor so unknown runners still animate.
+    const side = this.snapshot?.battingSide ?? "away";
+    const key = `mv:${move.playerId}`;
+    const spot = basePathPoint(fromProgress);
+    this.upsert(
+      key,
+      {
+        id: move.playerId,
+        name: move.name,
+        shortName: move.name.split(" ").slice(-1)[0],
+        side,
+      },
+      { role: "runner", home: spot, facing: 0, pose: "run" },
+    );
+    return key;
+  }
+
+  private announce(result: PlayResultEvent) {
+    const map: Partial<Record<PlayResultEvent["kind"], [string, CallOut["tone"]]>> = {
+      single: ["SINGLE", "good"],
+      double: ["DOUBLE", "good"],
+      triple: ["TRIPLE", "big"],
+      home_run: ["HOME RUN!", "big"],
+      walk: ["WALK", "neutral"],
+      strikeout: ["STRIKEOUT", "bad"],
+      field_out: ["OUT", "bad"],
+      double_play: ["DOUBLE PLAY", "bad"],
+      error: ["ERROR", "neutral"],
+      hit_by_pitch: ["HIT BY PITCH", "neutral"],
+      sac_fly: ["SAC FLY", "good"],
+    };
+    const entry = map[result.kind] ?? [result.event.toUpperCase(), "neutral" as const];
+    const extra =
+      result.ball?.launchSpeed && result.ball.distance > 100
+        ? `${Math.round(result.ball.launchSpeed)} MPH · ${Math.round(result.ball.distance)} FT`
+        : result.description;
+    this.setCallout(entry[0], entry[1], extra);
+  }
+
+  private compileAction(event: NormalizedEvent & { type: "action" }): Anim {
+    const isSteal = /steal/i.test(event.eventType) || /steals/i.test(event.description);
+    const duration = isSteal ? 1.6 : 0.9;
+    let track: RunnerTrack | null = null;
+
+    if (isSteal) {
+      // Move the trailing runner up one base.
+      const order: Array<[string, number]> = [
+        ["run:third", 3],
+        ["run:second", 2],
+        ["run:first", 1],
+      ];
+      const target = /3rd|third/i.test(event.description)
+        ? order.find(([k]) => k === "run:second")
+        : order.find(([k]) => k === "run:first");
+      if (target && this.actors.has(target[0])) {
+        track = {
+          actorKey: target[0],
+          from: target[1],
+          to: target[1] + 1,
+          start: 0,
+          end: 1.25,
+          isOut: false,
+          scored: false,
+        };
+      }
+    }
+
+    return {
+      label: `action:${event.id}`,
+      duration,
+      onStart: () => {
+        if (event.description) {
+          this.setCallout(isSteal ? "STOLEN BASE" : "PLAY", "good", event.description);
+        }
+      },
+      update: (t, dt) => {
+        if (!track) return;
+        const actor = this.actors.get(track.actorKey);
+        if (!actor) return;
+        const u = clamp01(t / (track.end - track.start));
+        const point = basePathPoint(track.from + (track.to - track.from) * easeInOut(u));
+        actor.position.set(point.x, 0, point.z);
+        actor.pose = u < 1 ? "run" : "ready";
+        actor.poseT = (actor.poseT + dt * 3.4) % 1;
+      },
+    };
+  }
+
+  private compileInningChange(event: NormalizedEvent & { type: "inning_change" }): Anim {
+    return {
+      label: `inning:${event.id}`,
+      duration: 1.8,
+      onStart: () => {
+        this.setCallout(event.description.toUpperCase(), "neutral", "Teams change sides");
+        if (!this.freeCamera) this.cameraMode = "wide";
+      },
+      update: () => {},
+      onEnd: () => {
+        if (!this.freeCamera) this.cameraMode = "broadcast";
+      },
+    };
+  }
+
+  /** Desired camera placement for the current mode. */
+  desiredCamera(): { position: Vector3; target: Vector3; lerp: number } {
+    switch (this.cameraMode) {
+      case "wide":
+        return {
+          position: fp(96, -196, 156),
+          target: fp(0, 172, 0),
+          lerp: 1.1,
+        };
+      case "ball": {
+        // A broadcast-style tracking shot: the camera holds behind the plate,
+        // drifts slightly toward the ball's side, and keeps it centered.
+        const ball = this.ball.position;
+        // Drift off the broadcast framing toward the ball rather than chasing
+        // it outright - the diamond has to stay in shot to read the play.
+        const follow = this.cameraFollow;
+        const target = fp(0, 140, 6).lerp(ball, follow);
+        return {
+          position: fp(ball.x * follow * 0.22, -132, 92),
+          target,
+          lerp: 3.0,
+        };
+      }
+      case "base":
+        return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
+      default:
+        return {
+          position: fp(0, -138, 98),
+          target: fp(0, 148, 0),
+          lerp: 1.6,
+        };
+    }
+  }
+}
+
+export const HOME_RUN_WALL = (theta: number) => wallDistance(theta);
+export const MOUND_Y = MOUND_HEIGHT;
+export type { BaseId };

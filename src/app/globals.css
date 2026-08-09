@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #0a0f18;
+  --color-foreground: #f4f6f8;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --font-sans: var(--font-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #0a0f18;
+  color: #f4f6f8;
+  font-family: var(--font-mono);
+}
+
+/* The 3D canvas is rendered small and scaled up; keep the pixels hard. */
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+@keyframes callout {
+  0% {
+    transform: scale(0.82) translateY(-6px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+::selection {
+  background: #fcd34d;
+  color: #0a0f18;
+}

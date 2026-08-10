@@ -158,9 +158,19 @@ Phong shading so the directional lights give them a specular highlight.
 Nobody stands still: between pitches everyone breathes, shifts their weight and
 turns their head, on detuned waves seeded per player so no two are in step. The
 catcher gets his own squat pose with the legs folded under him, facing the
-mound. Only hitters and runners wear anything on their heads — a cap perched on
-a tapered alien cranium never sat right. Gloves are built rather than
-approximated — fanned finger stalls, a laced
+mound.
+
+Only hitters and runners wear anything on their heads — a cap perched on a
+tapered alien cranium never sat right. What they wear is a real batting helmet:
+a shell fitted to the skull it is going on (the alien cranium is tall and
+narrow, so the shell is stretched rather than perched on top of it), a trim rim
+picking the shape out, a raised centre ridge with vents either side, and a brim
+hung off the *front* of the shell and angled down over the brow, matte black
+underneath the way a real one is to cut glare. Hitters wear a single ear flap on
+the side turned toward the pitcher, runners a double. Antennae route out through
+the back rather than straight up through the crown.
+
+Gloves are built rather than approximated — fanned finger stalls, a laced
 web, a padded heel — and they differ by position: a round mitt for the catcher,
 presented down the arm at the pitcher, and a longer one at first.
 

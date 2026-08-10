@@ -149,6 +149,14 @@ const GEO = {
   finger: roundedBox(0.14, 0.44, 0.14, 0.06),
   toe: roundedBox(0.24, 0.2, 0.5, 0.08),
 
+  // Batting helmet, in a normalised frame: a unit sphere at the origin stands
+  // in for the head, and the caller scales the whole thing to fit.
+  helmetBrim: roundedBox(1.72, 0.15, 0.92, 0.07),
+  helmetBrimEdge: roundedBox(1.76, 0.09, 0.2, 0.04),
+  helmetFlap: roundedBox(0.24, 0.86, 0.78, 0.11),
+  helmetRidge: roundedBox(0.2, 0.16, 1.8, 0.07),
+  helmetVent: roundedBox(0.13, 0.1, 0.34, 0.04),
+
   // Glove parts. A mitt is most of what a fielder is doing with their hands,
   // so it gets real fingers, a laced web and a padded heel instead of a
   // squashed sphere.
@@ -174,6 +182,67 @@ function gloveFor(positionKey?: string): GloveKind {
   if (positionKey === "catcher") return "mitt";
   if (positionKey === "first") return "first";
   return "fielder";
+}
+
+/** Everything the model builder needs to hang a part on a figure. */
+type AddPart = (
+  parent: Group,
+  geometry: BufferGeometry,
+  material: Material,
+  position: [number, number, number],
+  scale?: [number, number, number],
+  rotation?: [number, number, number],
+  shadow?: boolean,
+) => Mesh;
+
+/**
+ * A batting helmet, built in a normalised frame: the head is a unit sphere at
+ * the origin, and the caller scales the group to fit whichever skull it is
+ * going on.
+ *
+ * The first version was a plain dome with a slab stuck on the front, which
+ * landed level with the eyes and read as a beak. What makes this one read as a
+ * helmet is the ordering: the shell sits *above* the brow, the brim hangs off
+ * the front of the shell and tilts down over the eyes, and the underside of
+ * that brim is matte black the way a real one is to cut glare.
+ */
+function buildHelmet(
+  addTo: AddPart,
+  parent: Group,
+  materials: { helmet: Material; trim: Material; dark: Material },
+  opts: { flaps: 1 | 2; flapSide: number },
+) {
+  const { helmet, trim, dark } = materials;
+
+  // Shell, a touch wider than the head so it reads as sitting over it.
+  addTo(parent, GEO.dome, helmet, [0, -0.1, 0], [2.16, 2.05, 2.1], undefined, true);
+  // The back drops lower than the front, as a real one does.
+  addTo(parent, GEO.dome, helmet, [0, -0.46, -0.2], [2.04, 1.5, 1.66]);
+  // Rim around the bottom edge picks the shape out against the head.
+  addTo(parent, GEO.ring, trim, [0, -0.1, 0], [2.18, 2.12, 0.9], [Math.PI / 2, 0, 0]);
+
+  // Raised centre ridge and a button on the crown.
+  addTo(parent, GEO.helmetRidge, trim, [0, 0.94, -0.04], [1, 1, 0.8], [0.06, 0, 0]);
+  addTo(parent, GEO.lowSphere, trim, [0, 1.06, -0.04], [0.18, 0.18, 0.18]);
+
+  // Vents down each side of the ridge.
+  for (const side of [-1, 1]) {
+    for (const z of [0.34, 0, -0.34]) {
+      addTo(parent, GEO.helmetVent, dark, [side * 0.42, 0.94, z], [1, 1, 1], [0, 0, side * 0.12]);
+    }
+  }
+
+  // Brim: hung off the front of the shell, above the brow, angled down.
+  addTo(parent, GEO.helmetBrim, helmet, [0, 0.12, 0.82], [0.9, 1, 0.86], [-0.3, 0, 0], true);
+  // Matte underside, the way a real one is to cut glare.
+  addTo(parent, GEO.helmetBrim, dark, [0, 0.04, 0.83], [0.84, 0.55, 0.8], [-0.3, 0, 0]);
+
+  // Ear flaps. A hitter wears one, on the side turned toward the pitcher;
+  // a second is drawn for runners, who have usually swapped to a double flap.
+  const sides = opts.flaps === 2 ? [-1, 1] : [opts.flapSide];
+  for (const side of sides) {
+    addTo(parent, GEO.helmetFlap, helmet, [side * 0.9, -0.34, 0.14], [1, 0.86, 0.86], [0, 0, side * 0.2], true);
+  }
 }
 
 /**
@@ -562,6 +631,10 @@ export function Player({
   const key = actor.key;
   const isAlien = species === "alien";
   const wearsHelmet = actor.role === "batter" || actor.role === "runner";
+  // Hitters wear a single flap on the side turned toward the pitcher; runners
+  // have usually swapped to a double.
+  const helmetFlaps: 1 | 2 = actor.role === "runner" ? 2 : 1;
+  const flapSide = actor.batSide === "L" ? -1 : 1;
 
   const materials = useMemo(() => {
     const phong = (color: string, shininess: number, specular: string) =>
@@ -798,8 +871,15 @@ export function Player({
 
       for (const side of [-1, 1]) {
         const antenna = new Group();
-        antenna.position.set(side * 0.3, 1.5, -0.05);
-        antenna.rotation.z = side * 0.26;
+        // Under a helmet they come out through the back rather than straight
+        // up through the shell.
+        if (wearsHelmet) {
+          antenna.position.set(side * 0.34, 1.16, -0.62);
+          antenna.rotation.set(-0.6, 0, side * 0.34);
+        } else {
+          antenna.position.set(side * 0.3, 1.5, -0.05);
+          antenna.rotation.z = side * 0.26;
+        }
         head.add(antenna);
         add(antenna, GEO.taper, materials.skin, [0, 0.3, 0], [0.11, 0.62, 0.11]);
         add(antenna, GEO.lowSphere, materials.lamp, [0, 0.66, 0], [0.24, 0.24, 0.24]);
@@ -807,11 +887,16 @@ export function Player({
       }
 
       // Only hitters and runners wear anything on their heads: a cap perched
-      // on a tapered alien cranium never sat right.
+      // on a tapered alien cranium never sat right. The cranium is tall and
+      // narrow, so the helmet is scaled to match rather than sat on top.
       if (wearsHelmet) {
-        add(head, GEO.dome, materials.helmet, [0, 0.86, 0], [1.66, 1.5, 1.52], undefined, true);
-        add(head, GEO.brim, materials.helmet, [0, 0.88, 0.7], [1.1, 1, 1]);
-        add(head, GEO.earFlap, materials.helmet, [0.66, 0.58, 0.04]);
+        const lid = new Group();
+        // The cranium is tall and narrow, so the shell is stretched to match
+        // rather than perched on top of it.
+        lid.position.set(0, 0.82, 0);
+        lid.scale.set(0.85, 0.94, 0.78);
+        head.add(lid);
+        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide: flapSide });
       }
     } else {
       add(head, GEO.robotSkull, materials.skin, [0, 0.66, 0], [1, 1, 1], undefined, true);
@@ -829,16 +914,23 @@ export function Player({
       add(head, GEO.crest, materials.trim, [0, 1.3, -0.06]);
 
       const antenna = new Group();
-      antenna.position.set(0.44, 1.24, -0.1);
+      if (wearsHelmet) {
+        antenna.position.set(0.4, 1.0, -0.66);
+        antenna.rotation.set(-0.55, 0, 0.2);
+      } else {
+        antenna.position.set(0.44, 1.24, -0.1);
+      }
       head.add(antenna);
       add(antenna, GEO.taper, materials.dark, [0, 0.26, 0], [0.09, 0.54, 0.09]);
       add(antenna, GEO.lowSphere, materials.lamp, [0, 0.58, 0], [0.2, 0.2, 0.2]);
       danglers.push(antenna);
 
       if (wearsHelmet) {
-        add(head, GEO.dome, materials.helmet, [0, 0.82, 0], [1.62, 1.24, 1.5], undefined, true);
-        add(head, GEO.brim, materials.helmet, [0, 0.86, 0.68], [1.16, 1, 1]);
-        add(head, GEO.earFlap, materials.helmet, [0.68, 0.56, 0.02]);
+        const lid = new Group();
+        lid.position.set(0, 0.95, 0);
+        lid.scale.set(0.67, 0.63, 0.62);
+        head.add(lid);
+        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide: flapSide });
       }
     }
 
@@ -888,7 +980,16 @@ export function Player({
       bat: batGroup,
     };
     return { model: root, limbs: parts };
-  }, [materials, numberMaterial, actor.role, actor.positionKey, isAlien, wearsHelmet]);
+  }, [
+    materials,
+    numberMaterial,
+    actor.role,
+    actor.positionKey,
+    isAlien,
+    wearsHelmet,
+    helmetFlaps,
+    flapSide,
+  ]);
 
   // The frame loop mutates the three.js graph in place, which is the R3F
   // contract but not something a memoized value may be used for.

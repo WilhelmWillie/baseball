@@ -48,6 +48,8 @@ export interface Actor {
   side: TeamSide;
   role: "fielder" | "batter" | "ondeck" | "runner";
   positionKey?: PositionKey;
+  /** Which side of the plate they hit from, so the ear flap faces the pitcher. */
+  batSide?: "R" | "L";
   /** Resting spot the actor returns to. */
   home: Vector3;
   position: Vector3;
@@ -485,6 +487,7 @@ export class Director {
       shortName: player.shortName,
       number: player.number,
       side: player.side,
+      batSide: player.batSide,
       role: config.role,
       positionKey: config.positionKey,
       home: config.home.clone(),

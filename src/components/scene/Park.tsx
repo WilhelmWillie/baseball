@@ -9,7 +9,7 @@ import {
   MeshLambertMaterial,
   Object3D,
 } from "three";
-import { buildPark, type Block } from "@/lib/field/park";
+import { buildPark, type Block, type CrowdPalette } from "@/lib/field/park";
 
 const LAMP_ON = "#fff6c9";
 const LAMP_OFF = "#8d9298";
@@ -37,9 +37,9 @@ function fill(mesh: InstancedMesh, blocks: Block[], override?: string) {
  * The lamp faces are split into a second, tiny mesh so they can burn unlit by
  * the sun once the tower lights come on.
  */
-export function Park({ lampsLit }: { lampsLit: boolean }) {
+export function Park({ lampsLit, crowd }: { lampsLit: boolean; crowd: CrowdPalette }) {
   const { structure, lamps } = useMemo(() => {
-    const blocks = buildPark();
+    const blocks = buildPark(crowd);
     const geometry = new BoxGeometry(1, 1, 1);
 
     const solid = blocks.filter((b) => !b.glow);
@@ -61,9 +61,9 @@ export function Park({ lampsLit }: { lampsLit: boolean }) {
     );
 
     return { structure: structureMesh, lamps: lampMesh, lampBlocks: glowing };
-  }, []);
+  }, [crowd]);
 
-  const lampBlocks = useMemo(() => buildPark().filter((block) => block.glow), []);
+  const lampBlocks = useMemo(() => buildPark(crowd).filter((block) => block.glow), [crowd]);
 
   useEffect(() => {
     fill(lamps, lampBlocks, lampsLit ? LAMP_ON : LAMP_OFF);

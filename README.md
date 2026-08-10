@@ -32,8 +32,11 @@ plainly and offers the simulated game instead.
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
 their positions, the batter, on-deck hitter and baserunners. The home club take
 the field as aliens 👽 and the visitors as robots 🤖, in their real team colors,
-so who is who reads instantly. The scorebug carries score, inning, count, outs,
-bases, batter and pitcher.
+so who is who reads instantly. The stands wear the home club's colours too, with
+a visible minority in the visitors' and the rest in neutral street clothes. The
+scorebug carries score, inning, count, outs, bases, and a line for each of the
+two players who matter: the hitter's season average and what he has done today,
+the pitcher's ERA, pitch count, innings and strikeouts.
 
 **Game log** — the last play sits under the scorebug; hover it to open the full
 log, grouped by half-inning with the running score, scoring plays highlighted.
@@ -46,8 +49,9 @@ an overcast day is flat and grey. Rain and snow fall, wind blows the confetti
 and the dust downfield, and a closed roof gets its own indoor rig. The scorebug
 prints the conditions it is lighting from.
 
-**Celebrations** — confetti erupts over home plate on every run scored, with
-fireworks over the outfield. Home runs get a bigger volley. Dirt sprays off the
+**Celebrations** — confetti erupts over home plate on every run scored, and the
+park sets off fireworks for its own club only: a visiting home run gets a groan,
+not a light show. Home runs get a bigger volley. Dirt sprays off the
 first hop, dust hangs where a runner slides in, and the mound puffs as the
 pitcher lands. Anyone retired beams out: a column of motes in their club's
 colour, and the figure shrinks up into it.
@@ -163,7 +167,26 @@ mound.
 Nobody bends their knees to stand. A knee angle on this rig swings the shin
 backwards, heel toward the butt, so "a little soft" on a standing figure reads
 as a half-kneel — the athletic look has to come from the forward lean, the
-weight shift and the breath instead.
+weight shift and the breath instead. Where a figure genuinely does sit — a
+hitter's stance, a fielder reaching for a ball — the hip flexes first and the
+knee brings the shin back to vertical, which is how a crouch actually works.
+
+The batting stance needed a joint the rig did not have. With only a shoulder
+spread to work with, the only way to bring two hands onto one bat is to rotate
+both arms inward, which buries the upper arms inside the ribcage and leaves the
+forearms sprouting from the sternum. Adding an inward swing at the *elbow* lets
+the upper arms hang outside the body where they belong; the stance angles are
+then solved numerically against the chest volume rather than guessed.
+
+Between pitches the idle has two layers. Underneath, continuous detuned waves —
+breath, weight shift, a head that wanders. On top, occasional gestures on their
+own slow cycles: rocking onto the other foot, a sharp glance somewhere, a little
+reset hop, a glove adjustment. The gestures are what stop a field of nine from
+reading as nine copies of the same sine wave.
+
+Players react to what just happened, too: a pitcher who has given up a hit puts
+his hands on his hips and shakes his head, and a hitter who pulls up safe at a
+bag throws his fists up and then turns to clap toward the dugout.
 
 Only hitters and runners wear anything on their heads — a cap perched on a
 tapered alien cranium never sat right. What they wear is a real batting helmet,

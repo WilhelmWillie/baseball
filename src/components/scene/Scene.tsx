@@ -8,6 +8,7 @@ import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
 import { Park } from "./Park";
+import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
 import { Player } from "./Player";
@@ -123,6 +124,19 @@ export interface SceneProps {
 export function Scene({ onRenderer }: SceneProps) {
   const director = useGameStore((s) => s.director);
   const conditions = useGameStore((s) => s.snapshot?.conditions) ?? DEFAULT_CONDITIONS;
+  const teams = useGameStore((s) => s.snapshot?.teams);
+
+  // The stands wear the home club's colours, with the visitors' sprinkled in.
+  const crowd = useMemo<CrowdPalette>(
+    () =>
+      teams
+        ? {
+            home: [teams.home.palette.primary, teams.home.palette.secondary],
+            away: [teams.away.palette.primary, teams.away.palette.secondary],
+          }
+        : DEFAULT_CROWD,
+    [teams],
+  );
 
   // Recomputed only when the conditions object changes, which is once a poll.
   const look = useMemo(() => skyLook(conditions), [conditions]);
@@ -183,7 +197,7 @@ export function Scene({ onRenderer }: SceneProps) {
 
       <Field />
       <GroundOcclusion />
-      <Park lampsLit={look.lampsLit} />
+      <Park lampsLit={look.lampsLit} crowd={crowd} />
       <ContactShadows director={director} />
       <Actors director={director} />
       <Ball director={director} />

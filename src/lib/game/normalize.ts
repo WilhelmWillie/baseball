@@ -13,6 +13,8 @@ import type {
 } from "@/lib/mlb/types";
 import type {
   BatterLine,
+  BatterStatLine,
+  PitcherStatLine,
   GameSnapshot,
   HistoryEntry,
   PitcherLine,
@@ -214,6 +216,46 @@ export function buildHistory(feed: MlbLiveFeed): HistoryEntry[] {
   return entries;
 }
 
+/** Today's line plus the season average for whoever is at the plate. */
+function batterStatLine(
+  team: MlbBoxscoreTeam | undefined,
+  playerId: number | undefined,
+): BatterStatLine | null {
+  if (!team || !playerId) return null;
+  const entry = team.players?.[`ID${playerId}`];
+  if (!entry) return null;
+  const today = entry.stats?.batting ?? {};
+  return {
+    avg: entry.seasonStats?.batting?.avg ?? null,
+    atBats: today.atBats ?? 0,
+    hits: today.hits ?? 0,
+    rbi: today.rbi ?? 0,
+    walks: today.baseOnBalls ?? 0,
+    strikeouts: today.strikeOuts ?? 0,
+    homeRuns: today.homeRuns ?? 0,
+  };
+}
+
+/** What the pitcher has thrown today, pitch count first. */
+function pitcherStatLine(
+  team: MlbBoxscoreTeam | undefined,
+  playerId: number | undefined,
+): PitcherStatLine | null {
+  if (!team || !playerId) return null;
+  const entry = team.players?.[`ID${playerId}`];
+  if (!entry) return null;
+  const today = entry.stats?.pitching ?? {};
+  return {
+    // The feed uses either name for the pitch count depending on the endpoint.
+    pitches: today.numberOfPitches ?? today.pitchesThrown ?? 0,
+    inningsPitched: today.inningsPitched ?? null,
+    strikeouts: today.strikeOuts ?? 0,
+    hits: today.hits ?? 0,
+    earnedRuns: today.earnedRuns ?? 0,
+    era: entry.seasonStats?.pitching?.era ?? null,
+  };
+}
+
 export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
   const index = buildPlayerIndex(feed);
   const gameData = feed.gameData;
@@ -313,6 +355,14 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
     battingSide,
     defense,
     batter: resolve(index, offense?.batter ?? linescore?.defense?.batter),
+    batterStats: batterStatLine(
+      battingSide === "home" ? boxHome : boxAway,
+      (offense?.batter ?? linescore?.defense?.batter)?.id,
+    ),
+    pitcherStats: pitcherStatLine(
+      fieldingSide === "home" ? boxHome : boxAway,
+      linescore?.defense?.pitcher?.id,
+    ),
     onDeck: resolve(index, offense?.onDeck),
     runners,
     bench: {

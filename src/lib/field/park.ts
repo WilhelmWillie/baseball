@@ -47,18 +47,29 @@ export const COLORS = {
   scoreboardFace: "#11161c",
 };
 
-const CROWD_COLORS = [
-  "#dcdcdc",
-  "#e2b07a",
-  "#c1503f",
-  "#3f6fb5",
-  "#e0c452",
-  "#4f9f6a",
-  "#8b5fb0",
-  "#33363b",
-  "#e07a3f",
-  "#b7bcc2",
-];
+/**
+ * What the crowd is wearing. Mostly the home club's colours, because that is
+ * what a home crowd looks like, with a visible minority in the visitors' and
+ * the rest in neutral street clothes so the bowl does not read as a solid
+ * block of one hue.
+ */
+export interface CrowdPalette {
+  home: [string, string];
+  away: [string, string];
+}
+
+const NEUTRAL_CROWD = ["#dcdcdc", "#e2b07a", "#b9bec4", "#33363b", "#8a8f96", "#f0e6d2"];
+
+/**
+ * Picks a shirt. `roll` is the same stable noise the seat placement uses, so
+ * the same fan is the same colour every rebuild.
+ */
+function crowdShirt(roll: number, palette: CrowdPalette): string {
+  if (roll < 0.5) return palette.home[0];
+  if (roll < 0.66) return palette.home[1];
+  if (roll < 0.78) return roll < 0.74 ? palette.away[0] : palette.away[1];
+  return NEUTRAL_CROWD[Math.floor(((roll - 0.78) / 0.22) * NEUTRAL_CROWD.length) % NEUTRAL_CROWD.length];
+}
 
 /** Deterministic noise so the park looks identical on every render. */
 function noise(x: number, z: number, salt = 0): number {
@@ -149,7 +160,7 @@ function outfieldWall(blocks: Block[]) {
 }
 
 /** A raked seating bowl: many shallow steps rather than a few tall blocks. */
-function stands(blocks: Block[]) {
+function stands(blocks: Block[], palette: CrowdPalette) {
   const slices = 210;
   const rows = 16;
   for (let i = 0; i < slices; i++) {
@@ -187,7 +198,7 @@ function stands(blocks: Block[]) {
       if (n > 0.3 && seats > 0) {
         for (let s = 0; s < seats; s++) {
           const offset = (s - (seats - 1) / 2) * CROWD_PITCH;
-          const c = CROWD_COLORS[Math.floor(noise(x + s * 3.1, z, row + s) * CROWD_COLORS.length)];
+          const c = crowdShirt(noise(x + s * 3.1, z, row + s), palette);
           blocks.push({
             p: [x + tangentX * offset, height + 1.5, z + tangentZ * offset],
             s: [CROWD_SIZE, 1.8, CROWD_SIZE],
@@ -215,7 +226,7 @@ function stands(blocks: Block[]) {
  * surface with a few rows of bleachers stepping up behind it, so the foul
  * corners are populated instead of trailing off into empty grass.
  */
-function foulLineSeats(blocks: Block[]) {
+function foulLineSeats(blocks: Block[], palette: CrowdPalette) {
   const slices = 150;
   const quarter = Math.PI / 4;
 
@@ -266,7 +277,7 @@ function foulLineSeats(blocks: Block[]) {
       if (n > 0.36 && seats > 0) {
         for (let sIdx = 0; sIdx < seats; sIdx++) {
           const offset = (sIdx - (seats - 1) / 2) * CROWD_PITCH;
-          const c = CROWD_COLORS[Math.floor(noise(x + sIdx * 3.7, z, row + sIdx) * CROWD_COLORS.length)];
+          const c = crowdShirt(noise(x + sIdx * 3.7, z, row + sIdx), palette);
           blocks.push({
             p: [x + tangentX * offset, height + 1.4, z + tangentZ * offset],
             s: [CROWD_SIZE, 1.7, CROWD_SIZE],
@@ -383,16 +394,26 @@ function skyline(blocks: Block[]) {
   }
 }
 
-let cached: Block[] | null = null;
+let cached: { key: string; blocks: Block[] } | null = null;
 
-export function buildPark(): Block[] {
-  if (cached) return cached;
+export const DEFAULT_CROWD: CrowdPalette = {
+  home: ["#3f6fb5", "#e0c452"],
+  away: ["#c1503f", "#dcdcdc"],
+};
+
+/**
+ * The whole park, cached by crowd palette - it is a few thousand boxes, and
+ * only the shirts change from one game to the next.
+ */
+export function buildPark(palette: CrowdPalette = DEFAULT_CROWD): Block[] {
+  const key = `${palette.home.join()}|${palette.away.join()}`;
+  if (cached && cached.key === key) return cached.blocks;
   const blocks: Block[] = [];
   outfieldWall(blocks);
-  foulLineSeats(blocks);
-  stands(blocks);
+  foulLineSeats(blocks, palette);
+  stands(blocks, palette);
   lightTowers(blocks);
   skyline(blocks);
-  cached = blocks;
+  cached = { key, blocks };
   return blocks;
 }

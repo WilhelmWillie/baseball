@@ -37,6 +37,8 @@ export type Pose =
   | "catch"
   | "celebrate"
   | "dejected"
+  /** Hands on hips, head down - a pitcher who has just given one up. */
+  | "annoyed"
   | "crouch";
 
 export interface Actor {
@@ -224,6 +226,14 @@ const CROWD_WEIGHT: Partial<
   generic: { magnitude: 0.35, favorsBatter: false },
 };
 
+/** Plays where the batter actually got a hit off the pitcher. */
+const HIT_KINDS = new Set<PlayResultEvent["kind"]>([
+  "single",
+  "double",
+  "triple",
+  "home_run",
+]);
+
 interface RunnerTrack {
   actorKey: string;
   from: number;
@@ -347,8 +357,12 @@ export class Director {
     this.fx.burstConfetti(fp(0, 8, 12), amount, this.celebrationColors());
   }
 
-  /** Shells over the outfield. `count` scales the size of the show. */
+  /**
+   * Shells over the outfield. The park only sets these off for its own club -
+   * a visiting home run does not get fireworks, it gets a groan.
+   */
   private launchFireworks(count: number) {
+    if (this.snapshot?.battingSide !== "home") return;
     this.fx.fireworkShow(fp(0, 230, 6), count, this.celebrationColors());
     this.onSound?.("launch");
   }
@@ -579,9 +593,17 @@ export class Director {
     for (const actor of this.actors.values()) {
       if (!actor.visible) continue;
       actor.position.lerp(actor.home, k);
-      if (actor.pose === "run" || actor.pose === "throw" || actor.pose === "swing") {
+      if (
+        actor.pose === "run" ||
+        actor.pose === "throw" ||
+        actor.pose === "swing" ||
+        actor.pose === "annoyed" ||
+        actor.pose === "celebrate"
+      ) {
         actor.poseT += dt;
-        if (actor.poseT > 0.6) {
+        // A reaction is worth holding; a movement is not.
+        const hold = actor.pose === "annoyed" || actor.pose === "celebrate" ? 3.2 : 0.6;
+        if (actor.poseT > hold) {
           actor.pose =
             actor.positionKey === "catcher"
               ? "crouch"
@@ -1036,7 +1058,17 @@ export class Director {
                 size: 1.15,
               }),
             );
-            actor.pose = track.isOut ? "dejected" : track.scored ? "celebrate" : "ready";
+            // A hitter who just pulled up safe at a bag has a word for the
+            // dugout about it.
+            const safeAtBase = !track.isOut && !track.scored && HIT_KINDS.has(result.kind);
+            actor.pose = track.isOut
+              ? "dejected"
+              : track.scored
+                ? "celebrate"
+                : safeAtBase
+                  ? "celebrate"
+                  : "ready";
+            if (safeAtBase) actor.poseT = clamp01((t - track.end) / 1.4);
             if (track.isOut) {
               // Beamed off the field rather than simply switched off.
               cue.at(`beam:${track.actorKey}`, t, track.end + 0.3, () => this.beamOut(actor));
@@ -1045,6 +1077,18 @@ export class Director {
             }
             if (track.scored) actor.visible = t < track.end + 0.9;
           }
+        }
+
+        // --- Reactions ---
+        // The pitcher wears a hit, and the hitter enjoys one.
+        if (HIT_KINDS.has(result.kind)) {
+          cue.at("sulk", t, revealAt, () => {
+            const pitcher = this.pitcher();
+            if (pitcher) {
+              pitcher.pose = "annoyed";
+              pitcher.poseT = 0;
+            }
+          });
         }
 
         // --- Camera ---

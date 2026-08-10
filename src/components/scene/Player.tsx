@@ -44,11 +44,16 @@ const SCALE = 2.35;
 const HIP_HEIGHT = 2.92;
 
 /**
- * The batting stance. Both arms take the same angles and the spread is chosen
- * so the two hands close on the same point in front of the chest. The bat is
- * hung on that point - see `handAnchor`.
+ * The batting stance. Both arms take the same angles, and the hands close on
+ * one point in front of the chest where the bat is hung - see `handAnchor`.
+ *
+ * `elbowIn` is what makes this stance possible at all. With only a shoulder
+ * spread to work with, the only way to bring two hands together is to rotate
+ * the whole arm inward, which buries the upper arm inside the ribcage and
+ * leaves the forearms sprouting from the sternum. Letting the forearm swing in
+ * at the elbow keeps the upper arms hanging outside the body where they belong.
  */
-const BAT_STANCE = { arm: -0.05, elbow: -1.42, spread: 1.06 };
+const BAT_STANCE = { arm: -0.75, elbow: -1.95, spread: 0.05, elbowIn: 1.3 };
 
 /**
  * Bat attitude in torso space, as a direction from the hands to the barrel.
@@ -91,7 +96,7 @@ function handAnchor(isAlien: boolean, stance: typeof BAT_STANCE): Vector3 {
     torso.add(shoulder);
     const elbow = new Group();
     elbow.position.y = ARM.elbowY;
-    elbow.rotation.x = stance.elbow;
+    elbow.rotation.set(stance.elbow, 0, -side * stance.elbowIn);
     shoulder.add(elbow);
     const hand = new Group();
     hand.position.set(0, rig.handY, 0.02);
@@ -361,6 +366,8 @@ interface PoseValues {
   elbowL: number;
   elbowR: number;
   armSpread: number;
+  /** Forearm swing toward the midline, at the elbow. */
+  elbowIn: number;
   headTilt: number;
   /** Head turn, for looking around between pitches. */
   headYaw: number;
@@ -389,6 +396,7 @@ const REST: PoseValues = {
   elbowL: -0.25,
   elbowR: -0.25,
   armSpread: 0.06,
+  elbowIn: 0,
   headTilt: 0,
   headYaw: 0,
   sway: 0,
@@ -398,20 +406,49 @@ const REST: PoseValues = {
 };
 
 /**
- * Small, constant motion so nobody looks like a statue between pitches:
- * breathing, a slow weight shift, and a head that wanders around the park.
- * `clock` is already offset per player, so no two are ever in step.
+ * Small, constant motion so nobody looks like a statue between pitches.
+ *
+ * Two layers. Underneath, continuous waves - breathing, a weight shift, a head
+ * that wanders - on detuned frequencies so they never resolve into an obvious
+ * loop. On top, occasional *gestures*: a fielder rocking onto the other foot, a
+ * sharp glance somewhere, a shuffle step. The gestures are what stop a field of
+ * nine from reading as nine copies of the same sine wave; they fire on their own
+ * slow cycle, and `clock` is offset per player so no two ever coincide.
  */
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 function idleLife(clock: number) {
   const breath = Math.sin(clock * 1.15);
+
+  // A gesture cycle: mostly idle, with a burst of movement near the end of it.
+  const gesture = (period: number, phase: number, width: number) => {
+    const t = ((clock / period + phase) % 1 + 1) % 1;
+    return t > 1 - width ? Math.sin(((t - (1 - width)) / width) * Math.PI) : 0;
+  };
+
+  // Which way this player happens to be looking on this cycle.
+  const glanceAim = Math.sin(clock * 0.037) * 3.7;
+  const glance = gesture(7.3, 0.0, 0.22) * Math.sin(glanceAim) * 0.85;
+  // A rock from one foot to the other, and the shoulder roll that goes with it.
+  const shift = gesture(9.1, 0.35, 0.4);
+  const shiftDir = Math.sign(Math.sin(clock * 0.041 + 1.1)) || 1;
+  // An occasional little bounce, as if resetting the feet.
+  const hop = gesture(11.7, 0.6, 0.16);
+
   return {
-    // Two detuned waves so the head never settles into an obvious loop.
-    headYaw: Math.sin(clock * 0.41) * 0.34 + Math.sin(clock * 0.17 + 1.3) * 0.22,
-    headTilt: Math.sin(clock * 0.29 + 0.7) * 0.07,
-    sway: Math.sin(clock * 0.53) * 0.075,
-    roll: Math.sin(clock * 0.47 + 2.1) * 0.045,
+    headYaw:
+      Math.sin(clock * 0.41) * 0.3 + Math.sin(clock * 0.17 + 1.3) * 0.2 + glance,
+    headTilt: Math.sin(clock * 0.29 + 0.7) * 0.07 + hop * 0.1,
+    sway: Math.sin(clock * 0.53) * 0.07 + shift * shiftDir * 0.34,
+    roll: Math.sin(clock * 0.47 + 2.1) * 0.04 + shift * shiftDir * 0.1,
     breath,
-    bob: breath * 0.045,
+    bob: breath * 0.045 + hop * 0.16,
+    /** Weight on one leg: the knee on that side gives a little. */
+    lift: shift * shiftDir,
+    /** Hands fidget - a glove pound, a grip adjustment. */
+    fidget: gesture(6.1, 0.15, 0.3),
   };
 }
 
@@ -424,19 +461,24 @@ function poseValues(
   const life = idleLife(clock);
 
   if (isBatter && (pose === "ready" || pose === "idle")) {
-    // Coiled at the plate, hands together off the back shoulder.
+    // Coiled at the plate, hands together off the back shoulder. The legs sit
+    // by flexing the hip and letting the knee bring the shin back to vertical -
+    // bending the knee alone just kicks the heels up behind.
     return {
       ...REST,
-      crouch: 0.44 + life.breath * 0.04,
-      lean: 0.14,
+      crouch: 0.2 + life.breath * 0.03,
+      lean: 0.06,
       twist: 0.34,
-      kneeL: 0.74,
-      kneeR: 0.74,
+      legL: -0.55,
+      legR: -0.55,
+      kneeL: 0.6,
+      kneeR: 0.6,
       armL: BAT_STANCE.arm,
       armR: BAT_STANCE.arm,
       elbowL: BAT_STANCE.elbow,
       elbowR: BAT_STANCE.elbow,
       armSpread: BAT_STANCE.spread,
+      elbowIn: BAT_STANCE.elbowIn,
       headYaw: life.headYaw * 0.3,
       headTilt: life.headTilt,
       bob: life.bob * 0.6,
@@ -452,11 +494,16 @@ function poseValues(
         // weight shift and the breath instead.
         crouch: 0.02 + life.breath * 0.03,
         lean: 0.13,
-        armL: -0.5,
-        armR: -0.5,
-        elbowL: -0.85 + life.breath * 0.05,
-        elbowR: -0.85 - life.breath * 0.05,
-        armSpread: 0.34,
+        // Rocking onto one foot bends that knee and straightens the other.
+        legL: -Math.max(0, life.lift) * 0.3,
+        legR: -Math.max(0, -life.lift) * 0.3,
+        kneeL: Math.max(0, life.lift) * 0.34,
+        kneeR: Math.max(0, -life.lift) * 0.34,
+        armL: -0.5 - life.fidget * 0.35,
+        armR: -0.5 - life.fidget * 0.3,
+        elbowL: -0.85 + life.breath * 0.05 - life.fidget * 0.45,
+        elbowR: -0.85 - life.breath * 0.05 - life.fidget * 0.25,
+        armSpread: 0.34 + life.fidget * 0.1,
         headYaw: life.headYaw,
         headTilt: life.headTilt,
         sway: life.sway,
@@ -539,12 +586,13 @@ function poseValues(
       const fire = Math.max(0, (t - 0.3) / 0.7);
       return {
         ...REST,
-        crouch: 0.38,
-        lean: 0.16,
+        crouch: 0.17,
+        lean: 0.08,
         twist: 0.62 * load - 2.6 * fire,
-        legL: 0.28 * load,
-        kneeL: 0.74,
-        kneeR: 0.6,
+        legL: -0.5 + 0.28 * load,
+        legR: -0.5,
+        kneeL: 0.55,
+        kneeR: 0.55,
         // The arms barely leave the stance: the bat is anchored to where these
         // angles put the hands, so anything more and the grip visibly lets go.
         // The twist above is what carries the bat through the zone.
@@ -553,16 +601,19 @@ function poseValues(
         elbowL: BAT_STANCE.elbow - 0.07 * load + 0.22 * fire,
         elbowR: BAT_STANCE.elbow - 0.07 * load + 0.22 * fire,
         armSpread: BAT_STANCE.spread - 0.08 * fire,
+        elbowIn: BAT_STANCE.elbowIn - 0.12 * fire,
         batSwing: fire,
       };
     }
     case "catch":
       return {
         ...REST,
-        crouch: 0.42,
+        crouch: 0.2,
         lean: 0.12,
-        kneeL: 0.8,
-        kneeR: 0.8,
+        legL: -0.55,
+        legR: -0.55,
+        kneeL: 0.6,
+        kneeR: 0.6,
         armL: -2.5,
         armR: -2.1,
         elbowL: -0.7,
@@ -570,23 +621,51 @@ function poseValues(
         armSpread: 0.5,
         headTilt: -0.2,
       };
-    case "celebrate":
+    case "celebrate": {
+      // Both fists up, then settling into a clap toward the dugout.
+      const settle = clamp01((t - 0.45) / 0.9);
+      const pump = Math.abs(Math.sin(clock * 7));
       return {
         ...REST,
-        armL: -2.9,
-        armR: -2.9,
-        elbowL: -0.4,
-        elbowR: -0.4,
-        armSpread: 0.7,
-        headTilt: -0.25,
-        roll: Math.sin(clock * 9) * 0.12,
-        bob: Math.abs(Math.sin(clock * 7)) * 0.45,
+        armL: -2.9 + settle * 1.15,
+        armR: -2.9 + settle * 1.15,
+        elbowL: -0.4 - settle * 0.95,
+        elbowR: -0.4 - settle * 0.95,
+        elbowIn: settle * (0.9 + pump * 0.25),
+        armSpread: 0.7 - settle * 0.4,
+        headTilt: -0.25 + settle * 0.2,
+        headYaw: settle * 0.4,
+        roll: Math.sin(clock * 9) * 0.12 * (1 - settle * 0.6),
+        bob: pump * 0.45 * (1 - settle * 0.7),
       };
+    }
+    case "annoyed": {
+      // Hands on hips, head down, a slow shake of it. Whatever a pitcher does
+      // after giving one up, it is not standing there at attention.
+      const shake = Math.sin(clock * 3.4);
+      return {
+        ...REST,
+        crouch: 0.06,
+        lean: 0.16,
+        twist: shake * 0.12,
+        armL: 0.12,
+        armR: 0.12,
+        elbowL: -1.55,
+        elbowR: -1.55,
+        elbowIn: 1.15,
+        armSpread: 0.34,
+        headTilt: 0.34 + Math.sin(clock * 1.6) * 0.06,
+        headYaw: shake * 0.3,
+        roll: Math.sin(clock * 1.1) * 0.05,
+      };
+    }
     case "dejected":
       return {
         ...REST,
-        crouch: 0.45,
+        crouch: 0.15,
         lean: 0.62,
+        legL: -0.45,
+        legR: -0.45,
         kneeL: 0.5,
         kneeR: 0.5,
         armL: 0.3,
@@ -599,6 +678,12 @@ function poseValues(
       return {
         ...REST,
         crouch: 0.02,
+        legL: -Math.max(0, life.lift) * 0.24,
+        legR: -Math.max(0, -life.lift) * 0.24,
+        kneeL: Math.max(0, life.lift) * 0.28,
+        kneeR: Math.max(0, -life.lift) * 0.28,
+        elbowL: -0.25 - life.fidget * 0.3,
+        elbowR: -0.25 - life.fidget * 0.3,
         headYaw: life.headYaw,
         headTilt: life.headTilt,
         sway: life.sway,
@@ -1058,8 +1143,8 @@ export function Player({
     parts.armR.rotation.x = v.armR;
     parts.armL.rotation.z = -v.armSpread;
     parts.armR.rotation.z = v.armSpread;
-    parts.elbowL.rotation.x = v.elbowL;
-    parts.elbowR.rotation.x = v.elbowR;
+    parts.elbowL.rotation.set(v.elbowL, 0, -v.elbowIn);
+    parts.elbowR.rotation.set(v.elbowR, 0, v.elbowIn);
 
     if (parts.bat) {
       // Dropped at the plate the instant they take off for first.

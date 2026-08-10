@@ -263,7 +263,9 @@ export interface MlbPitchingStats {
   baseOnBalls?: number;
   strikeOuts?: number;
   homeRuns?: number;
+  /** GUMBO reports the pitch count under both names depending on the feed. */
   pitchesThrown?: number;
+  numberOfPitches?: number;
 }
 
 export interface MlbBoxscorePlayer {

@@ -96,6 +96,7 @@ interface PitchingLine {
   er: number;
   bb: number;
   k: number;
+  pitches: number;
 }
 
 interface SimState {
@@ -186,7 +187,7 @@ function batLine(state: SimState, id: number): BattingLine {
 }
 
 function pitchLine(state: SimState, id: number): PitchingLine {
-  return (state.pitching[id] ??= { outs: 0, h: 0, r: 0, er: 0, bb: 0, k: 0 });
+  return (state.pitching[id] ??= { outs: 0, h: 0, r: 0, er: 0, bb: 0, k: 0, pitches: 0 });
 }
 
 function recordStats(
@@ -219,6 +220,8 @@ function recordStats(
     bat.k += 1;
     arm.k += 1;
   }
+  // Every pitch in the at-bat goes on the pitcher's count.
+  arm.pitches += pitchesFor(atBat).length;
   bat.rbi += rbi;
   arm.r += rbi;
   arm.er += atBat.result === "error" ? 0 : rbi;
@@ -648,6 +651,7 @@ function boxscoreTeam(
               earnedRuns: arm.er,
               baseOnBalls: arm.bb,
               strikeOuts: arm.k,
+              numberOfPitches: arm.pitches,
             }
           : {},
       },

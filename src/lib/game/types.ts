@@ -57,6 +57,28 @@ export interface TeamBoxscore {
   pitchers: PitcherLine[];
 }
 
+/** What the hitter has done today, and how they are hitting on the season. */
+export interface BatterStatLine {
+  /** Season average as MLB formats it, e.g. ".287". Absent before a game. */
+  avg: string | null;
+  atBats: number;
+  hits: number;
+  rbi: number;
+  walks: number;
+  strikeouts: number;
+  homeRuns: number;
+}
+
+/** What the pitcher has thrown today. */
+export interface PitcherStatLine {
+  pitches: number;
+  inningsPitched: string | null;
+  strikeouts: number;
+  hits: number;
+  earnedRuns: number;
+  era: string | null;
+}
+
 /** An entry in the running play log. */
 export interface HistoryEntry {
   id: string;
@@ -100,6 +122,9 @@ export interface GameSnapshot {
   battingSide: TeamSide;
   defense: Record<PositionKey, PlayerRef | null>;
   batter: PlayerRef | null;
+  /** Line for whoever is at the plate, and for whoever is on the mound. */
+  batterStats: BatterStatLine | null;
+  pitcherStats: PitcherStatLine | null;
   onDeck: PlayerRef | null;
   runners: Partial<Record<Exclude<BaseId, "home">, PlayerRef>>;
   bench: Record<TeamSide, PlayerRef[]>;

@@ -56,8 +56,30 @@ function TeamRow({
   );
 }
 
+/** "1-3" today, plus anything worth calling out from it. */
+function batterSummary(line: GameSnapshot["batterStats"]): string | null {
+  if (!line) return null;
+  const extras: string[] = [];
+  if (line.homeRuns > 0) extras.push(`${line.homeRuns} HR`);
+  if (line.rbi > 0) extras.push(`${line.rbi} RBI`);
+  if (line.walks > 0) extras.push(`${line.walks} BB`);
+  if (line.strikeouts > 0) extras.push(`${line.strikeouts} K`);
+  const today = `${line.hits}-${line.atBats}`;
+  return extras.length ? `${today} · ${extras.join(" · ")}` : today;
+}
+
+function pitcherSummary(line: GameSnapshot["pitcherStats"]): string | null {
+  if (!line) return null;
+  const parts = [`${line.pitches} P`];
+  if (line.inningsPitched) parts.push(`${line.inningsPitched} IP`);
+  if (line.strikeouts > 0) parts.push(`${line.strikeouts} K`);
+  return parts.join(" · ");
+}
+
 export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
   const { teams, score, count, batter, defense, conditions } = snapshot;
+  const batterLine = batterSummary(snapshot.batterStats);
+  const pitcherLine = pitcherSummary(snapshot.pitcherStats);
   const arrow = snapshot.isTopInning ? "▲" : "▼";
 
   return (
@@ -94,14 +116,30 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
         </div>
 
-        <div className="mt-3 space-y-0.5 border-t border-white/15 pt-2 text-[11px] leading-relaxed">
-          <div className="flex justify-between gap-2">
-            <span className="text-white/45">AB</span>
-            <span className="truncate text-white">{batter?.name ?? "—"}</span>
+        <div className="mt-3 space-y-1.5 border-t border-white/15 pt-2 text-[11px] leading-relaxed">
+          <div>
+            <div className="flex justify-between gap-2">
+              <span className="text-white/45">AB</span>
+              <span className="truncate text-white">{batter?.name ?? "—"}</span>
+            </div>
+            {(batterLine || snapshot.batterStats?.avg) && (
+              <div className="flex justify-between gap-2 text-[10px] text-white/50">
+                <span>{snapshot.batterStats?.avg ?? ""}</span>
+                <span className="truncate">{batterLine}</span>
+              </div>
+            )}
           </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-white/45">P</span>
-            <span className="truncate text-white/80">{defense.pitcher?.name ?? "—"}</span>
+          <div>
+            <div className="flex justify-between gap-2">
+              <span className="text-white/45">P</span>
+              <span className="truncate text-white/80">{defense.pitcher?.name ?? "—"}</span>
+            </div>
+            {pitcherLine && (
+              <div className="flex justify-between gap-2 text-[10px] text-white/50">
+                <span>{snapshot.pitcherStats?.era ? `${snapshot.pitcherStats.era} ERA` : ""}</span>
+                <span className="truncate">{pitcherLine}</span>
+              </div>
+            )}
           </div>
         </div>
 

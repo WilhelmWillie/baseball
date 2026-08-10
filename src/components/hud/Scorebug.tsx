@@ -84,7 +84,7 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
 
   return (
     <div className="select-none font-mono">
-      <div className="pointer-events-none w-[212px] border-2 border-black/60 bg-slate-950/80 p-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px] sm:w-[300px] sm:p-3">
+      <div className="pointer-events-none w-full border-2 border-black/60 bg-slate-950/80 p-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px] sm:w-[300px] sm:p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5">
             <TeamRow

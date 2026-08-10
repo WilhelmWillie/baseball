@@ -294,6 +294,22 @@ ball has not communicated anything.
 Real games leave ~20s between pitches, which is plenty of room; the simulated
 game paces itself to match so its animations are not clipped.
 
+### Walks, strikeouts and who is actually running
+
+The feed lists a strikeout as the batter being put out, which is true but not
+what it looks like: he does not run to first and get called out there, he
+leaves the box. Batter tracks are dropped on a strikeout, and the beam-out plays
+at the plate instead.
+
+A walk is not a race either — the batter drops the bat and strolls down at
+4.2s per base, in a gait of its own. And the map from a runner move to an actor
+now only considers actors on the *batting* side that are not fielders, so a
+stray id match can never put a defender on the basepaths wearing the wrong
+uniform and the wrong species.
+
+The bat is only visible in a batting pose, so it disappears the moment the
+hitter leaves the box however he got on.
+
 ### A hit is not an out
 
 Every batted ball used to end with the fielder playing a catch at the landing
@@ -306,6 +322,10 @@ pushed past that moment, so a flyout cannot resolve while the ball is still up.
 
 ### On a phone
 
+The scoreboard becomes a full-width band across the top and the controls move to
+a bar along the bottom, where a thumb reaches them.
+
+
 `fov` in three.js is vertical, so a tall narrow viewport sees a much *narrower*
 slice of the world horizontally — on a portrait phone the diamond falls out of
 frame at either side. `Framing` holds the horizontal field of view roughly
@@ -313,9 +333,8 @@ constant instead, widening the vertical one as the aspect narrows. That leaves a
 lot of empty grass above and below, so the camera rig also pulls its framing in
 toward the infield in proportion to how portrait the screen is.
 
-The HUD narrows to 212px, the controls drop to their icons, the weather line and
-the connection badge are dropped, and the log's hint says "tap" rather than
-"hover".
+The controls drop to their icons, the weather line and the connection badge are
+dropped, and the log's hint says "tap" rather than "hover".
 
 ## Known gaps
 

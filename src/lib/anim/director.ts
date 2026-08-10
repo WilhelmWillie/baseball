@@ -8,6 +8,7 @@ import {
   batterSpot,
   fp,
   onDeckSpot,
+  playableSpot,
   standingSpot,
   wallDistance,
   type BaseId,
@@ -35,6 +36,7 @@ export type Pose =
   | "throw"
   | "swing"
   | "catch"
+  | "walk"
   | "celebrate"
   | "dejected"
   /** Hands on hips, head down - a pitcher who has just given one up. */
@@ -121,6 +123,13 @@ const CONTACT = fp(0, 2.6, 3.1);
  */
 const RUN_PER_BASE = 2.6;
 const TROT_PER_BASE = 3.4;
+
+/** How long a swing takes, and how far ahead of contact it begins. */
+const SWING_TIME = 0.55;
+const SWING_LEAD = 0.2;
+
+/** A walk is not a race. */
+const WALK_PER_BASE = 4.2;
 
 function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
@@ -266,6 +275,8 @@ interface RunnerTrack {
   end: number;
   isOut: boolean;
   scored: boolean;
+  /** Awarded the base rather than running for it. */
+  walking: boolean;
 }
 
 /**
@@ -623,6 +634,7 @@ export class Director {
       actor.position.lerp(actor.home, k);
       if (
         actor.pose === "run" ||
+        actor.pose === "walk" ||
         actor.pose === "throw" ||
         actor.pose === "swing" ||
         actor.pose === "annoyed" ||
@@ -760,13 +772,21 @@ export class Director {
     if (this.ball.trail.length > 14) this.ball.trail.shift();
   }
 
+  /**
+   * Drives the swing. It starts before the ball arrives and follows through
+   * after it, so `swingStart` leads contact - a swing that stops dead the
+   * instant the ball is struck reads as a mistimed one.
+   */
   private swingAt(t: number, swingStart: number, contact: boolean) {
     const batter = this.batter();
     if (!batter) return;
-    if (t >= swingStart && t < swingStart + 0.55) {
+    if (t < swingStart) return;
+    if (t < swingStart + SWING_TIME) {
+      // Once the batter has taken off for first, running wins.
+      if (batter.pose === "run") return;
       batter.pose = "swing";
-      batter.poseT = clamp01((t - swingStart) / 0.55);
-    } else if (t >= swingStart + 0.55 && !contact) {
+      batter.poseT = clamp01((t - swingStart) / SWING_TIME);
+    } else if (!contact && batter.pose === "swing") {
       batter.pose = "ready";
     }
   }
@@ -807,7 +827,7 @@ export class Director {
           );
         }
         if (swings || pitch.outcome === "in_play") {
-          this.swingAt(t, flight.plateTime - 0.16, false);
+          this.swingAt(t, flight.plateTime - SWING_LEAD, false);
         }
 
         cue.at("plate", t, flight.plateTime, () => {
@@ -871,7 +891,7 @@ export class Director {
       label: `atbat:${result.id}`,
       duration: contactAt + inner.duration,
       onStart: () => inner.onStart?.(),
-      update: (t) => {
+      update: (t, dt) => {
         cue.at("crack", t, contactAt, () => {
           this.onSound?.("crack");
           // Chips of dirt off the back foot as the hitter turns on it.
@@ -883,10 +903,15 @@ export class Director {
         });
         if (t <= contactAt) {
           flight.update(t);
-          this.swingAt(t, contactAt - 0.16, true);
         } else {
-          inner.update(t - contactAt, 0);
+          // `dt` used to be passed as zero here, which froze every pose that
+          // advances on it: runners never took a stride on any batted ball,
+          // because every batted ball comes through this wrapper.
+          inner.update(t - contactAt, dt);
         }
+        // The swing runs to its finish rather than stopping dead at contact -
+        // it starts before the ball arrives and follows through after it.
+        this.swingAt(t, contactAt - SWING_LEAD, true);
       },
       onEnd: () => inner.onEnd?.(),
     };
@@ -1092,7 +1117,8 @@ export class Director {
           const fielder = this.actors.get(fielderKey);
           if (fielder) {
             const u = clamp01(t / Math.max(0.35, gatherAt));
-            const target = (restPoint ?? landing).clone().setY(0);
+            // A ball at the wall would otherwise walk the fielder through it.
+            const target = playableSpot((restPoint ?? landing).clone().setY(0));
             fielder.position.lerp(target, Math.min(1, u * 0.16 + dt * 2.2));
             fielder.facing = yawToward(fielder.position, target.distanceTo(fielder.position) > 1 ? target : fp(0, 0));
             if (t < gatherAt) {
@@ -1127,8 +1153,8 @@ export class Director {
           actor.facing = yawToward(actor.position, ahead);
           actor.visible = true;
           if (u < 1) {
-            actor.pose = "run";
-            actor.poseT = (actor.poseT + dt * 1.9) % 1;
+            actor.pose = track.walking ? "walk" : "run";
+            actor.poseT = (actor.poseT + dt * (track.walking ? 0.75 : 1.9)) % 1;
           } else {
             // Spikes into the bag. A runner who was thrown out slid hardest.
             cue.at(`slide:${track.actorKey}`, t, track.end, () =>
@@ -1213,14 +1239,26 @@ export class Director {
       return pb.from - pa.from; // Lead runners break first.
     });
 
+    // A strikeout retires the batter at the plate. The feed still lists him as
+    // a runner who was put out, but running to first and being called out
+    // there is not what happened - he simply leaves.
+    const strikeout = result.kind === "strikeout";
+    const walked = result.kind === "walk" || result.kind === "hit_by_pitch";
+
     for (const move of moves) {
       const { from, to } = runnerProgress(move);
       if (to === from && !move.isScoring && move.to !== "out") continue;
+      if (strikeout && from === 0) continue;
       const actorKey = this.actorKeyForRunner(move, from);
       if (!actorKey) continue;
 
       const bases = Math.max(0.5, to - from);
-      const perBase = result.kind === "home_run" ? TROT_PER_BASE : RUN_PER_BASE;
+      // Nobody runs on a walk - they drop the bat and stroll down to first.
+      const perBase = walked
+        ? WALK_PER_BASE
+        : result.kind === "home_run"
+          ? TROT_PER_BASE
+          : RUN_PER_BASE;
       const start = from === 0 ? 0.12 : 0.02;
       tracks.push({
         actorKey,
@@ -1230,14 +1268,20 @@ export class Director {
         end: start + bases * perBase,
         isOut: move.to === "out",
         scored: move.isScoring,
+        walking: walked,
       });
     }
     return tracks;
   }
 
   private actorKeyForRunner(move: RunnerMove, fromProgress: number): string | null {
-    // Already on the field somewhere?
+    const batting = this.snapshot?.battingSide ?? "away";
+    // Already on the field somewhere? Only the batting side can be running the
+    // bases, and a fielder never is - without that guard a stray id match could
+    // put a defender on the basepaths, wearing the wrong uniform and the wrong
+    // species.
     for (const [key, actor] of this.actors) {
+      if (actor.role === "fielder" || actor.side !== batting) continue;
       if (actor.playerId === move.playerId) return key;
     }
     // The batter becoming a runner.
@@ -1245,7 +1289,7 @@ export class Director {
     if (fromProgress === 0 && batter) return "bat";
 
     // Fall back to a transient actor so unknown runners still animate.
-    const side = this.snapshot?.battingSide ?? "away";
+    const side = batting;
     const key = `mv:${move.playerId}`;
     const spot = basePathPoint(fromProgress);
     this.upsert(
@@ -1308,6 +1352,7 @@ export class Director {
           end: 2.1,
           isOut: false,
           scored: false,
+          walking: false,
         };
       }
     }

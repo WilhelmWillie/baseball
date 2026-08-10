@@ -96,6 +96,23 @@ export const WALL_HEIGHT = 9;
 export const WARNING_TRACK = 16;
 
 /**
+ * Clamps a spot to somewhere a fielder can actually stand: inside the wall,
+ * with room for the figure itself. A ball hit to the wall would otherwise send
+ * whoever is chasing it straight through the padding.
+ */
+export function playableSpot(point: Vector3, margin = 10): Vector3 {
+  const lateral = point.x;
+  const depth = -point.z;
+  const distance = Math.hypot(lateral, depth);
+  if (distance < 1) return point;
+  const theta = Math.atan2(lateral, depth);
+  const limit = fieldRadius(theta) - margin;
+  if (distance <= limit) return point;
+  const scale = limit / distance;
+  return point.set(lateral * scale, point.y, -depth * scale);
+}
+
+/**
  * Radius of the playable surface at a given angle, including foul ground.
  * Beyond the foul poles the surface tapers in toward the backstop.
  */

@@ -35,7 +35,7 @@ export function History({
 
   return (
     <div
-      className="w-[212px] font-mono sm:w-[300px]"
+      className="w-full font-mono sm:w-[300px]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >

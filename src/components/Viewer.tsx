@@ -118,8 +118,9 @@ export function Viewer({
     <div className="relative h-dvh w-full overflow-hidden bg-slate-900">
       <Scene onRenderer={onRenderer} />
 
-      {/* Top-left: scoreboard and the play log */}
-      <div className="absolute left-2 top-2 z-10 flex flex-col gap-2 sm:left-4 sm:top-4">
+      {/* Scoreboard and play log: a full-width band across the top of a phone,
+          a floating panel once there is room beside it. */}
+      <div className="absolute inset-x-2 top-2 z-10 flex flex-col gap-1.5 sm:inset-x-auto sm:left-4 sm:top-4 sm:gap-2">
         {snapshot ? (
           <>
             <Scorebug snapshot={snapshot} />
@@ -132,8 +133,9 @@ export function Viewer({
         )}
       </div>
 
-      {/* Top-right: controls */}
-      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4 sm:gap-2">
+      {/* Controls: along the bottom on a phone, where a thumb reaches; stacked
+          in the top corner on anything larger. */}
+      <div className="absolute inset-x-2 bottom-3 z-20 flex flex-row items-center justify-center gap-2 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:flex-col sm:items-end sm:gap-2">
         <div className="flex gap-1.5 sm:gap-2">
           <Link
             href="/"
@@ -184,7 +186,7 @@ export function Viewer({
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (
-        <div className="absolute bottom-2 left-2 z-10 max-h-[42vh] w-[min(300px,calc(100vw-1rem))] overflow-auto border-2 border-black/60 bg-slate-950/85 p-3 font-mono text-[11px] text-white/80 sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
+        <div className="absolute bottom-16 left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto border-2 border-black/60 bg-slate-950/85 p-3 font-mono text-[11px] text-white/80 sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
           <div className="mb-2 tracking-widest text-amber-300">
             {snapshot.teams[snapshot.fieldingSide].abbrev} DEFENSE
           </div>
@@ -232,7 +234,7 @@ export function Viewer({
       )}
 
       {flash && (
-        <div className="absolute bottom-20 left-1/2 z-20 -translate-x-1/2 border-2 border-amber-300 bg-slate-950/90 px-4 py-2 font-mono text-[11px] tracking-widest text-amber-200">
+        <div className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 border-2 border-amber-300 bg-slate-950/90 px-4 py-2 font-mono text-[11px] tracking-widest text-amber-200 sm:bottom-20">
           {flash}
         </div>
       )}

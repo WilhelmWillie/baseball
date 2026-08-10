@@ -419,6 +419,9 @@ function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/** The only poses in which a hitter is still holding the bat. */
+const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing"]);
+
 function idleLife(clock: number) {
   const breath = Math.sin(clock * 1.15);
 
@@ -529,6 +532,28 @@ function poseValues(
         headYaw: life.headYaw * 0.25,
         bob: life.bob * 0.5,
       };
+    case "walk": {
+      // Strolling down to first with the base awarded. Half the cadence of a
+      // run, a shorter stride, and the arms hanging rather than pumping.
+      const swing = Math.sin(t * Math.PI * 2);
+      const lift = Math.cos(t * Math.PI * 2);
+      return {
+        ...REST,
+        crouch: 0.04,
+        lean: 0.08,
+        legL: swing * 0.42,
+        legR: -swing * 0.42,
+        kneeL: 0.12 + Math.max(0, -swing) * 0.5,
+        kneeR: 0.12 + Math.max(0, swing) * 0.5,
+        armL: -swing * 0.3,
+        armR: swing * 0.3,
+        elbowL: -0.4,
+        elbowR: -0.4,
+        armSpread: 0.12,
+        headYaw: life.headYaw * 0.5,
+        bob: Math.abs(lift) * 0.05,
+      };
+    }
     case "run": {
       const swing = Math.sin(t * Math.PI * 2);
       const lift = Math.cos(t * Math.PI * 2);
@@ -1147,8 +1172,10 @@ export function Player({
     parts.elbowR.rotation.set(v.elbowR, 0, v.elbowIn);
 
     if (parts.bat) {
-      // Dropped at the plate the instant they take off for first.
-      parts.bat.visible = live.role === "batter" && live.pose !== "run";
+      // Dropped at the plate the moment they leave the box, however they got
+      // on: a run, a trot, or a walk.
+      parts.bat.visible =
+        live.role === "batter" && BATTING_POSES.has(live.pose);
       // The bat starts cocked and levels off as the swing fires, so it travels
       // through the zone instead of staying welded to the shoulder.
       BAT_AIM.copy(BAT_REST_AXIS).lerp(BAT_SWING_AXIS, v.batSwing).normalize();

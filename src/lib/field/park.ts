@@ -136,7 +136,7 @@ function stands(blocks: Block[]) {
     const tangentZ = Math.sin(theta);
 
     for (let row = 0; row < rows; row++) {
-      const r = base + 7 + row * 5.2;
+      const r = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + row * 5.2;
       const height = 3.4 + row * 2.05;
       const width = ((Math.PI * 2 * r) / slices) * 1.08;
       const x = Math.sin(theta) * r;
@@ -172,7 +172,7 @@ function stands(blocks: Block[]) {
     }
 
     // Facade above the top row, to close off the sky line.
-    const rTop = base + 7 + rows * 5.2;
+    const rTop = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + rows * 5.2;
     const widthTop = ((Math.PI * 2 * rTop) / slices) * 1.08;
     blocks.push({
       p: [Math.sin(theta) * rTop, 20, -Math.cos(theta) * rTop],
@@ -180,6 +180,75 @@ function stands(blocks: Block[]) {
       c: shade(COLORS.concreteDark, (noise(theta * 40, 0, 9) - 0.5) * 0.06),
       r: yaw,
     });
+  }
+}
+
+/**
+ * Field-level seating down the lines: a low wall at the edge of the playing
+ * surface with a few rows of bleachers stepping up behind it, so the foul
+ * corners are populated instead of trailing off into empty grass.
+ */
+function foulLineSeats(blocks: Block[]) {
+  const slices = 150;
+  const quarter = Math.PI / 4;
+
+  for (let i = 0; i < slices; i++) {
+    const theta = (i / slices) * Math.PI * 2 - Math.PI;
+    if (Math.abs(theta) < quarter) continue; // Fair territory has the wall.
+
+    const edge = fieldRadius(theta);
+    const yaw = yawAt(theta);
+    const tangentX = Math.cos(theta);
+    const tangentZ = Math.sin(theta);
+
+    // Low wall right at the boundary, with a padded cap.
+    const wallWidth = ((Math.PI * 2 * edge) / slices) * 1.1;
+    const wx = Math.sin(theta) * edge;
+    const wz = -Math.cos(theta) * edge;
+    blocks.push({ p: [wx, 2, wz], s: [wallWidth, 4, 1.6], c: COLORS.wall, r: yaw });
+    blocks.push({
+      p: [wx, 4.15, wz],
+      s: [wallWidth, 0.45, 2],
+      c: COLORS.wallCap,
+      r: yaw,
+    });
+
+    // Four shallow bleacher rows behind it.
+    for (let row = 0; row < 4; row++) {
+      const r = edge + 3 + row * 3.4;
+      const height = 4.4 + row * 1.7;
+      const width = ((Math.PI * 2 * r) / slices) * 1.1;
+      const x = Math.sin(theta) * r;
+      const z = -Math.cos(theta) * r;
+
+      blocks.push({
+        p: [x, height / 2, z],
+        s: [width, height, 3.4],
+        c: shade(COLORS.concrete, (noise(x, z, 30 + row) - 0.5) * 0.06),
+        r: yaw,
+      });
+      blocks.push({
+        p: [x, height + 0.3, z],
+        s: [width, 0.6, 3.4],
+        c: row % 2 === 0 ? COLORS.seat : COLORS.seatAlt,
+        r: yaw,
+      });
+
+      const n = noise(x, z, 40 + row);
+      if (n > 0.36) {
+        const seats = 2 + Math.floor(n * 2);
+        for (let sIdx = 0; sIdx < seats; sIdx++) {
+          const offset = (sIdx / seats - 0.5) * width * 0.85;
+          const c = CROWD_COLORS[Math.floor(noise(x + sIdx * 3.7, z, row + sIdx) * CROWD_COLORS.length)];
+          blocks.push({
+            p: [x + tangentX * offset, height + 1.4, z + tangentZ * offset],
+            s: [1.3, 1.7, 1.3],
+            c,
+            r: yaw,
+          });
+        }
+      }
+    }
   }
 }
 
@@ -278,6 +347,7 @@ export function buildPark(): Block[] {
   if (cached) return cached;
   const blocks: Block[] = [];
   outfieldWall(blocks);
+  foulLineSeats(blocks);
   stands(blocks);
   lightTowers(blocks);
   skyline(blocks);

@@ -14,6 +14,7 @@ import {
   PlaneGeometry,
   SphereGeometry,
   TorusGeometry,
+  Vector3,
   type Material,
 } from "three";
 import type { Actor, Pose } from "@/lib/anim/director";
@@ -34,6 +35,71 @@ export type Species = "alien" | "robot";
  * anatomically sensible next to a 90-foot base path.
  */
 const SCALE = 2.35;
+
+/**
+ * Hip height in model units. Chosen so the soles of the feet land on y = 0 in
+ * the resting pose - the figures used to sink about a foot into the dirt.
+ */
+const HIP_HEIGHT = 2.92;
+
+/**
+ * The batting stance. Both arms take the same angles and the spread is chosen
+ * so the two hands close on the same point in front of the chest. The bat is
+ * hung on that point - see `handAnchor`.
+ */
+const BAT_STANCE = { arm: -0.05, elbow: -1.42, spread: 1.06 };
+
+/**
+ * Bat attitude in torso space, as a direction from the hands to the barrel.
+ * At rest it stands up and back over the rear shoulder, angled out far enough
+ * to clear the helmet; through the swing it levels off and comes across the
+ * body. The torso twist carries it the rest of the way through the zone.
+ */
+const BAT_REST_AXIS = new Vector3(-0.62, 0.76, -0.24).normalize();
+const BAT_SWING_AXIS = new Vector3(-0.82, 0.02, 0.57).normalize();
+const UP = new Vector3(0, 1, 0);
+/** Scratch, so the frame loop allocates nothing. */
+const BAT_AIM = new Vector3();
+
+/**
+ * The arm skeleton, shared by the model builder and by `handAnchor` so the two
+ * can never disagree about where a hand ends up.
+ */
+const ARM = {
+  shoulderY: 1.46,
+  elbowY: -0.98,
+  alien: { shoulderX: 0.98, handY: -1.06 },
+  robot: { shoulderX: 1.06, handY: -1.14 },
+};
+
+/**
+ * Where the two hands meet, in torso space, for a set of stance angles. The bat
+ * is positioned from this rather than from a hand-derived constant, so it stays
+ * in the hands if the stance is ever retuned - and it hangs off the torso
+ * rather than off an arm, because a child of the arm inherits the whole chain
+ * and ends up pointing into the batter's own back.
+ */
+function handAnchor(isAlien: boolean, stance: typeof BAT_STANCE): Vector3 {
+  const rig = isAlien ? ARM.alien : ARM.robot;
+  const torso = new Group();
+  const mid = new Vector3();
+  for (const side of [1, -1]) {
+    const shoulder = new Group();
+    shoulder.position.set(side * rig.shoulderX, ARM.shoulderY, 0);
+    shoulder.rotation.set(stance.arm, 0, -side * stance.spread);
+    torso.add(shoulder);
+    const elbow = new Group();
+    elbow.position.y = ARM.elbowY;
+    elbow.rotation.x = stance.elbow;
+    shoulder.add(elbow);
+    const hand = new Group();
+    hand.position.set(0, rig.handY, 0.02);
+    elbow.add(hand);
+    torso.updateMatrixWorld(true);
+    mid.addScaledVector(hand.getWorldPosition(new Vector3()), 0.5);
+  }
+  return mid;
+}
 
 const ALIEN_SKIN = ["#8ad694", "#79c9c2", "#a6d977", "#7bc7ad", "#b7d96b"];
 const ROBOT_METAL = "#c3cad2";
@@ -102,6 +168,8 @@ interface Limbs {
   elbowR: Group;
   /** Antennae and other springy bits that lag behind the body. */
   danglers: Group[];
+  /** Present only on the batter. */
+  bat: Group | null;
 }
 
 interface PoseValues {
@@ -125,6 +193,8 @@ interface PoseValues {
   /** Torso roll, which reads as shifting onto one leg. */
   roll: number;
   bob: number;
+  /** 0 = bat cocked over the shoulder, 1 = bat levelled through the zone. */
+  batSwing: number;
 }
 
 const REST: PoseValues = {
@@ -145,6 +215,7 @@ const REST: PoseValues = {
   sway: 0,
   roll: 0,
   bob: 0,
+  batSwing: 0,
 };
 
 /**
@@ -165,8 +236,33 @@ function idleLife(clock: number) {
   };
 }
 
-function poseValues(pose: Pose, t: number, clock: number): PoseValues {
+function poseValues(
+  pose: Pose,
+  t: number,
+  clock: number,
+  isBatter = false,
+): PoseValues {
   const life = idleLife(clock);
+
+  if (isBatter && (pose === "ready" || pose === "idle")) {
+    // Coiled at the plate, hands together off the back shoulder.
+    return {
+      ...REST,
+      crouch: 0.44 + life.breath * 0.04,
+      lean: 0.14,
+      twist: 0.34,
+      kneeL: 0.74,
+      kneeR: 0.74,
+      armL: BAT_STANCE.arm,
+      armR: BAT_STANCE.arm,
+      elbowL: BAT_STANCE.elbow,
+      elbowR: BAT_STANCE.elbow,
+      armSpread: BAT_STANCE.spread,
+      headYaw: life.headYaw * 0.3,
+      headTilt: life.headTilt,
+      bob: life.bob * 0.6,
+    };
+  }
 
   switch (pose) {
     case "ready":
@@ -263,17 +359,21 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
       const fire = Math.max(0, (t - 0.3) / 0.7);
       return {
         ...REST,
-        crouch: 0.3,
+        crouch: 0.38,
         lean: 0.16,
-        twist: 0.7 * load - 2.6 * fire,
+        twist: 0.62 * load - 2.6 * fire,
         legL: 0.28 * load,
-        kneeL: 0.7,
-        kneeR: 0.55,
-        armL: -1.0 - 0.35 * load + 0.75 * fire,
-        armR: -1.0 - 0.35 * load + 0.75 * fire,
-        elbowL: -1.5 + 1.1 * fire,
-        elbowR: -1.5 + 1.1 * fire,
-        armSpread: 0.16,
+        kneeL: 0.74,
+        kneeR: 0.6,
+        // The arms barely leave the stance: the bat is anchored to where these
+        // angles put the hands, so anything more and the grip visibly lets go.
+        // The twist above is what carries the bat through the zone.
+        armL: BAT_STANCE.arm - 0.06 * load + 0.16 * fire,
+        armR: BAT_STANCE.arm - 0.06 * load + 0.16 * fire,
+        elbowL: BAT_STANCE.elbow - 0.07 * load + 0.22 * fire,
+        elbowR: BAT_STANCE.elbow - 0.07 * load + 0.22 * fire,
+        armSpread: BAT_STANCE.spread - 0.08 * fire,
+        batSwing: fire,
       };
     }
     case "catch":
@@ -427,7 +527,7 @@ export function Player({
     };
 
     const hips = new Group();
-    hips.position.y = 2.45;
+    hips.position.y = HIP_HEIGHT;
     root.add(hips);
     add(hips, GEO.pelvis, materials.pants, [0, -0.12, 0], [1, 1, 1], undefined, true);
 
@@ -517,9 +617,10 @@ export function Player({
     }
 
     // --- Arms -------------------------------------------------------------
+    const rig = isAlien ? ARM.alien : ARM.robot;
     const makeArm = (side: number) => {
       const shoulder = new Group();
-      shoulder.position.set(side * (isAlien ? 0.98 : 1.06), 1.46, 0);
+      shoulder.position.set(side * rig.shoulderX, ARM.shoulderY, 0);
       torso.add(shoulder);
 
       if (isAlien) {
@@ -532,7 +633,7 @@ export function Player({
       }
 
       const elbow = new Group();
-      elbow.position.y = -0.98;
+      elbow.position.y = ARM.elbowY;
       shoulder.add(elbow);
 
       if (isAlien) {
@@ -559,6 +660,7 @@ export function Player({
     head.position.y = 2.12;
     torso.add(head);
     const danglers: Group[] = [];
+    let batGroup: Group | null = null;
 
     if (isAlien) {
       // A tall teardrop cranium tapering to a small chin.
@@ -631,20 +733,19 @@ export function Player({
 
     // --- Equipment --------------------------------------------------------
     if (actor.role === "batter") {
-      // Anchored to the torso rather than the hand. Hanging it off the elbow
-      // meant inheriting the whole arm chain, which pointed it into the
-      // batter's own back; from the torso the angle is authored directly, and
-      // the swing's torso twist still carries it through the zone.
-      const bat = new Group();
-      bat.position.set(0.86, 0.72, -0.12);
-      bat.rotation.set(-0.75, 0, -0.3);
-      torso.add(bat);
+      // Pinned to where the arm chain actually puts the hands, and built so the
+      // taped section of the handle straddles that point - the hands close on
+      // the grip rather than on thin air next to it.
+      batGroup = new Group();
+      batGroup.position.copy(handAnchor(isAlien, BAT_STANCE));
+      batGroup.quaternion.setFromUnitVectors(UP, BAT_REST_AXIS);
+      torso.add(batGroup);
 
-      add(bat, GEO.batKnob, materials.dark, [0, 0.03, 0], [1, 0.14, 1]);
-      add(bat, GEO.batHandle, materials.dark, [0, 0.28, 0], [1, 0.46, 1]);
-      add(bat, GEO.batHandle, materials.bat, [0, 0.74, 0], [1, 0.5, 1]);
-      add(bat, GEO.batBarrel, materials.bat, [0, 1.86, 0], [1, 1.8, 1], undefined, true);
-      add(bat, GEO.lowSphere, materials.bat, [0, 2.74, 0], [0.4, 0.24, 0.4]);
+      add(batGroup, GEO.batKnob, materials.dark, [0, -0.46, 0], [1.1, 0.18, 1.1]);
+      add(batGroup, GEO.batHandle, materials.dark, [0, -0.06, 0], [1.4, 0.68, 1.4]);
+      add(batGroup, GEO.batHandle, materials.bat, [0, 0.58, 0], [1.1, 0.62, 1.1]);
+      add(batGroup, GEO.batBarrel, materials.bat, [0, 1.74, 0], [1.15, 1.86, 1.15], undefined, true);
+      add(batGroup, GEO.lowSphere, materials.bat, [0, 2.66, 0], [0.46, 0.26, 0.46]);
     } else if (actor.role === "fielder") {
       const glove = new Mesh(GEO.sphere, materials.glove);
       glove.scale.set(1.1, 1.24, 0.66);
@@ -670,6 +771,7 @@ export function Player({
       elbowL: armL.elbow,
       elbowR: armR.elbow,
       danglers,
+      bat: batGroup,
     };
     return { model: root, limbs: parts };
   }, [materials, numberMaterial, actor.role, isAlien, wearsHelmet]);
@@ -701,8 +803,13 @@ export function Player({
     while (diff < -Math.PI) diff += Math.PI * 2;
     group.rotation.y = current + diff * Math.min(1, delta * 12);
 
-    const v = poseValues(live.pose, live.poseT, state.clock.elapsedTime + live.playerId);
-    parts.hips.position.y = 2.45 - v.crouch + v.bob;
+    const v = poseValues(
+      live.pose,
+      live.poseT,
+      state.clock.elapsedTime + live.playerId,
+      actor.role === "batter",
+    );
+    parts.hips.position.y = HIP_HEIGHT - v.crouch + v.bob;
     parts.hips.position.x = v.sway;
     parts.torso.rotation.x = v.lean;
     parts.torso.rotation.y = v.twist;
@@ -719,6 +826,13 @@ export function Player({
     parts.armR.rotation.z = v.armSpread;
     parts.elbowL.rotation.x = v.elbowL;
     parts.elbowR.rotation.x = v.elbowR;
+
+    if (parts.bat) {
+      // The bat starts cocked and levels off as the swing fires, so it travels
+      // through the zone instead of staying welded to the shoulder.
+      BAT_AIM.copy(BAT_REST_AXIS).lerp(BAT_SWING_AXIS, v.batSwing).normalize();
+      parts.bat.quaternion.setFromUnitVectors(UP, BAT_AIM);
+    }
 
     // Antennae lag behind the head, which sells the motion.
     const wobble = Math.sin(state.clock.elapsedTime * 5 + live.playerId) * 0.14;

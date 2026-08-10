@@ -113,10 +113,13 @@ the mound with the grass diamond punched out of it) as `THREE.Shape`s in field
 space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
-Everything vertical — outfield wall, the raked seating bowl, the crowd, light
-towers and a city skyline on three hazy rings beyond the park — is generated in
+Everything vertical — outfield wall, the raked seating bowl, bleachers running
+down both foul lines behind a low padded wall, the crowd, light towers and a
+city skyline on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
-single `InstancedMesh`, so the whole stadium costs one draw call.
+single `InstancedMesh`, so the whole stadium costs one draw call. Foul ground
+tapers sharply past the bases, so the seats come right up against the lines
+rather than leaving acres of empty dirt.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera
@@ -130,7 +133,17 @@ Phong shading so the directional lights give them a specular highlight.
 Nobody stands still: between pitches everyone breathes, shifts their weight and
 turns their head, on detuned waves seeded per player so no two are in step. The
 catcher gets his own squat pose with the legs folded under him, facing the
-mound. Uniforms come from a hardcoded palette keyed by MLB
+mound.
+
+The bat is hung on the point where the arm chain actually puts the hands —
+`handAnchor()` walks the same shoulder/elbow offsets the model is built from and
+returns the spot the two hands close on, so the grip can't drift out of sync
+with the stance. It hangs off the torso rather than off an arm (a child of the
+arm inherits the whole chain and ends up pointing into the batter's own back),
+cocked up over the rear shoulder at rest and levelling off through the swing
+while the torso twist carries it through the zone. The batter's arms barely
+leave the stance during a swing, for the same reason: move them and the hands
+visibly let go. Uniforms come from a hardcoded palette keyed by MLB
 team id (the API doesn't publish club colors); if both clubs' primaries are too
 close to tell apart, the visitors fall back to their secondary. Species is a
 second, redundant read on who is who.

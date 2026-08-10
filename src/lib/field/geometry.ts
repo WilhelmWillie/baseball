@@ -104,9 +104,11 @@ export function fieldRadius(theta: number): number {
   const quarter = Math.PI / 4;
   if (abs <= quarter) return wallDistance(theta);
   const t = (abs - quarter) / (Math.PI - quarter); // 0 at the pole, 1 behind the plate
-  const backstop = 62;
+  const backstop = 58;
   const atPole = wallDistance(quarter);
-  return backstop + (atPole - backstop) * Math.pow(1 - t, 4);
+  // A steep taper: real foul ground past the bases is tens of feet, not
+  // hundreds, and a tight boundary brings the seats up against the lines.
+  return backstop + (atPole - backstop) * Math.pow(1 - t, 7);
 }
 
 /** Spray angle of a point in field space (0 = center, +/- PI/4 = the poles). */

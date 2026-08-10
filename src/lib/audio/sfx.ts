@@ -169,7 +169,14 @@ class Sfx {
         this.crowd({ start: now, length: 3.4, gain: 0.42, bright: 1500, swell: 0.5 });
         break;
       case "groan":
-        this.crowd({ start: now, length: 1.3, gain: 0.12, bright: 420 });
+        // A disappointed home crowd: shorter, darker and lower than a cheer.
+        this.crowd({
+          start: now,
+          length: 1.1 + intensity * 1.0,
+          gain: 0.09 + intensity * 0.13,
+          bright: 380 + intensity * 160,
+          swell: 0.18,
+        });
         break;
       case "strikeout":
         this.crowd({ start: now, length: 1.4, gain: 0.15 + intensity * 0.1, bright: 900 });

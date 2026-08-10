@@ -152,15 +152,15 @@ export function Field() {
       {[-1, 1].map((side) =>
         (
           [
-            [0, 3, 4, 0.3],
-            [0, -3, 4, 0.3],
-            [-2, 0, 0.3, 6],
-            [2, 0, 0.3, 6],
+            [0, 4.5, 6, 0.34],
+            [0, -4.5, 6, 0.34],
+            [-3, 0, 0.34, 9],
+            [3, 0, 0.34, 9],
           ] as const
         ).map(([dx, dz, sx, sz], i) => (
           <mesh
             key={`${side}-${i}`}
-            position={[side * 3.9 + dx, LAYER.chalk, -(2.2 + dz)]}
+            position={[side * 6 + dx, LAYER.chalk, -(2.4 + dz)]}
           >
             <boxGeometry args={[sx, 0.04, sz]} />
             <meshBasicMaterial color={COLORS.chalk} />
@@ -172,14 +172,14 @@ export function Field() {
       {(["first", "second", "third"] as const).map((base) => {
         const p = BASE_POSITIONS[base];
         return (
-          <mesh key={base} position={[p.x, 0.18, p.z]} rotation={[0, Math.PI / 4, 0]} castShadow>
-            <boxGeometry args={[1.4, 0.36, 1.4]} />
+          <mesh key={base} position={[p.x, 0.28, p.z]} rotation={[0, Math.PI / 4, 0]} castShadow>
+            <boxGeometry args={[3.4, 0.56, 3.4]} />
             <meshLambertMaterial color={COLORS.base} />
           </mesh>
         );
       })}
-      <mesh position={[0, 0.14, 0]} castShadow>
-        <boxGeometry args={[1.42, 0.24, 1.42]} />
+      <mesh position={[0, 0.2, 0]} castShadow>
+        <boxGeometry args={[3.1, 0.4, 3.1]} />
         <meshLambertMaterial color={COLORS.base} />
       </mesh>
     </group>

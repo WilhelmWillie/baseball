@@ -44,8 +44,10 @@ fireworks over the outfield. Home runs get a bigger volley.
 inning-by-inning line score, and both clubs' box scores (batting and pitching,
 with W/L/S decisions). It can be dismissed to keep watching the park.
 
-**Sound** — bat crack, mitt pop, pitch whoosh, firework booms and a crowd that
-swells on hits and erupts on home runs, over a continuous low murmur. Everything
+**Sound** — bat crack, mitt pop, pitch whoosh, firework booms and a crowd with
+an allegiance: it is the *home* crowd, so it cheers what helps the home club
+and groans at everything else. A strikeout by the home pitcher gets a cheer;
+a home run by the visitors gets a groan. Everything
 is synthesized with Web Audio; there are no audio files. Sounds are cued off the
 animation clock, so the crack lands with the swing rather than with the poll that
 reported it. Browsers block audio until the page is interacted with, so the first
@@ -112,9 +114,9 @@ space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
 Everything vertical — outfield wall, the raked seating bowl, the crowd, light
-towers, the center-field scoreboard — is generated in `src/lib/field/park.ts` as
-a flat list of boxes and drawn by `Park.tsx` in a single `InstancedMesh`, so the
-whole stadium costs one draw call.
+towers and a city skyline on three hazy rings beyond the park — is generated in
+`src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
+single `InstancedMesh`, so the whole stadium costs one draw call.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera
@@ -123,7 +125,12 @@ species share one skeleton — aliens for the home club, robots for the visitors
 — so the whole pose vocabulary drives both. Panels are chamfered rather than
 hard-edged (`components/scene/geometry.ts` builds rounded boxes from an
 extruded, bevelled profile, since three.js has none in core), and they use
-Phong shading so the directional lights give them a specular highlight. Uniforms come from a hardcoded palette keyed by MLB
+Phong shading so the directional lights give them a specular highlight.
+
+Nobody stands still: between pitches everyone breathes, shifts their weight and
+turns their head, on detuned waves seeded per player so no two are in step. The
+catcher gets his own squat pose with the legs folded under him, facing the
+mound. Uniforms come from a hardcoded palette keyed by MLB
 team id (the API doesn't publish club colors); if both clubs' primaries are too
 close to tell apart, the visitors fall back to their secondary. Species is a
 second, redundant read on who is who.

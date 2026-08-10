@@ -207,28 +207,69 @@ function lightTowers(blocks: Block[]) {
   }
 }
 
-/** Scoreboard beyond center field, with a suggestion of a line score on it. */
-function scoreboard(blocks: Block[]) {
-  const r = fieldRadius(0) + 92;
-  const z = -r;
-  blocks.push({ p: [-26, 22, z], s: [4, 44, 4], c: COLORS.tower });
-  blocks.push({ p: [26, 22, z], s: [4, 44, 4], c: COLORS.tower });
-  blocks.push({ p: [0, 62, z], s: [86, 40, 5], c: COLORS.scoreboard });
-  blocks.push({ p: [0, 63, z + 3], s: [76, 30, 1], c: COLORS.scoreboardFace });
+const SKYLINE_COLORS = ["#93a1b5", "#8593a9", "#9fadbf", "#7b8aa0", "#a8b3c2"];
+/** Daylight glass, not lit windows - this is an afternoon game. */
+const WINDOW_GLASS = "#c2d3e6";
 
-  // Two rows of lit digits - far too distant to read, but they catch the light
-  // and keep the board from being a black rectangle.
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 11; col++) {
-      const lit = noise(col * 7.3, row * 3.1, 4) > 0.45;
-      blocks.push({
-        p: [-32 + col * 6.4, 70 - row * 9, z + 3.6],
-        s: [3.4, 5, 0.6],
-        c: lit ? "#f2c14a" : "#1c2229",
-      });
+/**
+ * A city beyond the park. Buildings sit on a wide arc well outside the bowl,
+ * with the far ring paler than the near one so the depth reads as haze rather
+ * than as a flat wall of boxes.
+ */
+function skyline(blocks: Block[]) {
+  const rings = [
+    { radius: 880, count: 42, minHeight: 60, maxHeight: 165, haze: 0.08 },
+    { radius: 1120, count: 34, minHeight: 55, maxHeight: 205, haze: 0.24 },
+    { radius: 1420, count: 26, minHeight: 45, maxHeight: 150, haze: 0.4 },
+  ];
+
+  for (const [ringIndex, ring] of rings.entries()) {
+    for (let i = 0; i < ring.count; i++) {
+      // Skip the wedge directly behind home plate - nothing looks at it.
+      const theta = -Math.PI * 0.78 + (i / (ring.count - 1)) * Math.PI * 1.56;
+      const jitter = noise(i * 3.7, ringIndex * 11, 21);
+      const r = ring.radius + (jitter - 0.5) * 90;
+      const height =
+        ring.minHeight + noise(i * 5.1, ringIndex * 7, 22) * (ring.maxHeight - ring.minHeight);
+      const width = 46 + noise(i * 2.3, ringIndex * 5, 23) * 62;
+      const depth = 44 + noise(i * 6.9, ringIndex * 3, 24) * 44;
+      const x = Math.sin(theta) * r;
+      const z = -Math.cos(theta) * r;
+      const yaw = yawAt(theta) + (jitter - 0.5) * 0.3;
+
+      const base = SKYLINE_COLORS[Math.floor(jitter * SKYLINE_COLORS.length)];
+      // Distant buildings wash out toward the sky.
+      const body = shade(base, ring.haze * 0.9 + (noise(x, z, 25) - 0.5) * 0.08);
+
+      blocks.push({ p: [x, height / 2, z], s: [width, height, depth], c: body, r: yaw });
+
+      // Setback tier and a mast on the taller ones.
+      if (height > 140) {
+        blocks.push({
+          p: [x, height + 18, z],
+          s: [width * 0.55, 36, depth * 0.55],
+          c: shade(body, 0.05),
+          r: yaw,
+        });
+        blocks.push({ p: [x, height + 48, z], s: [3, 24, 3], c: shade(body, -0.18), r: yaw });
+      }
+
+      // Bands of glass on the nearest ring only - any more and the skyline
+      // starts competing with the game for attention.
+      if (ringIndex === 0) {
+        const rows = Math.max(2, Math.floor(height / 34));
+        for (let cy = 0; cy < rows; cy++) {
+          if (noise(i * 9.1, cy * 2.7, ringIndex) < 0.45) continue;
+          blocks.push({
+            p: [x, 22 + (cy / (rows - 1 || 1)) * (height - 40), z],
+            s: [width * 0.82, 7, depth + 1.5],
+            c: shade(WINDOW_GLASS, -ring.haze * 0.5),
+            r: yaw,
+          });
+        }
+      }
     }
   }
-  blocks.push({ p: [0, 50, z + 3.6], s: [70, 1, 0.6], c: "#2f3742" });
 }
 
 let cached: Block[] | null = null;
@@ -239,7 +280,7 @@ export function buildPark(): Block[] {
   outfieldWall(blocks);
   stands(blocks);
   lightTowers(blocks);
-  scoreboard(blocks);
+  skyline(blocks);
   cached = blocks;
   return blocks;
 }

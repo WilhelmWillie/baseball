@@ -36,7 +36,8 @@ export type Pose =
   | "swing"
   | "catch"
   | "celebrate"
-  | "dejected";
+  | "dejected"
+  | "crouch";
 
 export interface Actor {
   key: string;
@@ -174,6 +175,25 @@ function flightDuration(ball: BattedBall): number {
   }
 }
 
+/**
+ * How much each outcome moves the crowd, and which side it favours.
+ * Plays not listed here (walks, hit batsmen) pass without a reaction.
+ */
+const CROWD_WEIGHT: Partial<
+  Record<PlayResultEvent["kind"], { magnitude: number; favorsBatter: boolean }>
+> = {
+  home_run: { magnitude: 1, favorsBatter: true },
+  triple: { magnitude: 0.9, favorsBatter: true },
+  double: { magnitude: 0.72, favorsBatter: true },
+  single: { magnitude: 0.55, favorsBatter: true },
+  error: { magnitude: 0.45, favorsBatter: true },
+  sac_fly: { magnitude: 0.55, favorsBatter: true },
+  strikeout: { magnitude: 0.62, favorsBatter: false },
+  field_out: { magnitude: 0.45, favorsBatter: false },
+  double_play: { magnitude: 0.85, favorsBatter: false },
+  generic: { magnitude: 0.35, favorsBatter: false },
+};
+
 interface RunnerTrack {
   actorKey: string;
   from: number;
@@ -254,6 +274,25 @@ export class Director {
     return typeof performance !== "undefined" ? performance.now() : Date.now();
   }
 
+  /**
+   * Translate "who did something good" into what the home crowd does about it.
+   * `favorsBatter` is whether the play helped the batting side.
+   */
+  private crowdVoice(
+    favorsBatter: boolean,
+    magnitude: number,
+  ): { sound: SoundName; intensity: number } {
+    const homeIsBatting = this.snapshot?.battingSide === "home";
+    const goodForHome = favorsBatter === homeIsBatting;
+    if (!goodForHome) {
+      return { sound: "groan", intensity: magnitude };
+    }
+    return {
+      sound: magnitude >= 0.9 ? "bigCheer" : "cheer",
+      intensity: magnitude,
+    };
+  }
+
   /** Palette of whichever club is celebrating. */
   private celebrationColors(): string[] {
     const side = this.snapshot?.battingSide ?? "home";
@@ -292,12 +331,14 @@ export class Director {
       const actorKey = `def:${key}`;
       seen.add(actorKey);
       const spot = FIELDING_SPOTS[key];
+      const isCatcher = key === "catcher";
       this.upsert(actorKey, player, {
         role: "fielder",
         positionKey: key,
         home: spot,
-        facing: key === "catcher" ? 0 : yawToward(spot, fp(0, 0)),
-        pose: key === "catcher" ? "catch" : "ready",
+        // The catcher squats facing the mound; everyone else faces the plate.
+        facing: isCatcher ? yawToward(spot, fp(0, 60)) : yawToward(spot, fp(0, 0)),
+        pose: isCatcher ? "crouch" : "ready",
       });
     }
 
@@ -468,7 +509,12 @@ export class Director {
       if (actor.pose === "run" || actor.pose === "throw" || actor.pose === "swing") {
         actor.poseT += dt;
         if (actor.poseT > 0.6) {
-          actor.pose = actor.role === "fielder" ? "ready" : "idle";
+          actor.pose =
+            actor.positionKey === "catcher"
+              ? "crouch"
+              : actor.role === "fielder"
+                ? "ready"
+                : "idle";
           actor.poseT = 0;
         }
       } else {
@@ -721,17 +767,20 @@ export class Director {
     const cue = new Cue();
     let landed = false;
 
-    // When the crowd reacts, and how hard.
-    const reaction: { at: number; sound: SoundName; intensity: number } | null =
-      result.kind === "home_run"
-        ? { at: ballDuration * 0.8, sound: "bigCheer", intensity: 1 }
-        : result.kind === "single" || result.kind === "double" || result.kind === "triple"
-          ? { at: ballDuration, sound: "cheer", intensity: result.kind === "triple" ? 0.9 : 0.6 }
-          : result.kind === "strikeout"
-            ? { at: 0.1, sound: "strikeout", intensity: 0.6 }
-            : result.kind === "walk" || result.kind === "hit_by_pitch"
-              ? null
-              : { at: Math.max(0.2, ballDuration), sound: "groan", intensity: 0.5 };
+    // The crowd is the home crowd: it cheers what is good for the home club and
+    // groans at everything else, whichever side made the play.
+    const weight = CROWD_WEIGHT[result.kind];
+    const reaction = weight
+      ? {
+          at:
+            result.kind === "home_run"
+              ? ballDuration * 0.8
+              : weight.favorsBatter
+                ? ballDuration
+                : Math.max(0.15, ballDuration),
+          ...this.crowdVoice(weight.favorsBatter, weight.magnitude),
+        }
+      : null;
 
     return {
       label: `result:${result.id}`,
@@ -755,7 +804,8 @@ export class Director {
         for (const track of tracks) {
           if (!track.scored) continue;
           cue.at(`score:${track.actorKey}`, t, track.end, () => {
-            this.onSound?.("cheer", 0.8);
+            const voice = this.crowdVoice(true, 0.8);
+            this.onSound?.(voice.sound, voice.intensity);
             this.throwConfetti(result.kind === "home_run" ? 200 : 140);
             this.launchFireworks(result.kind === "home_run" ? 7 : 3);
           });
@@ -1039,8 +1089,8 @@ export class Director {
         return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
       default:
         return {
-          position: fp(0, -64, 50),
-          target: fp(0, 96, 4),
+          position: fp(0, -78, 55),
+          target: fp(0, 100, 4),
           lerp: 1.6,
         };
     }

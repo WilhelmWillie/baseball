@@ -54,7 +54,11 @@ const GEO = {
   taper: new CylinderGeometry(0.42, 0.5, 1, 10),
   dome: new SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI / 1.85),
   ring: new TorusGeometry(0.5, 0.11, 8, 20),
-  bat: new CylinderGeometry(0.17, 0.06, 1, 10),
+  // A bat, in three pieces: knob, handle, and a barrel that flares out to the
+  // far end. The old single taper had the fat end at the hands.
+  batKnob: new CylinderGeometry(0.15, 0.13, 1, 10),
+  batHandle: new CylinderGeometry(0.085, 0.075, 1, 10),
+  batBarrel: new CylinderGeometry(0.2, 0.1, 1, 12),
 
   // Chamfered panels.
   pelvis: roundedBox(1.5, 0.62, 1.0, 0.18),
@@ -114,6 +118,12 @@ interface PoseValues {
   elbowR: number;
   armSpread: number;
   headTilt: number;
+  /** Head turn, for looking around between pitches. */
+  headYaw: number;
+  /** Side-to-side weight shift. */
+  sway: number;
+  /** Torso roll, which reads as shifting onto one leg. */
+  roll: number;
   bob: number;
 }
 
@@ -131,26 +141,70 @@ const REST: PoseValues = {
   elbowR: -0.25,
   armSpread: 0.06,
   headTilt: 0,
+  headYaw: 0,
+  sway: 0,
+  roll: 0,
   bob: 0,
 };
 
+/**
+ * Small, constant motion so nobody looks like a statue between pitches:
+ * breathing, a slow weight shift, and a head that wanders around the park.
+ * `clock` is already offset per player, so no two are ever in step.
+ */
+function idleLife(clock: number) {
+  const breath = Math.sin(clock * 1.15);
+  return {
+    // Two detuned waves so the head never settles into an obvious loop.
+    headYaw: Math.sin(clock * 0.41) * 0.34 + Math.sin(clock * 0.17 + 1.3) * 0.22,
+    headTilt: Math.sin(clock * 0.29 + 0.7) * 0.07,
+    sway: Math.sin(clock * 0.53) * 0.075,
+    roll: Math.sin(clock * 0.47 + 2.1) * 0.045,
+    breath,
+    bob: breath * 0.045,
+  };
+}
+
 function poseValues(pose: Pose, t: number, clock: number): PoseValues {
-  const idleBob = Math.sin(clock * 1.8) * 0.035;
+  const life = idleLife(clock);
 
   switch (pose) {
     case "ready":
       return {
         ...REST,
-        crouch: 0.34,
+        crouch: 0.34 + life.breath * 0.035,
         lean: 0.2,
         kneeL: 0.62,
         kneeR: 0.62,
         armL: -0.5,
         armR: -0.5,
-        elbowL: -0.85,
-        elbowR: -0.85,
+        elbowL: -0.85 + life.breath * 0.05,
+        elbowR: -0.85 - life.breath * 0.05,
         armSpread: 0.34,
-        bob: idleBob,
+        headYaw: life.headYaw,
+        headTilt: life.headTilt,
+        sway: life.sway,
+        roll: life.roll,
+        bob: life.bob,
+      };
+    case "crouch":
+      // The catcher: deep squat, glove hand up, mask pointed at the mound.
+      return {
+        ...REST,
+        crouch: 1.35 + life.breath * 0.03,
+        lean: 0.34,
+        legL: -1.45,
+        legR: -1.45,
+        kneeL: 2.25,
+        kneeR: 2.25,
+        armL: -1.55,
+        armR: -0.55,
+        elbowL: -0.5,
+        elbowR: -1.15,
+        armSpread: 0.62,
+        headTilt: -0.34,
+        headYaw: life.headYaw * 0.25,
+        bob: life.bob * 0.5,
       };
     case "run": {
       const swing = Math.sin(t * Math.PI * 2);
@@ -245,6 +299,7 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
         elbowR: -0.4,
         armSpread: 0.7,
         headTilt: -0.25,
+        roll: Math.sin(clock * 9) * 0.12,
         bob: Math.abs(Math.sin(clock * 7)) * 0.45,
       };
     case "dejected":
@@ -261,7 +316,15 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
         headTilt: 0.35,
       };
     default:
-      return { ...REST, bob: idleBob };
+      return {
+        ...REST,
+        crouch: 0.05,
+        headYaw: life.headYaw,
+        headTilt: life.headTilt,
+        sway: life.sway,
+        roll: life.roll,
+        bob: life.bob,
+      };
   }
 }
 
@@ -568,12 +631,20 @@ export function Player({
 
     // --- Equipment --------------------------------------------------------
     if (actor.role === "batter") {
-      const bat = new Mesh(GEO.bat, materials.bat);
-      bat.scale.set(1, 3.1, 1);
-      bat.position.set(0, -1.6, 0.12);
-      bat.rotation.x = -0.6;
-      bat.castShadow = true;
-      armL.elbow.add(bat);
+      // Anchored to the torso rather than the hand. Hanging it off the elbow
+      // meant inheriting the whole arm chain, which pointed it into the
+      // batter's own back; from the torso the angle is authored directly, and
+      // the swing's torso twist still carries it through the zone.
+      const bat = new Group();
+      bat.position.set(0.86, 0.72, -0.12);
+      bat.rotation.set(-0.75, 0, -0.3);
+      torso.add(bat);
+
+      add(bat, GEO.batKnob, materials.dark, [0, 0.03, 0], [1, 0.14, 1]);
+      add(bat, GEO.batHandle, materials.dark, [0, 0.28, 0], [1, 0.46, 1]);
+      add(bat, GEO.batHandle, materials.bat, [0, 0.74, 0], [1, 0.5, 1]);
+      add(bat, GEO.batBarrel, materials.bat, [0, 1.86, 0], [1, 1.8, 1], undefined, true);
+      add(bat, GEO.lowSphere, materials.bat, [0, 2.74, 0], [0.4, 0.24, 0.4]);
     } else if (actor.role === "fielder") {
       const glove = new Mesh(GEO.sphere, materials.glove);
       glove.scale.set(1.1, 1.24, 0.66);
@@ -632,9 +703,12 @@ export function Player({
 
     const v = poseValues(live.pose, live.poseT, state.clock.elapsedTime + live.playerId);
     parts.hips.position.y = 2.45 - v.crouch + v.bob;
+    parts.hips.position.x = v.sway;
     parts.torso.rotation.x = v.lean;
     parts.torso.rotation.y = v.twist;
+    parts.torso.rotation.z = v.roll;
     parts.head.rotation.x = v.headTilt - v.lean;
+    parts.head.rotation.y = v.headYaw - v.twist;
     parts.legL.rotation.x = v.legL;
     parts.legR.rotation.x = v.legR;
     parts.kneeL.rotation.x = v.kneeL;

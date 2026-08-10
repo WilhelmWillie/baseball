@@ -24,6 +24,50 @@ export interface TeamInfo {
   record?: string;
 }
 
+/** One line of a box score. */
+export interface BatterLine {
+  id: number;
+  name: string;
+  position: string;
+  ab: number;
+  r: number;
+  h: number;
+  rbi: number;
+  bb: number;
+  k: number;
+  avg: string;
+}
+
+export interface PitcherLine {
+  id: number;
+  name: string;
+  ip: string;
+  h: number;
+  r: number;
+  er: number;
+  bb: number;
+  k: number;
+  era: string;
+  decision?: "W" | "L" | "S";
+}
+
+export interface TeamBoxscore {
+  batters: BatterLine[];
+  pitchers: PitcherLine[];
+}
+
+/** An entry in the running play log. */
+export interface HistoryEntry {
+  id: string;
+  inning: number;
+  isTopInning: boolean;
+  half: string;
+  event: string;
+  description: string;
+  isScoring: boolean;
+  score: { home: number; away: number };
+}
+
 /**
  * The renderer's view of the world. Derived entirely from the feed; the 3D
  * layer never sees MLB's JSON.
@@ -59,6 +103,7 @@ export interface GameSnapshot {
   bullpen: Record<TeamSide, PlayerRef[]>;
   lineScore: Array<{ num: number; home: number | null; away: number | null }>;
   lastPlay: string | null;
+  boxscore: Record<TeamSide, TeamBoxscore>;
 }
 
 /** A runner's journey during one play. */
@@ -129,6 +174,8 @@ export interface PlayResultEvent {
   id: string;
   type: "play_result";
   atBatIndex: number;
+  inning: number;
+  isTopInning: boolean;
   eventType: string;
   event: string;
   description: string;

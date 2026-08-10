@@ -10,6 +10,8 @@ import { captureSnapshot, shareOrDownload } from "@/lib/snapshot";
 import { sfx } from "@/lib/audio/sfx";
 import { Scorebug } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
+import { History } from "./hud/History";
+import { GameOver } from "./hud/GameOver";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
   ssr: false,
@@ -60,6 +62,7 @@ export function Viewer({
   useLiveFeed(gamePk, isDemo, demoOffset);
 
   const snapshot = useGameStore((s) => s.snapshot);
+  const history = useGameStore((s) => s.history);
   const connection = useGameStore((s) => s.connection);
   const error = useGameStore((s) => s.error);
   const cameraFree = useGameStore((s) => s.cameraFree);
@@ -118,10 +121,13 @@ export function Viewer({
     <div className="relative h-dvh w-full overflow-hidden bg-slate-900">
       <Scene onRenderer={onRenderer} />
 
-      {/* Top-left: scoreboard */}
-      <div className="absolute left-4 top-4 z-10">
+      {/* Top-left: scoreboard and the play log */}
+      <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
         {snapshot ? (
-          <Scorebug snapshot={snapshot} />
+          <>
+            <Scorebug snapshot={snapshot} />
+            <History history={history} snapshot={snapshot} />
+          </>
         ) : (
           <div className="border-2 border-black/60 bg-slate-950/80 px-4 py-3 font-mono text-xs text-white/70">
             {connection === "error" ? "FEED UNAVAILABLE" : "CONNECTING TO FEED…"}
@@ -228,6 +234,12 @@ export function Viewer({
         {snapshot ? `${snapshot.venue.toUpperCase()} · ${snapshot.status.detailed.toUpperCase()}` : ""}
         {cameraFree && <div className="text-white/60">DRAG TO ORBIT · SCROLL TO ZOOM</div>}
       </div>
+
+      {snapshot?.status.isFinal && (
+        <div className="absolute inset-0 z-30 flex items-start justify-end p-4">
+          <GameOver snapshot={snapshot} />
+        </div>
+      )}
 
       {flash && (
         <div className="absolute bottom-20 left-1/2 z-20 -translate-x-1/2 border-2 border-amber-300 bg-slate-950/90 px-4 py-2 font-mono text-[11px] tracking-widest text-amber-200">

@@ -28,14 +28,28 @@ first. If nothing is in progress it says so plainly and offers the simulated
 game instead.
 
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
-their positions, the batter, on-deck hitter and baserunners. The scorebug
-carries score, inning, count, outs, bases, batter and pitcher.
+their positions, the batter, on-deck hitter and baserunners. The home club take
+the field as aliens 👽 and the visitors as robots 🤖, in their real team colors,
+so who is who reads instantly. The scorebug carries score, inning, count, outs,
+bases, batter and pitcher.
 
-**Sound** — bat crack, mitt pop, pitch whoosh and a crowd that swells on hits
-and erupts on home runs, over a continuous low murmur. Everything is
-synthesized with Web Audio; there are no audio files. Browsers block audio
-until the page is interacted with, so the first click anywhere starts it. The
-🔊 button mutes.
+**Game log** — the last play sits under the scorebug; hover it to open the full
+log, grouped by half-inning with the running score, scoring plays highlighted.
+Click to pin it open.
+
+**Celebrations** — confetti erupts over home plate on every run scored, with
+fireworks over the outfield. Home runs get a bigger volley.
+
+**Final screen** — when the game goes final, a card shows the result, the
+inning-by-inning line score, and both clubs' box scores (batting and pitching,
+with W/L/S decisions). It can be dismissed to keep watching the park.
+
+**Sound** — bat crack, mitt pop, pitch whoosh, firework booms and a crowd that
+swells on hits and erupts on home runs, over a continuous low murmur. Everything
+is synthesized with Web Audio; there are no audio files. Sounds are cued off the
+animation clock, so the crack lands with the swing rather than with the poll that
+reported it. Browsers block audio until the page is interacted with, so the first
+click anywhere starts it. The 🔊 button mutes.
 
 **Snapshot** — the 📸 button composites the current frame with a baked-in
 scorebug and hands you a PNG (shared via the Web Share API on mobile, copied to
@@ -102,26 +116,43 @@ towers, the center-field scoreboard — is generated in `src/lib/field/park.ts` 
 a flat list of boxes and drawn by `Park.tsx` in a single `InstancedMesh`, so the
 whole stadium costs one draw call.
 
-Players are low-poly figures with jointed knees and elbows, rounded heads, and
-caps or batting helmets depending on role, with jersey numbers painted onto the
-back face of the torso. Uniforms come from a hardcoded palette keyed by MLB team
-id (the API doesn't publish club colors); if both clubs' primaries are too close
-to tell apart, the visitors fall back to their secondary.
+Players are low-poly figures with jointed knees and elbows. Two species share
+one skeleton — aliens for the home club, robots for the visitors — so the whole
+pose vocabulary drives both. Uniforms come from a hardcoded palette keyed by MLB
+team id (the API doesn't publish club colors); if both clubs' primaries are too
+close to tell apart, the visitors fall back to their secondary. Species is a
+second, redundant read on who is who.
+
+### Celebrations
+
+`src/lib/anim/particles.ts` is a small particle system: confetti as tumbling
+paper with flutter, and fireworks as shells that climb, burst into sparks, and
+fall. `Effects.tsx` pushes both into instanced meshes each frame — one draw call
+each. Like the director, it advances on the wall clock rather than the frame
+delta, so a slow frame rate costs smoothness instead of leaving confetti hanging
+in mid-air.
 
 The scene renders at full device resolution with antialiasing and a single
 shadow-casting sun.
 
 ### Cameras
 
-Broadcast (behind the plate), ball-tracking (drifts toward the ball but keeps
-the diamond in frame), wide (home runs and inning changes), and a free orbit
-camera behind the AUTO CAM / FREE CAM toggle.
+Broadcast (behind the plate, framed on the diamond), ball-tracking (drifts
+toward the ball but keeps the diamond in frame), wide (home runs and inning
+changes), and a free orbit camera behind the AUTO CAM / FREE CAM toggle.
+
+### Pacing
+
+Runners cover a base in 1.9s (2.7s on a home-run trot) — quicker than life, slow
+enough to follow. Real games leave ~20s between pitches, which is plenty of room;
+the simulated game paces itself to match so its animations are not clipped.
 
 ## Known gaps
 
 - Defensive shifts aren't modelled; fielders stand in standard positions.
 - There are no dugouts or bench figures in the 3D scene; the bench is listed in
   the LINEUP panel instead.
+- The simulated game runs a scripted 20 at-bats, so it ends after two innings.
 - Every park uses the same generic dimensions rather than the real venue's.
 - Fielders converge on the ball and throw, but relays and rundowns are a single
   generic throw.

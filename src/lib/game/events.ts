@@ -386,6 +386,8 @@ export function extractEvents(
         id: `${atBatIndex}-result`,
         type: "play_result",
         atBatIndex,
+        inning: play.about?.inning ?? 0,
+        isTopInning: play.about?.isTopInning ?? true,
         eventType: eventType ?? "unknown",
         event: play.result?.event ?? "Play",
         description: play.result?.description ?? play.result?.event ?? "",

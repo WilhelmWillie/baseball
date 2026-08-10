@@ -10,7 +10,16 @@ import type {
   MlbPlayer,
   MlbTeam,
 } from "@/lib/mlb/types";
-import type { GameSnapshot, PlayerRef, TeamInfo, TeamSide } from "./types";
+import type {
+  BatterLine,
+  GameSnapshot,
+  HistoryEntry,
+  PitcherLine,
+  PlayerRef,
+  TeamBoxscore,
+  TeamInfo,
+  TeamSide,
+} from "./types";
 
 function lastName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
@@ -112,6 +121,98 @@ function rosterList(
   return out;
 }
 
+const ORDINALS = [
+  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th",
+  "10th", "11th", "12th", "13th", "14th", "15th", "16th", "17th", "18th",
+];
+
+export function ordinalFor(inning: number): string {
+  return ORDINALS[inning - 1] ?? `${inning}th`;
+}
+
+export function inningLabel(inning: number, isTopInning: boolean): string {
+  const ordinal = ORDINALS[inning - 1] ?? `${inning}th`;
+  return `${isTopInning ? "Top" : "Bot"} ${ordinal}`;
+}
+
+/**
+ * Box score lines. Batters follow the batting order the feed publishes;
+ * pitchers follow the order they appeared.
+ */
+function buildBoxscore(
+  index: PlayerIndex,
+  roster: MlbBoxscoreTeam | undefined,
+  decisions: Record<number, "W" | "L" | "S">,
+): TeamBoxscore {
+  const players = roster?.players ?? {};
+  const orderIds = roster?.battingOrder?.length ? roster.battingOrder : roster?.batters ?? [];
+
+  const batters: BatterLine[] = [];
+  for (const id of orderIds) {
+    const entry = players[`ID${id}`];
+    const batting = entry?.stats?.batting;
+    if (!entry) continue;
+    batters.push({
+      id,
+      name: index.byId.get(id)?.name ?? entry.person?.fullName ?? `#${id}`,
+      position: entry.position?.abbreviation ?? "",
+      ab: batting?.atBats ?? 0,
+      r: batting?.runs ?? 0,
+      h: batting?.hits ?? 0,
+      rbi: batting?.rbi ?? 0,
+      bb: batting?.baseOnBalls ?? 0,
+      k: batting?.strikeOuts ?? 0,
+      avg: entry.seasonStats?.batting?.avg ?? "—",
+    });
+  }
+
+  const pitchers: PitcherLine[] = [];
+  for (const id of roster?.pitchers ?? []) {
+    const entry = players[`ID${id}`];
+    const pitching = entry?.stats?.pitching;
+    if (!entry) continue;
+    pitchers.push({
+      id,
+      name: index.byId.get(id)?.name ?? entry.person?.fullName ?? `#${id}`,
+      ip: pitching?.inningsPitched ?? "0.0",
+      h: pitching?.hits ?? 0,
+      r: pitching?.runs ?? 0,
+      er: pitching?.earnedRuns ?? 0,
+      bb: pitching?.baseOnBalls ?? 0,
+      k: pitching?.strikeOuts ?? 0,
+      era: entry.seasonStats?.pitching?.era ?? "—",
+      decision: decisions[id],
+    });
+  }
+
+  return { batters, pitchers };
+}
+
+/** Seed the play log from the plays the feed has already published. */
+export function buildHistory(feed: MlbLiveFeed): HistoryEntry[] {
+  const plays = feed.liveData?.plays?.allPlays ?? [];
+  const entries: HistoryEntry[] = [];
+  for (const play of plays) {
+    if (!play.about?.isComplete || !play.result?.description) continue;
+    const inning = play.about.inning ?? 0;
+    const isTopInning = play.about.isTopInning ?? true;
+    entries.push({
+      id: `${play.about.atBatIndex ?? entries.length}`,
+      inning,
+      isTopInning,
+      half: inningLabel(inning, isTopInning),
+      event: play.result.event ?? "Play",
+      description: play.result.description,
+      isScoring: Boolean(play.about.isScoringPlay),
+      score: {
+        home: play.result.homeScore ?? 0,
+        away: play.result.awayScore ?? 0,
+      },
+    });
+  }
+  return entries;
+}
+
 export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
   const index = buildPlayerIndex(feed);
   const gameData = feed.gameData;
@@ -150,6 +251,11 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
 
   const boxHome = live?.boxscore?.teams?.home;
   const boxAway = live?.boxscore?.teams?.away;
+
+  const decisions: Record<number, "W" | "L" | "S"> = {};
+  if (live?.decisions?.winner?.id) decisions[live.decisions.winner.id] = "W";
+  if (live?.decisions?.loser?.id) decisions[live.decisions.loser.id] = "L";
+  if (live?.decisions?.save?.id) decisions[live.decisions.save.id] = "S";
 
   const allPlays = live?.plays?.allPlays ?? [];
   const lastCompleted = [...allPlays].reverse().find((p) => p.about?.isComplete && p.result?.description);
@@ -209,6 +315,10 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
     },
     lineScore,
     lastPlay: lastCompleted?.result?.description ?? null,
+    boxscore: {
+      home: buildBoxscore(index, boxHome, decisions),
+      away: buildBoxscore(index, boxAway, decisions),
+    },
   };
 }
 

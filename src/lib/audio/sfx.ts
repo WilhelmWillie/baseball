@@ -16,6 +16,8 @@ export type SoundName =
   | "bigCheer"
   | "groan"
   | "strikeout"
+  | "launch"
+  | "firework"
   | "organ";
 
 export interface SoundOptions {
@@ -172,6 +174,12 @@ class Sfx {
       case "strikeout":
         this.crowd({ start: now, length: 1.4, gain: 0.15 + intensity * 0.1, bright: 900 });
         break;
+      case "launch":
+        this.whistle();
+        break;
+      case "firework":
+        this.boom(intensity);
+        break;
       case "organ":
         this.organ();
         break;
@@ -279,6 +287,60 @@ class Sfx {
     lfo.start(start);
     source.stop(start + length + 0.1);
     lfo.stop(start + length + 0.1);
+  }
+
+  /** Rising whistle of a shell on its way up. */
+  private whistle() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(1500, now + 1.2);
+
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, now);
+    amp.gain.exponentialRampToValueAtTime(0.05, now + 0.15);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + 1.25);
+
+    osc.connect(amp).connect(master);
+    osc.start(now);
+    osc.stop(now + 1.3);
+  }
+
+  /** The burst: a low thump, a bright crack, then crackling embers. */
+  private boom(intensity: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.burst({
+      type: "lowpass",
+      freq: 260 + intensity * 160,
+      q: 0.9,
+      attack: 0.004,
+      decay: 0.45 + intensity * 0.3,
+      gain: 0.34 + intensity * 0.24,
+    });
+    this.thump(70, 0.35, 0.3);
+
+    // Embers: a scatter of tiny high bursts after the flash.
+    const embers = 5 + Math.floor(intensity * 7);
+    for (let i = 0; i < embers; i++) {
+      setTimeout(
+        () =>
+          this.burst({
+            type: "highpass",
+            freq: 3200,
+            q: 1,
+            attack: 0.001,
+            decay: 0.05,
+            gain: 0.06,
+          }),
+        180 + Math.random() * 900,
+      );
+    }
   }
 
   /** A short ballpark-organ sting. */

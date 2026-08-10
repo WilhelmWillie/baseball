@@ -243,13 +243,36 @@ export interface MlbLinescore {
   outs?: number;
 }
 
+export interface MlbBattingStats {
+  atBats?: number;
+  runs?: number;
+  hits?: number;
+  rbi?: number;
+  baseOnBalls?: number;
+  strikeOuts?: number;
+  doubles?: number;
+  triples?: number;
+  homeRuns?: number;
+}
+
+export interface MlbPitchingStats {
+  inningsPitched?: string;
+  hits?: number;
+  runs?: number;
+  earnedRuns?: number;
+  baseOnBalls?: number;
+  strikeOuts?: number;
+  homeRuns?: number;
+  pitchesThrown?: number;
+}
+
 export interface MlbBoxscorePlayer {
   person?: MlbPersonRef;
   jerseyNumber?: string;
   position?: MlbPosition;
   allPositions?: MlbPosition[];
   status?: { code?: string; description?: string };
-  stats?: Record<string, unknown>;
+  stats?: { batting?: MlbBattingStats; pitching?: MlbPitchingStats };
   seasonStats?: {
     batting?: { avg?: string; homeRuns?: number; rbi?: number; ops?: string };
     pitching?: { era?: string; strikeOuts?: number; wins?: number; losses?: number };
@@ -279,7 +302,11 @@ export interface MlbLiveData {
   };
   linescore?: MlbLinescore;
   boxscore?: MlbBoxscore;
-  decisions?: unknown;
+  decisions?: {
+    winner?: MlbPersonRef;
+    loser?: MlbPersonRef;
+    save?: MlbPersonRef;
+  };
 }
 
 export interface MlbLiveFeed {

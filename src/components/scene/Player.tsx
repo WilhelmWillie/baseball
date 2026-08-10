@@ -5,40 +5,52 @@ import { useFrame } from "@react-three/fiber";
 import {
   BoxGeometry,
   type BufferGeometry,
+  CapsuleGeometry,
   CylinderGeometry,
   Group,
   IcosahedronGeometry,
   Mesh,
   MeshLambertMaterial,
   SphereGeometry,
+  TorusGeometry,
   type Material,
 } from "three";
 import type { Actor, Pose } from "@/lib/anim/director";
 import type { Uniform } from "@/lib/mlb/teams";
 import { getLabelTexture, getNumberTexture, labelAspect } from "./textures";
 
-const SKIN = ["#e8bb92", "#cd8f60", "#9a6239", "#6b4227", "#f2d3b1"];
-const SHOE = "#22242a";
-
 /**
- * Shared low-poly geometry. Every player instance reuses these, so the whole
- * roster costs a handful of unique buffers no matter how many are on the field.
+ * Two species share one skeleton, so the whole pose vocabulary drives both:
+ * the home club are aliens, the visitors are robots. Team colors still carry
+ * the uniform, which makes the species a second, redundant read on who is who.
  */
+export type Species = "alien" | "robot";
+
+/** Cartoon scale - a touch over life size so players read from the stands. */
+const SCALE = 1.32;
+
+const ALIEN_SKIN = ["#8fd694", "#7fc7c0", "#a5d977", "#79c8a8", "#b5d96a"];
+const ROBOT_METAL = "#b9c1c9";
+const ROBOT_DARK = "#3a4149";
+const EYE_GLOW = "#7ff0ff";
+const ALIEN_EYE = "#12161c";
+const BOOT = "#22262c";
+
+/** Shared low-poly geometry - every player reuses these buffers. */
 const GEO = {
   box: new BoxGeometry(1, 1, 1),
-  /** Tapered segment used for arms and legs. */
-  limb: new CylinderGeometry(0.5, 0.42, 1, 7),
-  head: new IcosahedronGeometry(0.5, 1),
-  capCrown: new SphereGeometry(0.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2),
-  helmet: new SphereGeometry(0.5, 12, 7, 0, Math.PI * 2, 0, Math.PI / 1.75),
-  hand: new IcosahedronGeometry(0.5, 0),
-  glove: new SphereGeometry(0.5, 7, 5),
+  limb: new CapsuleGeometry(0.42, 0.7, 3, 8),
+  segment: new CylinderGeometry(0.44, 0.4, 1, 8),
+  joint: new IcosahedronGeometry(0.5, 1),
+  sphere: new SphereGeometry(0.5, 12, 9),
+  domeTop: new SphereGeometry(0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 1.7),
+  antennaBall: new IcosahedronGeometry(0.5, 1),
   bat: new CylinderGeometry(0.17, 0.06, 1, 8),
-  neck: new CylinderGeometry(0.5, 0.5, 1, 7),
+  ring: new TorusGeometry(0.5, 0.12, 6, 16),
 };
 
-function skinFor(playerId: number): string {
-  return SKIN[playerId % SKIN.length];
+function alienSkin(playerId: number): string {
+  return ALIEN_SKIN[playerId % ALIEN_SKIN.length];
 }
 
 interface Limbs {
@@ -53,6 +65,8 @@ interface Limbs {
   armR: Group;
   elbowL: Group;
   elbowR: Group;
+  /** Antennae and other springy bits that lag behind the body. */
+  danglers: Group[];
 }
 
 interface PoseValues {
@@ -113,7 +127,7 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
       return {
         ...REST,
         crouch: 0.16,
-        lean: 0.32,
+        lean: 0.3,
         legL: swing * 1.0,
         legR: -swing * 1.0,
         // The trailing leg folds up; the leading one extends.
@@ -153,7 +167,6 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
         legR: -0.45 * u,
         kneeL: 0.5,
         kneeR: 0.45,
-        // Arm whips from cocked behind the head to extended out front.
         armR: -2.5 + u * 3.0,
         elbowR: -1.9 + u * 1.9,
         armL: 0.9 * u,
@@ -224,6 +237,7 @@ function poseValues(pose: Pose, t: number, clock: number): PoseValues {
 export interface PlayerProps {
   actor: Actor;
   uniform: Uniform;
+  species: Species;
   director: { actors: Map<string, Actor> };
   showLabel?: boolean;
   labelText?: string;
@@ -233,6 +247,7 @@ export interface PlayerProps {
 export function Player({
   actor,
   uniform,
+  species,
   director,
   showLabel = false,
   labelText,
@@ -241,21 +256,30 @@ export function Player({
   const rootRef = useRef<Group>(null);
   const limbsRef = useRef<Limbs | null>(null);
   const key = actor.key;
+  const isAlien = species === "alien";
   const wearsHelmet = actor.role === "batter" || actor.role === "runner";
 
   const materials = useMemo(() => {
     const jersey = new MeshLambertMaterial({ color: uniform.jersey });
     const pants = new MeshLambertMaterial({ color: uniform.pants });
-    const cap = new MeshLambertMaterial({ color: wearsHelmet ? uniform.helmet : uniform.cap });
     const trim = new MeshLambertMaterial({ color: uniform.trim });
-    const skin = new MeshLambertMaterial({ color: skinFor(actor.playerId) });
-    const shoe = new MeshLambertMaterial({ color: SHOE });
+    const helmet = new MeshLambertMaterial({ color: uniform.helmet });
+    const skin = new MeshLambertMaterial({
+      color: isAlien ? alienSkin(actor.playerId) : ROBOT_METAL,
+    });
+    const dark = new MeshLambertMaterial({ color: isAlien ? ALIEN_EYE : ROBOT_DARK });
+    const glow = new MeshLambertMaterial({
+      color: isAlien ? ALIEN_EYE : EYE_GLOW,
+      emissive: isAlien ? "#000000" : EYE_GLOW,
+      emissiveIntensity: 0.9,
+    });
+    const boot = new MeshLambertMaterial({ color: BOOT });
     const glove = new MeshLambertMaterial({ color: "#6b4526" });
     const bat = new MeshLambertMaterial({ color: "#c89a5c" });
-    return { jersey, pants, cap, trim, skin, shoe, glove, bat };
-  }, [uniform, actor.playerId, wearsHelmet]);
+    return { jersey, pants, trim, helmet, skin, dark, glow, boot, glove, bat };
+  }, [uniform, actor.playerId, isAlien]);
 
-  // The number sits on the back face of the chest block.
+  // The number sits on the back face of the chest.
   const torsoMaterials = useMemo(() => {
     const plain = materials.jersey;
     if (!actor.number) return plain;
@@ -277,6 +301,7 @@ export function Player({
 
   const { model, limbs } = useMemo(() => {
     const root = new Group();
+    root.scale.setScalar(SCALE);
 
     const add = (
       parent: Group,
@@ -298,76 +323,164 @@ export function Player({
     const hips = new Group();
     hips.position.y = 2.45;
     root.add(hips);
+    add(hips, GEO.box, materials.pants, [1.45, 0.6, 0.95], [0, -0.12, 0]);
 
-    add(hips, GEO.box, materials.pants, [1.5, 0.55, 0.95], [0, -0.1, 0]);
-
+    // --- Legs -------------------------------------------------------------
     const makeLeg = (side: number) => {
       const hip = new Group();
-      hip.position.set(side * 0.42, -0.2, 0);
+      hip.position.set(side * 0.42, -0.22, 0);
       hips.add(hip);
-      add(hip, GEO.limb, materials.pants, [0.56, 1.3, 0.56], [0, -0.65, 0]);
+
+      if (isAlien) {
+        add(hip, GEO.limb, materials.pants, [0.6, 0.85, 0.6], [0, -0.62, 0]);
+      } else {
+        add(hip, GEO.segment, materials.pants, [0.62, 1.25, 0.62], [0, -0.63, 0]);
+        add(hip, GEO.joint, materials.dark, [0.54, 0.54, 0.54], [0, -1.28, 0]);
+      }
 
       const knee = new Group();
       knee.position.y = -1.3;
       hip.add(knee);
-      add(knee, GEO.limb, materials.pants, [0.48, 0.55, 0.48], [0, -0.27, 0]);
-      // Socks below the knee, then the shoe.
-      add(knee, GEO.limb, materials.trim, [0.44, 0.7, 0.44], [0, -0.9, 0]);
-      add(knee, GEO.box, materials.shoe, [0.6, 0.26, 1.0], [0, -1.32, 0.18]);
+
+      if (isAlien) {
+        add(knee, GEO.limb, materials.skin, [0.5, 0.6, 0.5], [0, -0.5, 0]);
+        // Three-toed foot.
+        for (const toe of [-0.28, 0, 0.28]) {
+          add(knee, GEO.box, materials.boot, [0.24, 0.2, 0.85], [toe, -1.22, 0.26]);
+        }
+        add(knee, GEO.box, materials.boot, [0.8, 0.24, 0.5], [0, -1.22, -0.08]);
+      } else {
+        add(knee, GEO.segment, materials.skin, [0.5, 1.0, 0.5], [0, -0.5, 0]);
+        add(knee, GEO.box, materials.boot, [0.72, 0.34, 1.15], [0, -1.15, 0.2]);
+      }
       return { hip, knee };
     };
     const left = makeLeg(1);
     const right = makeLeg(-1);
 
+    // --- Torso ------------------------------------------------------------
     const torso = new Group();
     hips.add(torso);
-    add(torso, GEO.box, torsoMaterials, [1.8, 1.5, 0.98], [0, 0.85, 0]);
-    add(torso, GEO.box, materials.trim, [1.84, 0.2, 1.0], [0, 0.12, 0]);
-    // Shoulder yoke, in trim color like a jersey placket.
-    add(torso, GEO.box, materials.trim, [2.05, 0.36, 0.98], [0, 1.62, 0]);
-    add(torso, GEO.neck, materials.skin, [0.5, 0.4, 0.5], [0, 1.92, 0]);
+    add(torso, GEO.box, torsoMaterials, [1.78, 1.5, 0.96], [0, 0.85, 0]);
+    add(torso, GEO.box, materials.trim, [1.82, 0.2, 0.99], [0, 0.12, 0]);
 
+    if (isAlien) {
+      // Slim shoulders and a bright collar.
+      add(torso, GEO.box, materials.trim, [2.0, 0.3, 0.96], [0, 1.6, 0]);
+      add(torso, GEO.sphere, materials.skin, [0.6, 0.5, 0.6], [0, 1.86, 0]);
+    } else {
+      // Chest plate with a status light, and blocky shoulder pads.
+      add(torso, GEO.box, materials.dark, [1.0, 0.7, 0.12], [0, 0.95, 0.52]);
+      add(torso, GEO.joint, materials.glow, [0.24, 0.24, 0.14], [0, 0.95, 0.6]);
+      add(torso, GEO.box, materials.trim, [2.16, 0.42, 1.0], [0, 1.58, 0]);
+      add(torso, GEO.segment, materials.skin, [0.46, 0.4, 0.46], [0, 1.88, 0]);
+    }
+
+    // --- Arms -------------------------------------------------------------
     const makeArm = (side: number) => {
       const shoulder = new Group();
-      shoulder.position.set(side * 1.08, 1.5, 0);
+      shoulder.position.set(side * 1.06, 1.48, 0);
       torso.add(shoulder);
-      add(shoulder, GEO.limb, materials.jersey, [0.44, 0.95, 0.44], [0, -0.48, 0]);
+
+      if (isAlien) {
+        add(shoulder, GEO.limb, materials.jersey, [0.44, 0.6, 0.44], [0, -0.45, 0]);
+      } else {
+        add(shoulder, GEO.joint, materials.dark, [0.5, 0.5, 0.5], [0, 0, 0]);
+        add(shoulder, GEO.segment, materials.jersey, [0.46, 0.92, 0.46], [0, -0.46, 0]);
+        add(shoulder, GEO.joint, materials.dark, [0.44, 0.44, 0.44], [0, -0.93, 0]);
+      }
 
       const elbow = new Group();
       elbow.position.y = -0.95;
       shoulder.add(elbow);
-      add(elbow, GEO.limb, materials.skin, [0.36, 0.85, 0.36], [0, -0.43, 0]);
-      add(elbow, GEO.hand, materials.skin, [0.34, 0.38, 0.34], [0, -0.92, 0]);
+
+      if (isAlien) {
+        add(elbow, GEO.limb, materials.skin, [0.36, 0.52, 0.36], [0, -0.42, 0]);
+        // Long three-fingered hand.
+        for (const finger of [-0.2, 0, 0.2]) {
+          add(elbow, GEO.box, materials.skin, [0.14, 0.42, 0.14], [finger, -1.06, 0]);
+        }
+      } else {
+        add(elbow, GEO.segment, materials.skin, [0.38, 0.85, 0.38], [0, -0.42, 0]);
+        add(elbow, GEO.box, materials.dark, [0.44, 0.36, 0.4], [0, -0.98, 0]);
+      }
       return { shoulder, elbow };
     };
     const armL = makeArm(1);
     const armR = makeArm(-1);
 
+    // --- Head -------------------------------------------------------------
     const head = new Group();
-    head.position.y = 2.12;
+    head.position.y = 2.1;
     torso.add(head);
-    add(head, GEO.head, materials.skin, [1.04, 1.14, 1.02], [0, 0.42, 0]);
-    if (wearsHelmet) {
-      add(head, GEO.helmet, materials.cap, [1.16, 1.1, 1.16], [0, 0.36, 0]);
-      add(head, GEO.box, materials.cap, [1.0, 0.12, 0.6], [0, 0.34, 0.5]);
-      // Ear flap on the pitcher's side.
-      add(head, GEO.box, materials.cap, [0.16, 0.42, 0.5], [0.56, 0.2, 0.05]);
+    const danglers: Group[] = [];
+
+    if (isAlien) {
+      // Tall teardrop skull with big black eyes.
+      add(head, GEO.sphere, materials.skin, [1.28, 1.72, 1.2], [0, 0.62, 0]);
+      add(head, GEO.sphere, materials.skin, [0.92, 0.7, 0.9], [0, 0.05, 0.05]);
+      for (const side of [-1, 1]) {
+        add(
+          head,
+          GEO.sphere,
+          materials.dark,
+          [0.46, 0.66, 0.24],
+          [side * 0.3, 0.62, 0.5],
+          [0.18, side * 0.34, side * -0.42],
+        );
+      }
+      // Antennae, which get to wobble.
+      for (const side of [-1, 1]) {
+        const antenna = new Group();
+        antenna.position.set(side * 0.26, 1.2, 0);
+        antenna.rotation.z = side * 0.3;
+        head.add(antenna);
+        add(antenna, GEO.segment, materials.skin, [0.1, 0.72, 0.1], [0, 0.36, 0]);
+        add(antenna, GEO.antennaBall, materials.trim, [0.26, 0.26, 0.26], [0, 0.76, 0]);
+        danglers.push(antenna);
+      }
+      if (wearsHelmet) {
+        add(head, GEO.domeTop, materials.helmet, [1.4, 1.1, 1.34], [0, 0.72, 0]);
+        add(head, GEO.box, materials.helmet, [1.1, 0.14, 0.66], [0, 0.86, 0.62]);
+      }
     } else {
-      add(head, GEO.capCrown, materials.cap, [1.1, 0.78, 1.1], [0, 0.5, 0]);
-      add(head, GEO.box, materials.cap, [0.94, 0.11, 0.62], [0, 0.52, 0.5]);
+      // Boxy head with a glowing visor band.
+      add(head, GEO.box, materials.skin, [1.32, 1.18, 1.16], [0, 0.62, 0]);
+      add(head, GEO.box, materials.dark, [1.36, 0.42, 0.18], [0, 0.68, 0.58]);
+      add(head, GEO.box, materials.glow, [1.0, 0.24, 0.1], [0, 0.68, 0.64]);
+      // Ear pods.
+      for (const side of [-1, 1]) {
+        add(head, GEO.segment, materials.dark, [0.28, 0.24, 0.28], [side * 0.72, 0.6, 0], [0, 0, Math.PI / 2]);
+      }
+      const antenna = new Group();
+      antenna.position.set(0.36, 1.2, 0);
+      head.add(antenna);
+      add(antenna, GEO.segment, materials.dark, [0.08, 0.6, 0.08], [0, 0.3, 0]);
+      add(antenna, GEO.antennaBall, materials.trim, [0.2, 0.2, 0.2], [0, 0.64, 0]);
+      danglers.push(antenna);
+
+      // A cap for fielders, a full shell for hitters.
+      if (wearsHelmet) {
+        add(head, GEO.domeTop, materials.helmet, [1.5, 1.0, 1.44], [0, 0.78, 0]);
+        add(head, GEO.box, materials.helmet, [1.16, 0.14, 0.68], [0, 0.9, 0.64]);
+      } else {
+        add(head, GEO.box, materials.helmet, [1.36, 0.28, 1.2], [0, 1.28, 0]);
+        add(head, GEO.box, materials.helmet, [1.1, 0.12, 0.62], [0, 1.2, 0.6]);
+      }
     }
 
+    // --- Equipment --------------------------------------------------------
     if (actor.role === "batter") {
       const bat = new Mesh(GEO.bat, materials.bat);
       bat.scale.set(1, 2.9, 1);
-      bat.position.set(0, -1.4, 0.1);
+      bat.position.set(0, -1.5, 0.1);
       bat.rotation.x = -0.6;
       bat.castShadow = true;
       armL.elbow.add(bat);
     } else if (actor.role === "fielder") {
-      const glove = new Mesh(GEO.glove, materials.glove);
-      glove.scale.set(0.95, 1.05, 0.55);
-      glove.position.set(0, -1.05, 0.1);
+      const glove = new Mesh(GEO.sphere, materials.glove);
+      glove.scale.set(1.0, 1.1, 0.6);
+      glove.position.set(0, -1.15, 0.1);
       glove.castShadow = true;
       armL.elbow.add(glove);
     }
@@ -384,9 +497,10 @@ export function Player({
       armR: armR.shoulder,
       elbowL: armL.elbow,
       elbowR: armR.elbow,
+      danglers,
     };
     return { model: root, limbs: parts };
-  }, [materials, torsoMaterials, actor.role, wearsHelmet]);
+  }, [materials, torsoMaterials, actor.role, isAlien, wearsHelmet]);
 
   // The frame loop mutates the three.js graph in place, which is the R3F
   // contract but not something a memoized value may be used for.
@@ -430,6 +544,13 @@ export function Player({
     parts.armR.rotation.z = v.armSpread;
     parts.elbowL.rotation.x = v.elbowL;
     parts.elbowR.rotation.x = v.elbowR;
+
+    // Antennae lag behind the head, which sells the motion.
+    const wobble = Math.sin(state.clock.elapsedTime * 5 + live.playerId) * 0.12;
+    for (let i = 0; i < parts.danglers.length; i++) {
+      const dangler = parts.danglers[i];
+      dangler.rotation.x = -v.lean * 0.8 + wobble * (i === 0 ? 1 : -1);
+    }
   });
 
   const label = labelText ?? actor.shortName;
@@ -438,7 +559,7 @@ export function Player({
     <group ref={rootRef} position={actor.position} rotation={[0, actor.facing, 0]}>
       <primitive object={model} />
       {showLabel && (
-        <sprite position={[0, 8.4, 0]} scale={[labelAspect(label) * 3.4, 3.4, 1]}>
+        <sprite position={[0, 11.4, 0]} scale={[labelAspect(label) * 3.8, 3.8, 1]}>
           <spriteMaterial map={getLabelTexture(label, accent)} depthTest={false} transparent />
         </sprite>
       )}

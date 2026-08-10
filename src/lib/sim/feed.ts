@@ -1,4 +1,5 @@
 import type {
+  MlbBoxscorePlayer,
   MlbBoxscoreTeam,
   MlbLiveFeed,
   MlbPersonRef,
@@ -21,8 +22,8 @@ import {
 
 export const DEMO_GAME_PK = 747001;
 
-const SECONDS_PER_PITCH = 4.5;
-const SECONDS_AFTER_PLAY = 3;
+const SECONDS_PER_PITCH = 7;
+const SECONDS_AFTER_PLAY = 7;
 
 /** Inverse of the Gameday hit-coordinate mapping, so the demo feed carries
  *  the same raw coordinate space a real game does. */
@@ -76,10 +77,30 @@ function plateLocation(code: PitchCode, seed: number): { pX: number; pZ: number 
   return { pX: jitter(1) * 0.62, pZ: 2.5 + jitter(2) * 0.72 };
 }
 
+interface BattingLine {
+  ab: number;
+  r: number;
+  h: number;
+  rbi: number;
+  bb: number;
+  k: number;
+}
+
+interface PitchingLine {
+  outs: number;
+  h: number;
+  r: number;
+  er: number;
+  bb: number;
+  k: number;
+}
+
 interface SimState {
   inning: number;
   isTop: boolean;
   outs: number;
+  batting: Record<number, BattingLine>;
+  pitching: Record<number, PitchingLine>;
   score: { home: number; away: number };
   hits: { home: number; away: number };
   errors: { home: number; away: number };
@@ -102,9 +123,17 @@ interface BuiltPlay {
   after: SimState;
 }
 
+function cloneLines<T>(source: Record<number, T>): Record<number, T> {
+  const out: Record<number, T> = {};
+  for (const [id, line] of Object.entries(source)) out[Number(id)] = { ...line };
+  return out;
+}
+
 function cloneState(s: SimState): SimState {
   return {
     ...s,
+    batting: cloneLines(s.batting),
+    pitching: cloneLines(s.pitching),
     score: { ...s.score },
     hits: { ...s.hits },
     errors: { ...s.errors },
@@ -149,6 +178,50 @@ function baseCode(slot: number): string {
  * Advance the base state for one scripted at-bat and produce MLB-shaped runner
  * records describing what happened.
  */
+function batLine(state: SimState, id: number): BattingLine {
+  return (state.batting[id] ??= { ab: 0, r: 0, h: 0, rbi: 0, bb: 0, k: 0 });
+}
+
+function pitchLine(state: SimState, id: number): PitchingLine {
+  return (state.pitching[id] ??= { outs: 0, h: 0, r: 0, er: 0, bb: 0, k: 0 });
+}
+
+function recordStats(
+  state: SimState,
+  batter: SimRosterEntry,
+  pitcher: SimRosterEntry,
+  atBat: ScriptedAtBat,
+  rbi: number,
+  outsRecorded: number,
+) {
+  const bat = batLine(state, batter.id);
+  const arm = pitchLine(state, pitcher.id);
+  const isWalk = atBat.result === "walk";
+  const isHit =
+    atBat.result === "single" ||
+    atBat.result === "double" ||
+    atBat.result === "triple" ||
+    atBat.result === "home_run";
+  // Walks and sacrifices are not at-bats.
+  if (!isWalk && atBat.result !== "sac_fly") bat.ab += 1;
+  if (isHit) {
+    bat.h += 1;
+    arm.h += 1;
+  }
+  if (isWalk) {
+    bat.bb += 1;
+    arm.bb += 1;
+  }
+  if (atBat.result === "strikeout_swinging" || atBat.result === "strikeout_looking") {
+    bat.k += 1;
+    arm.k += 1;
+  }
+  bat.rbi += rbi;
+  arm.r += rbi;
+  arm.er += atBat.result === "error" ? 0 : rbi;
+  arm.outs += outsRecorded;
+}
+
 function applyOutcome(
   state: SimState,
   batter: SimRosterEntry,
@@ -190,6 +263,7 @@ function applyOutcome(
       },
     });
     if (scored) {
+      batLine(state, person.id).r += 1;
       state.score[battingSide] += 1;
       const frame = state.innings[state.inning - 1];
       if (frame) frame[battingSide] += 1;
@@ -423,6 +497,8 @@ function initialState(): SimState {
     inning: 1,
     isTop: true,
     outs: 0,
+    batting: {},
+    pitching: {},
     score: { home: 0, away: 0 },
     hits: { home: 0, away: 0 },
     errors: { home: 0, away: 0 },
@@ -472,6 +548,7 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
     const stateForPlay = state;
     const { runners, rbi, description, outsRecorded } = applyOutcome(stateForPlay, batter, atBat);
     state.outs = beforeOuts + outsRecorded;
+    recordStats(state, batter, pitcher, atBat, rbi, outsRecorded);
 
     const meta = EVENT_META[atBat.result];
     const completeTime = (times[times.length - 1] ?? startTime) + 1.2;
@@ -523,7 +600,7 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       state.bases = [null, null, null];
       if (!state.isTop) state.inning += 1;
       state.isTop = !state.isTop;
-      clock += 6;
+      clock += 10;
     }
   }
 
@@ -532,16 +609,49 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
 
 const GAME = buildGame();
 
+function inningsPitched(outs: number): string {
+  return `${Math.floor(outs / 3)}.${outs % 3}`;
+}
+
 function boxscoreTeam(
   team: typeof HOME_TEAM,
   players: SimRosterEntry[],
+  state: SimState,
 ): MlbBoxscoreTeam {
-  const map: Record<string, { person: MlbPersonRef; jerseyNumber: string; position: { abbreviation: string } }> = {};
+  const map: Record<string, MlbBoxscorePlayer> = {};
   for (const p of players) {
+    const bat = state.batting[p.id];
+    const arm = state.pitching[p.id];
     map[`ID${p.id}`] = {
       person: personRef(p),
       jerseyNumber: p.number,
       position: { abbreviation: p.position },
+      stats: {
+        batting: bat
+          ? {
+              atBats: bat.ab,
+              runs: bat.r,
+              hits: bat.h,
+              rbi: bat.rbi,
+              baseOnBalls: bat.bb,
+              strikeOuts: bat.k,
+            }
+          : {},
+        pitching: arm
+          ? {
+              inningsPitched: inningsPitched(arm.outs),
+              hits: arm.h,
+              runs: arm.r,
+              earnedRuns: arm.er,
+              baseOnBalls: arm.bb,
+              strikeOuts: arm.k,
+            }
+          : {},
+      },
+      seasonStats: {
+        batting: { avg: `.${200 + ((p.id * 7) % 120)}` },
+        pitching: { era: `${(2 + ((p.id * 3) % 25) / 10).toFixed(2)}` },
+      },
     };
   }
   return {
@@ -700,10 +810,15 @@ export function buildDemoFeed(elapsedSeconds: number): MlbLiveFeed {
       },
       boxscore: {
         teams: {
-          away: boxscoreTeam(AWAY_TEAM, AWAY_ROSTER),
-          home: boxscoreTeam(HOME_TEAM, HOME_ROSTER),
+          away: boxscoreTeam(AWAY_TEAM, AWAY_ROSTER, state),
+          home: boxscoreTeam(HOME_TEAM, HOME_ROSTER, state),
         },
       },
+      decisions: finished
+        ? state.score.away > state.score.home
+          ? { winner: personRef(AWAY_ROSTER[8]), loser: personRef(HOME_ROSTER[8]) }
+          : { winner: personRef(HOME_ROSTER[8]), loser: personRef(AWAY_ROSTER[8]) }
+        : undefined,
     },
   };
 }

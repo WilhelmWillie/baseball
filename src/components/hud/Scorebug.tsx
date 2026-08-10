@@ -61,8 +61,8 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
   const arrow = snapshot.isTopInning ? "▲" : "▼";
 
   return (
-    <div className="pointer-events-none select-none font-mono">
-      <div className="w-[280px] border-2 border-black/60 bg-slate-950/80 p-3 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px]">
+    <div className="select-none font-mono">
+      <div className="pointer-events-none w-[300px] border-2 border-black/60 bg-slate-950/80 p-3 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px]">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5">
             <TeamRow
@@ -105,12 +105,6 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
         </div>
       </div>
-
-      {snapshot.lastPlay && (
-        <div className="mt-2 w-[280px] border-2 border-black/60 bg-slate-950/70 px-3 py-2 text-[11px] leading-snug text-white/75 backdrop-blur-[2px]">
-          {snapshot.lastPlay}
-        </div>
-      )}
     </div>
   );
 }

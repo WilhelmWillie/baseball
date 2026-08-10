@@ -14,6 +14,7 @@ import {
   type PositionKey,
 } from "@/lib/field/geometry";
 import type { SoundName } from "@/lib/audio/sfx";
+import { Fx } from "./particles";
 import { foulBallFor, runnerProgress } from "@/lib/game/events";
 import type {
   BattedBall,
@@ -79,9 +80,12 @@ const RELEASE_DEPTH = 54.5;
 const PLATE_DEPTH = 1.35;
 const CONTACT = fp(0, 2.6, 3.1);
 
-/** Seconds a runner takes to cover one base. Tuned for watchability. */
-const RUN_PER_BASE = 1.05;
-const TROT_PER_BASE = 1.5;
+/**
+ * Seconds a runner takes to cover one base. A real sprint home-to-first is
+ * about 4.3s; these are quicker than life but slow enough to follow.
+ */
+const RUN_PER_BASE = 1.9;
+const TROT_PER_BASE = 2.7;
 
 function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
@@ -205,6 +209,8 @@ interface Anim {
 
 export class Director {
   actors = new Map<string, Actor>();
+  /** Confetti and fireworks. */
+  fx = new Fx();
   ball: BallState = {
     position: fp(0, 60, 5),
     visible: false,
@@ -240,8 +246,30 @@ export class Director {
   private idleTime = 0;
   private freeCamera = false;
 
+  constructor() {
+    this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
+  }
+
   private now(): number {
     return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  /** Palette of whichever club is celebrating. */
+  private celebrationColors(): string[] {
+    const side = this.snapshot?.battingSide ?? "home";
+    const team = this.snapshot?.teams[side];
+    return team ? [team.palette.primary, team.palette.secondary] : ["#ffd447", "#ffffff"];
+  }
+
+  /** Paper over the infield when a run scores. */
+  private throwConfetti(amount = 150) {
+    this.fx.burstConfetti(fp(0, 8, 12), amount, this.celebrationColors());
+  }
+
+  /** Shells over the outfield. `count` scales the size of the show. */
+  private launchFireworks(count: number) {
+    this.fx.fireworkShow(fp(0, 230, 6), count, this.celebrationColors());
+    this.onSound?.("launch");
   }
 
   setFreeCamera(free: boolean) {
@@ -373,6 +401,7 @@ export class Director {
   }
 
   clearQueue() {
+    this.fx.clear();
     this.queue = [];
     this.current = null;
     this.currentTime = 0;
@@ -685,7 +714,7 @@ export class Director {
       ? basePathPoint(outTrack.to).setY(2.5)
       : BASE_POSITIONS.first.clone().setY(2.5);
 
-    const holdAfter = result.kind === "home_run" ? 1.4 : 0.85;
+    const holdAfter = result.kind === "home_run" ? 3.4 : 0.9;
     const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
     const startPoint = CONTACT.clone();
@@ -693,7 +722,6 @@ export class Director {
     let landed = false;
 
     // When the crowd reacts, and how hard.
-    const firstRun = tracks.find((r) => r.scored);
     const reaction: { at: number; sound: SoundName; intensity: number } | null =
       result.kind === "home_run"
         ? { at: ballDuration * 0.8, sound: "bigCheer", intensity: 1 }
@@ -717,13 +745,20 @@ export class Director {
       },
       update: (t, dt) => {
         if (reaction) {
-          cue.at("reaction", t, reaction.at, () =>
-            this.onSound?.(reaction.sound, reaction.intensity),
-          );
+          cue.at("reaction", t, reaction.at, () => {
+            this.onSound?.(reaction.sound, reaction.intensity);
+            // A home run gets its show started while the ball is still up.
+            if (result.kind === "home_run") this.launchFireworks(5);
+          });
         }
-        // A run crossing the plate gets its own lift from the crowd.
-        if (firstRun && result.kind !== "home_run") {
-          cue.at("run", t, firstRun.end, () => this.onSound?.("cheer", 0.75));
+        // Every run that crosses the plate brings out the confetti.
+        for (const track of tracks) {
+          if (!track.scored) continue;
+          cue.at(`score:${track.actorKey}`, t, track.end, () => {
+            this.onSound?.("cheer", 0.8);
+            this.throwConfetti(result.kind === "home_run" ? 200 : 140);
+            this.launchFireworks(result.kind === "home_run" ? 7 : 3);
+          });
         }
 
         // --- Ball ---
@@ -775,7 +810,7 @@ export class Director {
             fielder.facing = yawToward(fielder.position, target.distanceTo(fielder.position) > 1 ? target : fp(0, 0));
             if (t < ballDuration) {
               fielder.pose = "run";
-              fielder.poseT = (fielder.poseT + dt * 2.4) % 1;
+              fielder.poseT = (fielder.poseT + dt * 1.6) % 1;
             } else if (t < throwStart) {
               fielder.pose = "catch";
               fielder.poseT = clamp01((t - ballDuration) / 0.25);
@@ -803,7 +838,7 @@ export class Director {
           actor.visible = true;
           if (u < 1) {
             actor.pose = "run";
-            actor.poseT = (actor.poseT + dt * 3.4) % 1;
+            actor.poseT = (actor.poseT + dt * 1.9) % 1;
           } else {
             actor.pose = track.isOut ? "dejected" : track.scored ? "celebrate" : "ready";
             if (track.isOut) actor.visible = t < track.end + 0.6;
@@ -915,7 +950,7 @@ export class Director {
 
   private compileAction(event: NormalizedEvent & { type: "action" }): Anim {
     const isSteal = /steal/i.test(event.eventType) || /steals/i.test(event.description);
-    const duration = isSteal ? 1.6 : 0.9;
+    const duration = isSteal ? 2.6 : 0.9;
     let track: RunnerTrack | null = null;
 
     if (isSteal) {
@@ -934,7 +969,7 @@ export class Director {
           from: target[1],
           to: target[1] + 1,
           start: 0,
-          end: 1.25,
+          end: 2.1,
           isOut: false,
           scored: false,
         };
@@ -957,7 +992,7 @@ export class Director {
         const point = basePathPoint(track.from + (track.to - track.from) * easeInOut(u));
         actor.position.set(point.x, 0, point.z);
         actor.pose = u < 1 ? "run" : "ready";
-        actor.poseT = (actor.poseT + dt * 3.4) % 1;
+        actor.poseT = (actor.poseT + dt * 1.9) % 1;
       },
     };
   }
@@ -982,8 +1017,8 @@ export class Director {
     switch (this.cameraMode) {
       case "wide":
         return {
-          position: fp(96, -196, 156),
-          target: fp(0, 172, 0),
+          position: fp(64, -142, 108),
+          target: fp(0, 132, 6),
           lerp: 1.1,
         };
       case "ball": {
@@ -995,7 +1030,7 @@ export class Director {
         const follow = this.cameraFollow;
         const target = fp(0, 140, 6).lerp(ball, follow);
         return {
-          position: fp(ball.x * follow * 0.22, -120, 84),
+          position: fp(ball.x * follow * 0.22, -104, 74),
           target,
           lerp: 3.0,
         };
@@ -1004,8 +1039,8 @@ export class Director {
         return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
       default:
         return {
-          position: fp(0, -116, 78),
-          target: fp(0, 138, 2),
+          position: fp(0, -64, 50),
+          target: fp(0, 96, 4),
           lerp: 1.6,
         };
     }

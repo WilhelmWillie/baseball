@@ -10,6 +10,7 @@ import { Park } from "./Park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
 import { Player } from "./Player";
+import { Effects } from "./Effects";
 
 /** Drives the animation clock and promotes feed state once the queue drains. */
 function Engine() {
@@ -70,6 +71,8 @@ function Actors({ director }: { director: Director }) {
             key={actor.key}
             actor={actor}
             uniform={team.uniform}
+            // The home club are aliens, the visitors are robots.
+            species={actor.side === "home" ? "alien" : "robot"}
             director={director}
             showLabel={highlight}
             accent={team.palette.primary}
@@ -132,6 +135,7 @@ export function Scene({ onRenderer }: SceneProps) {
       <Park />
       <Actors director={director} />
       <Ball director={director} />
+      <Effects fx={director.fx} />
 
       <Engine />
       <CameraRig director={director} />

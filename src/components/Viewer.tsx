@@ -68,8 +68,6 @@ export function Viewer({
   const history = useGameStore((s) => s.history);
   const connection = useGameStore((s) => s.connection);
   const error = useGameStore((s) => s.error);
-  const cameraFree = useGameStore((s) => s.cameraFree);
-  const setCameraFree = useGameStore((s) => s.setCameraFree);
 
   const [soundOn, setSoundOn] = useState(true);
   const [flash, setFlash] = useState<string | null>(null);
@@ -153,13 +151,6 @@ export function Viewer({
         </div>
         <div className="flex gap-2">
           <ControlButton
-            onClick={() => setCameraFree(!cameraFree)}
-            active={cameraFree}
-            title="Drag to orbit the park"
-          >
-            {cameraFree ? "FREE CAM" : "AUTO CAM"}
-          </ControlButton>
-          <ControlButton
             onClick={() => {
               const next = !soundOn;
               setSoundOn(next);
@@ -235,7 +226,6 @@ export function Viewer({
       {/* Bottom-right: status */}
       <div className="absolute bottom-4 right-4 z-10 max-w-[46vw] text-right font-mono text-[10px] leading-relaxed tracking-widest text-white/45">
         {snapshot ? `${snapshot.venue.toUpperCase()} · ${snapshot.status.detailed.toUpperCase()}` : ""}
-        {cameraFree && <div className="text-white/60">DRAG TO ORBIT · SCROLL TO ZOOM</div>}
       </div>
 
       {snapshot?.status.isFinal && (

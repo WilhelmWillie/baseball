@@ -18,6 +18,7 @@ export type SoundName =
   | "strikeout"
   | "launch"
   | "firework"
+  | "beam"
   | "organ";
 
 export interface SoundOptions {
@@ -187,6 +188,9 @@ class Sfx {
       case "firework":
         this.boom(intensity);
         break;
+      case "beam":
+        this.beam();
+        break;
       case "organ":
         this.organ();
         break;
@@ -316,6 +320,47 @@ class Sfx {
     osc.connect(amp).connect(master);
     osc.start(now);
     osc.stop(now + 1.3);
+  }
+
+  /**
+   * A transporter: two detuned oscillators sweeping up together, with a thin
+   * band of noise over the top. Rising pitch is what makes something read as
+   * dematerialising rather than exploding.
+   */
+  private beam() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    const now = ctx.currentTime;
+
+    for (const [detune, gain] of [
+      [0, 0.05],
+      [7, 0.035],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.detune.setValueAtTime(detune, now);
+      osc.frequency.setValueAtTime(240, now);
+      osc.frequency.exponentialRampToValueAtTime(2400, now + 0.5);
+
+      const amp = ctx.createGain();
+      amp.gain.setValueAtTime(0.0001, now);
+      amp.gain.exponentialRampToValueAtTime(gain, now + 0.06);
+      amp.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
+
+      osc.connect(amp).connect(master);
+      osc.start(now);
+      osc.stop(now + 0.65);
+    }
+
+    this.burst({
+      type: "bandpass",
+      freq: 2600,
+      q: 2.4,
+      attack: 0.02,
+      decay: 0.5,
+      gain: 0.045,
+    });
   }
 
   /** The burst: a low thump, a bright crack, then crackling embers. */

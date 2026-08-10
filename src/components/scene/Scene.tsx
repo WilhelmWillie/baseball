@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Sky } from "@react-three/drei";
+import { Sky } from "@react-three/drei";
 import { Vector3, type WebGLRenderer } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
@@ -14,6 +14,7 @@ import { Player } from "./Player";
 import { Effects } from "./Effects";
 import { ContactShadows, GroundOcclusion } from "./Shadows";
 import { Weather } from "./Weather";
+import { TowerLights } from "./TowerLights";
 
 /** Drives the animation clock and promotes feed state once the queue drains. */
 function Engine() {
@@ -38,7 +39,6 @@ function CameraRig({ director }: { director: Director }) {
   const lastCut = useRef(director.cameraCut);
 
   useFrame((state, delta) => {
-    if (director.isFreeCamera()) return;
     const desired = director.desiredCamera();
     const cut = director.cameraCut !== lastCut.current;
     if (cut) lastCut.current = director.cameraCut;
@@ -122,7 +122,6 @@ export interface SceneProps {
 
 export function Scene({ onRenderer }: SceneProps) {
   const director = useGameStore((s) => s.director);
-  const cameraFree = useGameStore((s) => s.cameraFree);
   const conditions = useGameStore((s) => s.snapshot?.conditions) ?? DEFAULT_CONDITIONS;
 
   // Recomputed only when the conditions object changes, which is once a poll.
@@ -162,7 +161,7 @@ export function Scene({ onRenderer }: SceneProps) {
         position={look.sun}
         intensity={look.sunIntensity}
         color={look.sunColor}
-        castShadow
+        castShadow={!look.towerRig}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-near={100}
@@ -180,6 +179,8 @@ export function Scene({ onRenderer }: SceneProps) {
         color={look.fillColor}
       />
 
+      {look.towerRig && <TowerLights intensity={0.55 + look.night * 0.65} />}
+
       <Field />
       <GroundOcclusion />
       <Park lampsLit={look.lampsLit} />
@@ -191,15 +192,6 @@ export function Scene({ onRenderer }: SceneProps) {
 
       <Engine />
       <CameraRig director={director} />
-      {cameraFree && (
-        <OrbitControls
-          makeDefault
-          target={[0, 0, -70]}
-          maxPolarAngle={Math.PI / 2.06}
-          minDistance={40}
-          maxDistance={800}
-        />
-      )}
       {onRenderer && <RendererBridge onReady={onRenderer} />}
     </Canvas>
   );

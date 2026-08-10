@@ -120,6 +120,58 @@ export class Fx {
   }
 
   /**
+   * A retired player beaming out. Motes rush up a column and a ring of them
+   * kicks outward at the ground, so the effect reads from any camera angle.
+   * These are sparks rather than dust: they should glow, not settle.
+   */
+  beam(origin: Vector3, color: string) {
+    const tint = brighten(color);
+    for (let i = 0; i < 90; i++) {
+      if (this.sparks.length >= MAX_SPARKS) break;
+      const angle = Math.random() * Math.PI * 2;
+      const radius = randomIn(0.5, 4.2);
+      this.sparks.push({
+        pos: origin
+          .clone()
+          .add(new Vector3(Math.cos(angle) * radius, randomIn(0, 15), Math.sin(angle) * radius)),
+        // Straight up the column, fast, with almost no spread.
+        vel: new Vector3(Math.cos(angle) * 1.4, randomIn(16, 30), Math.sin(angle) * 1.4),
+        color: tint.clone().offsetHSL(randomIn(-0.05, 0.05), 0, randomIn(-0.1, 0.15)),
+        life: randomIn(0.45, 0.85),
+        maxLife: 0.85,
+        // Small and many: a shimmer, not a handful of confetti.
+        size: randomIn(0.26, 0.7),
+        spin: new Vector3(),
+        rot: new Vector3(),
+        // They rise rather than fall - this is not gravity, it is a transporter.
+        gravity: 7,
+        drag: 1.1,
+        flutter: 0,
+        phase: 0,
+      });
+    }
+    // The ring at the feet, thrown outward and low.
+    for (let i = 0; i < 34; i++) {
+      if (this.sparks.length >= MAX_SPARKS) break;
+      const angle = (i / 34) * Math.PI * 2;
+      this.sparks.push({
+        pos: origin.clone().add(new Vector3(0, 0.6, 0)),
+        vel: new Vector3(Math.cos(angle) * 22, randomIn(2, 7), Math.sin(angle) * 22),
+        color: tint.clone(),
+        life: randomIn(0.3, 0.55),
+        maxLife: 0.55,
+        size: randomIn(0.3, 0.66),
+        spin: new Vector3(),
+        rot: new Vector3(),
+        gravity: -6,
+        drag: 3.4,
+        flutter: 0,
+        phase: 0,
+      });
+    }
+  }
+
+  /**
    * Dirt thrown along a direction: a ball skipping off the infield, or spikes
    * digging in. Heavier and faster than a puff, and it drops back down.
    */

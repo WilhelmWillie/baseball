@@ -117,6 +117,12 @@ export interface SkyLook {
   rayleigh: number;
   /** Tower lights burning. */
   lampsLit: boolean;
+  /**
+   * Light the field from the towers themselves rather than from a single sun.
+   * Four crossing beams is what a night game actually looks like - every player
+   * throws two or three faint shadows in different directions.
+   */
+  towerRig: boolean;
   /** 0 in full sun, 1 after dark. */
   night: number;
   /**
@@ -165,7 +171,7 @@ export function skyLook(conditions: Conditions): SkyLook {
       sun: [0, SUN_RADIUS, 90],
       skySun: [0, -SUN_RADIUS, 90],
       mie: 0.02,
-      sunIntensity: 0.85,
+      sunIntensity: 0.4,
       sunColor: "#fff3dd",
       fillIntensity: 0.4,
       fillColor: "#e8f0ff",
@@ -176,6 +182,7 @@ export function skyLook(conditions: Conditions): SkyLook {
       turbidity: 12,
       rayleigh: 0.4,
       lampsLit: true,
+      towerRig: true,
       night: 1,
       background: "#161a20",
       fog: null,
@@ -204,9 +211,11 @@ export function skyLook(conditions: Conditions): SkyLook {
       sun: [40, SUN_RADIUS, 120],
       skySun: sun,
       mie: 0.004,
-      sunIntensity: 0.9,
+      // Just enough from above that nothing is pitch black; the four towers
+      // do the real work.
+      sunIntensity: 0.3,
       sunColor: "#ffeec7",
-      fillIntensity: 0.3,
+      fillIntensity: 0.18,
       fillColor: "#a9c0e8",
       ambient: 0.3,
       hemiSky: "#28375c",
@@ -215,6 +224,7 @@ export function skyLook(conditions: Conditions): SkyLook {
       turbidity: 6,
       rayleigh: 0.6,
       lampsLit: true,
+      towerRig: true,
       night: 1,
       background: "#0a1024",
       // Enough haze to soften the skyline without touching the infield.
@@ -244,6 +254,8 @@ export function skyLook(conditions: Conditions): SkyLook {
     // More scattering as the sun drops, which is what reddens the horizon.
     rayleigh: mix(1.1, 0.35, overcast) * mix(2.9, 1, golden),
     lampsLit: daylight < 0.72,
+    // Dusk runs both: the sun is still up, but the towers are already on.
+    towerRig: daylight < 0.45,
     night,
     background: null,
     fog:

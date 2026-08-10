@@ -24,8 +24,10 @@ directly.
 ## What's here
 
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games
-first. If nothing is in progress it says so plainly and offers the simulated
-game instead.
+first. Only games actually in progress open: a game before first pitch has no
+lineup in the feed and one that has finished has nothing left to animate, so
+those cards are shown but not clickable. If nothing is in progress it says so
+plainly and offers the simulated game instead.
 
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
 their positions, the batter, on-deck hitter and baserunners. The home club take
@@ -47,7 +49,8 @@ prints the conditions it is lighting from.
 **Celebrations** — confetti erupts over home plate on every run scored, with
 fireworks over the outfield. Home runs get a bigger volley. Dirt sprays off the
 first hop, dust hangs where a runner slides in, and the mound puffs as the
-pitcher lands.
+pitcher lands. Anyone retired beams out: a column of motes in their club's
+colour, and the figure shrinks up into it.
 
 **Final screen** — when the game goes final, a card shows the result, the
 inning-by-inning line score, and both clubs' box scores (batting and pitching,
@@ -95,6 +98,12 @@ Two things update earlier on purpose, because they should track what's on
 screen: the count advances as each pitch animation resolves, and outs/score
 advance when a play's animation finishes.
 
+The call itself waits too. Naming a play the instant it starts gives away every
+outcome worth watching — a double play, a triple, a ball off the wall — so the
+callout is cued to the moment the diamond has settled it: when the last runner
+stops, or when the throw arrives. A home run is the one exception, since it is
+decided the moment the ball clears the wall.
+
 If the app falls behind (hidden tab, feed hiccup), the queue guard drops
 pitch-by-pitch detail and keeps the outcomes, then re-syncs to the feed.
 
@@ -128,7 +137,12 @@ down both foul lines behind a low padded wall, the crowd, light towers and a
 city skyline on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
-the tower lights can burn unlit by the sun after dark. Foul ground
+the tower lights can burn unlit by the sun after dark. Two rules keep a bowl of
+several thousand boxes from tearing itself apart: how many spectators a row
+holds is derived from the arc that row actually spans, rather than being a fixed
+count crammed into whatever width is available; and row blocks are cut deeper
+than the gap between rows, because boxes that interpenetrate look solid while
+boxes whose faces land on exactly the same plane flicker. Foul ground
 tapers sharply past the bases, so the seats come right up against the lines
 rather than leaving acres of empty dirt.
 
@@ -144,7 +158,9 @@ Phong shading so the directional lights give them a specular highlight.
 Nobody stands still: between pitches everyone breathes, shifts their weight and
 turns their head, on detuned waves seeded per player so no two are in step. The
 catcher gets his own squat pose with the legs folded under him, facing the
-mound. Gloves are built rather than approximated — fanned finger stalls, a laced
+mound. Only hitters and runners wear anything on their heads — a cap perched on
+a tapered alien cranium never sat right. Gloves are built rather than
+approximated — fanned finger stalls, a laced
 web, a padded heel — and they differ by position: a round mitt for the catcher,
 presented down the arm at the pitcher, and a longer one at first.
 
@@ -171,6 +187,13 @@ implements only describes a daylit atmosphere, and pushed past sunset it returns
 a murky grey-brown rather than a night sky, so after dark the scene paints a flat
 background and switches to a warm, near-shadowless tower rig.
 
+After dark the field is lit from the four towers you can actually see rather
+than from one light overhead: `TowerLights.tsx` hangs a spotlight on each,
+aimed across the field rather than at the middle so the beams cross and cover
+it evenly. Two of the four cast real shadows, which is what gives every player
+the two or three faint shadows fanning out in different directions that say
+"night game" more than darkness does.
+
 Wind is parsed from MLB's phrasing ("8 mph, Out To CF") into a world-space
 velocity, and everything light enough — confetti, dust, rain — drifts downwind.
 
@@ -190,7 +213,7 @@ shadow-casting sun.
 
 ### Cameras
 
-Broadcasts do not glide between angles - they cut - and they change lenses to
+Broadcasts do not glide between angles — they cut - and they change lenses to
 say something about the moment. The director owns a shot list: **broadcast**
 behind the plate, **slot** over the catcher on any two-strike pitch, **mound** on
 a long lens every fourth pitch (cut back at release so the pitch stays
@@ -198,8 +221,8 @@ trackable), **ball** tracking a batted ball, **low** at field level down the
 third-base line off a home run or a triple, **wide** as the ball leaves the park,
 and **follow** travelling with the runner on the trot. Each shot holds for a
 minimum time so nothing strobes when several things happen at once, and hard
-contact knocks the lens for about half a second. FREE CAM hands an orbit camera
-to the viewer.
+contact knocks the lens for about half a second. There is no manual camera: the
+shot list covers the game better than dragging an orbit control does.
 
 Name plates scale down as the camera closes in - sprites otherwise grow with
 proximity, and on a tight shot a plate would fill the frame.

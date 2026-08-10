@@ -27,14 +27,12 @@ interface GameStore {
   connection: ConnectionState;
   error: string | null;
   lastUpdate: number;
-  cameraFree: boolean;
 
   reset(): void;
   ingest(feed: MlbLiveFeed): void;
   failed(message: string): void;
   /** Promote pending state once the animation queue has drained. */
   settle(): void;
-  setCameraFree(free: boolean): void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -47,7 +45,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   connection: "connecting",
   error: null,
   lastUpdate: 0,
-  cameraFree: false,
 
   reset() {
     const director = new Director();
@@ -102,8 +99,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       connection: "connecting",
       error: null,
       lastUpdate: 0,
-      cameraFree: false,
-    });
+        });
   },
 
   ingest(feed) {
@@ -171,10 +167,5 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   failed(message) {
     set({ connection: "error", error: message });
-  },
-
-  setCameraFree(free) {
-    get().director.setFreeCamera(free);
-    set({ cameraFree: free });
   },
 }));

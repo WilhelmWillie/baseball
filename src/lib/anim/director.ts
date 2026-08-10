@@ -56,6 +56,8 @@ export interface Actor {
   /** 0..1 through the current pose, for limb animation. */
   poseT: number;
   visible: boolean;
+  /** 0 = solid, 1 = beamed out. Retired players dematerialise. */
+  dissolve: number;
   label: string | null;
 }
 
@@ -77,7 +79,6 @@ export type CameraMode =
   | "wide"
   | "ball"
   | "base"
-  | "free"
   /** Low and tight down the third-base line, looking out with the ball. */
   | "low"
   /** Long lens from behind the plate, framed on the pitcher. */
@@ -301,7 +302,6 @@ export class Director {
   private currentTime = 0;
   private currentStart = 0;
   private idleTime = 0;
-  private freeCamera = false;
   private shotStart = 0;
   /** Counts pitches, so the pre-pitch shot varies without being random. */
   private pitchCount = 0;
@@ -357,7 +357,6 @@ export class Director {
    * angles when several things happen at once.
    */
   private setShot(mode: CameraMode, opts: { cut?: boolean; force?: boolean; follow?: string } = {}) {
-    if (this.freeCamera) return;
     if (mode === this.cameraMode) {
       if (opts.follow) this.cameraFollowKey = opts.follow;
       return;
@@ -375,12 +374,15 @@ export class Director {
     this.cameraShake = Math.max(this.cameraShake, amount);
   }
 
-  setFreeCamera(free: boolean) {
-    this.freeCamera = free;
-  }
-
-  isFreeCamera() {
-    return this.freeCamera;
+  /**
+   * Retire a player with a transporter beam in their own club's colour. The
+   * `dissolve` ramp on the actor and the particles are separate: the effect
+   * fires once, the ramp runs every frame.
+   */
+  private beamOut(actor: Actor) {
+    const color = this.snapshot?.teams[actor.side]?.palette.primary ?? "#8ce0ff";
+    this.fx.beam(actor.position.clone(), color);
+    this.onSound?.("beam");
   }
 
   /** Replace the world with authoritative state. Only called when idle. */
@@ -471,6 +473,7 @@ export class Director {
       existing.pose = config.pose;
       existing.poseT = 0;
       existing.visible = true;
+      existing.dissolve = 0;
       existing.role = config.role;
       existing.positionKey = config.positionKey;
       return;
@@ -490,6 +493,7 @@ export class Director {
       pose: config.pose,
       poseT: 0,
       visible: true,
+      dissolve: 0,
       label: null,
     });
     this.rosterVersion++;
@@ -729,6 +733,13 @@ export class Director {
       duration,
       onStart: () => {
         this.pitchCount += 1;
+        // Whoever is hitting is solid again: the previous batter may have been
+        // beamed out with the queue still backed up behind them.
+        const hitter = this.batter();
+        if (hitter) {
+          hitter.dissolve = 0;
+          hitter.visible = true;
+        }
         // Two strikes is worth a tight look at the hitter; every fourth pitch
         // otherwise gets the long lens on the pitcher, cut back at release.
         if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
@@ -850,12 +861,28 @@ export class Director {
       ? basePathPoint(outTrack.to).setY(2.5)
       : BASE_POSITIONS.first.clone().setY(2.5);
 
-    const holdAfter = result.kind === "home_run" ? 3.4 : 0.9;
+    // Long enough after the call for the beam-out to finish playing.
+    const holdAfter = result.kind === "home_run" ? 3.4 : 1.5;
     const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
     const startPoint = CONTACT.clone();
     const cue = new Cue();
     let landed = false;
+
+    /**
+     * When the call goes up. Naming the play the instant it starts gives away
+     * every outcome worth waiting for - a double play, a triple, a ball off
+     * the wall - so the callout waits until the diamond has settled it. A home
+     * run is the exception: it is decided the moment the ball clears.
+     */
+    const revealAt = ball
+      ? ball.isHomeRun
+        ? ballDuration + 0.3
+        : Math.max(runnerEnd, throwEnd)
+      : 0.45;
+
+    /** A strikeout is an out with nobody running: the batter simply leaves. */
+    const retiresBatter = result.kind === "strikeout";
 
     // The crowd is the home crowd: it cheers what is good for the home club and
     // groans at everything else, whichever side made the play.
@@ -880,9 +907,19 @@ export class Director {
           this.cameraFollow = result.kind === "home_run" ? 0.6 : 0.32;
           this.setShot("ball");
         }
-        this.announce(result);
       },
       update: (t, dt) => {
+        cue.at("reveal", t, revealAt, () => this.announce(result));
+        // A strikeout retires the batter without anybody running anywhere, so
+        // it gets the same send-off a runner thrown out on the bases does.
+        if (retiresBatter) {
+          const batter = this.batter();
+          if (batter) {
+            cue.at("beam:batter", t, revealAt + 0.3, () => this.beamOut(batter));
+            batter.dissolve = clamp01((t - revealAt - 0.3) / 0.5);
+            batter.visible = t < revealAt + 0.95;
+          }
+        }
         if (reaction) {
           cue.at("reaction", t, reaction.at, () => {
             this.onSound?.(reaction.sound, reaction.intensity);
@@ -997,7 +1034,12 @@ export class Director {
               }),
             );
             actor.pose = track.isOut ? "dejected" : track.scored ? "celebrate" : "ready";
-            if (track.isOut) actor.visible = t < track.end + 0.6;
+            if (track.isOut) {
+              // Beamed off the field rather than simply switched off.
+              cue.at(`beam:${track.actorKey}`, t, track.end + 0.3, () => this.beamOut(actor));
+              actor.dissolve = clamp01((t - track.end - 0.3) / 0.5);
+              actor.visible = t < track.end + 0.95;
+            }
             if (track.scored) actor.visible = t < track.end + 0.9;
           }
         }
@@ -1117,6 +1159,7 @@ export class Director {
   private compileAction(event: NormalizedEvent & { type: "action" }): Anim {
     const isSteal = /steal/i.test(event.eventType) || /steals/i.test(event.description);
     const duration = isSteal ? 2.6 : 0.9;
+    const cue = new Cue();
     let track: RunnerTrack | null = null;
 
     if (isSteal) {
@@ -1145,12 +1188,13 @@ export class Director {
     return {
       label: `action:${event.id}`,
       duration,
-      onStart: () => {
-        if (event.description) {
-          this.setCallout(isSteal ? "STOLEN BASE" : "PLAY", "good", event.description);
-        }
-      },
       update: (t, dt) => {
+        // Same rule as a batted ball: let the runner get there first.
+        cue.at("reveal", t, duration * 0.8, () => {
+          if (event.description) {
+            this.setCallout(isSteal ? "STOLEN BASE" : "PLAY", "good", event.description);
+          }
+        });
         if (!track) return;
         const actor = this.actors.get(track.actorKey);
         if (!actor) return;

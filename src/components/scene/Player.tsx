@@ -144,7 +144,6 @@ const GEO = {
   foot: roundedBox(0.78, 0.32, 1.3, 0.12),
   crest: roundedBox(0.16, 0.36, 0.92, 0.07),
   brim: roundedBox(1.12, 0.13, 0.66, 0.06),
-  capTop: roundedBox(1.34, 0.3, 1.2, 0.12),
   earFlap: roundedBox(0.16, 0.46, 0.54, 0.07),
   vent: roundedBox(0.62, 0.08, 0.1, 0.03),
   finger: roundedBox(0.14, 0.44, 0.14, 0.06),
@@ -376,10 +375,12 @@ function poseValues(
     case "ready":
       return {
         ...REST,
-        crouch: 0.34 + life.breath * 0.035,
-        lean: 0.2,
-        kneeL: 0.62,
-        kneeR: 0.62,
+        // Was a deep half-squat that read as kneeling. A fielder between
+        // pitches is upright with the knees barely soft.
+        crouch: 0.13 + life.breath * 0.035,
+        lean: 0.1,
+        kneeL: 0.24,
+        kneeR: 0.24,
         armL: -0.5,
         armR: -0.5,
         elbowL: -0.85 + life.breath * 0.05,
@@ -526,7 +527,7 @@ function poseValues(
     default:
       return {
         ...REST,
-        crouch: 0.05,
+        crouch: 0.02,
         headYaw: life.headYaw,
         headTilt: life.headTilt,
         sway: life.sway,
@@ -805,13 +806,12 @@ export function Player({
         danglers.push(antenna);
       }
 
+      // Only hitters and runners wear anything on their heads: a cap perched
+      // on a tapered alien cranium never sat right.
       if (wearsHelmet) {
         add(head, GEO.dome, materials.helmet, [0, 0.86, 0], [1.66, 1.5, 1.52], undefined, true);
         add(head, GEO.brim, materials.helmet, [0, 0.88, 0.7], [1.1, 1, 1]);
         add(head, GEO.earFlap, materials.helmet, [0.66, 0.58, 0.04]);
-      } else {
-        add(head, GEO.dome, materials.helmet, [0, 1.24, 0], [1.24, 0.9, 1.14]);
-        add(head, GEO.brim, materials.helmet, [0, 1.26, 0.56], [0.86, 1, 0.86]);
       }
     } else {
       add(head, GEO.robotSkull, materials.skin, [0, 0.66, 0], [1, 1, 1], undefined, true);
@@ -839,9 +839,6 @@ export function Player({
         add(head, GEO.dome, materials.helmet, [0, 0.82, 0], [1.62, 1.24, 1.5], undefined, true);
         add(head, GEO.brim, materials.helmet, [0, 0.86, 0.68], [1.16, 1, 1]);
         add(head, GEO.earFlap, materials.helmet, [0.68, 0.56, 0.02]);
-      } else {
-        add(head, GEO.capTop, materials.helmet, [0, 1.3, 0]);
-        add(head, GEO.brim, materials.helmet, [0, 1.24, 0.58]);
       }
     }
 
@@ -913,6 +910,17 @@ export function Player({
     if (!live.visible) return;
 
     group.position.copy(live.position);
+
+    // Beamed out: drawn up into the column and shrinking as they go. A
+    // non-uniform stretch was the first attempt and it pulled the figure apart.
+    const gone = live.dissolve ?? 0;
+    if (gone > 0) {
+      group.position.y += gone * gone * 11;
+      const shrink = 1 - gone * 0.92;
+      group.scale.set(shrink, 1 - gone * 0.6, shrink);
+    } else if (group.scale.x !== 1) {
+      group.scale.set(1, 1, 1);
+    }
     // Ease the yaw so runners do not snap around corners.
     const current = group.rotation.y;
     let diff = live.facing - current;
@@ -945,6 +953,8 @@ export function Player({
     parts.elbowR.rotation.x = v.elbowR;
 
     if (parts.bat) {
+      // Dropped at the plate the instant they take off for first.
+      parts.bat.visible = live.role === "batter" && live.pose !== "run";
       // The bat starts cocked and levels off as the swing fires, so it travels
       // through the zone instead of staying welded to the shoulder.
       BAT_AIM.copy(BAT_REST_AXIS).lerp(BAT_SWING_AXIS, v.batSwing).normalize();

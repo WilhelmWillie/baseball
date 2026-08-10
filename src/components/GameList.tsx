@@ -48,12 +48,19 @@ function TeamLine({
 function GameCard({ game }: { game: GameSummary }) {
   const isLive = game.state === "live";
   const href = game.isDemo ? "/watch/demo" : `/watch/${game.gamePk}`;
+  // There is nothing to watch in a game that has not started or has finished:
+  // the feed carries no lineup before first pitch and nothing moves after the
+  // last out, so those cards do not open.
+  const watchable = isLive || game.isDemo;
 
-  return (
-    <Link
-      href={href}
-      className="group block border-2 border-black/60 bg-slate-950/70 p-4 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-[5px_5px_0_rgba(0,0,0,0.5)]"
-    >
+  const shell =
+    "group block border-2 border-black/60 bg-slate-950/70 p-4 transition-all";
+  const interactive = watchable
+    ? "hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-[5px_5px_0_rgba(0,0,0,0.5)]"
+    : "cursor-not-allowed opacity-55";
+
+  const body = (
+    <>
       <div className="mb-3 flex items-center justify-between font-mono text-[10px] tracking-widest">
         <span
           className={
@@ -79,10 +86,34 @@ function GameCard({ game }: { game: GameSummary }) {
         <TeamLine team={game.home} score={game.home.score} dim={!isLive && game.state !== "final"} />
       </div>
 
-      <div className="mt-3 flex items-center justify-between font-mono text-[10px] tracking-widest text-white/30 group-hover:text-amber-300">
+      <div
+        className={`mt-3 flex items-center justify-between font-mono text-[10px] tracking-widest text-white/30 ${
+          watchable ? "group-hover:text-amber-300" : ""
+        }`}
+      >
         <span>{game.isDemo ? "SIMULATED GAME" : game.statusText.toUpperCase()}</span>
-        <span>WATCH IN 3D →</span>
+        <span>
+          {watchable
+            ? "WATCH IN 3D →"
+            : game.state === "final"
+              ? "GAME OVER"
+              : "NOT STARTED"}
+        </span>
       </div>
+    </>
+  );
+
+  if (!watchable) {
+    return (
+      <div className={`${shell} ${interactive}`} aria-disabled>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Link href={href} className={`${shell} ${interactive}`}>
+      {body}
     </Link>
   );
 }

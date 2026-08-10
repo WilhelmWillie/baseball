@@ -80,6 +80,28 @@ function shade(hex: string, amount: number): string {
  * negating theta puts the block's width along the arc and its depth along the
  * radius.
  */
+/**
+ * Spectators, and how much elbow room they get. `CROWD_PITCH` is wider than
+ * `CROWD_SIZE`, so seats in the same row cannot touch; capping the count at
+ * what the slice's arc will hold stops them crossing into the next slice.
+ */
+const CROWD_SIZE = 1.35;
+const CROWD_PITCH = 1.72;
+
+/**
+ * Row blocks are cut deeper than the gap between rows on purpose. Boxes that
+ * interpenetrate look solid; boxes whose faces land on exactly the same plane
+ * flicker, and a bowl of 3,000 of them flickers everywhere at once.
+ */
+const ROW_SPACING = 5.2;
+const ROW_DEPTH = 5.6;
+const FOUL_ROW_SPACING = 3.4;
+const FOUL_ROW_DEPTH = 3.8;
+
+function seatsAcross(radius: number, slices: number, pitch: number): number {
+  return Math.floor(((Math.PI * 2 * radius) / slices) / pitch);
+}
+
 function yawAt(theta: number): number {
   return -theta;
 }
@@ -138,7 +160,7 @@ function stands(blocks: Block[]) {
     const tangentZ = Math.sin(theta);
 
     for (let row = 0; row < rows; row++) {
-      const r = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + row * 5.2;
+      const r = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + row * ROW_SPACING;
       const height = 3.4 + row * 2.05;
       const width = ((Math.PI * 2 * r) / slices) * 1.08;
       const x = Math.sin(theta) * r;
@@ -146,26 +168,29 @@ function stands(blocks: Block[]) {
 
       blocks.push({
         p: [x, height / 2, z],
-        s: [width, height, 5.2],
+        s: [width, height, ROW_DEPTH],
         c: shade(row % 2 === 0 ? COLORS.concrete : COLORS.concreteDark, (noise(x, z, row) - 0.5) * 0.05),
         r: yaw,
       });
       blocks.push({
-        p: [x, height + 0.35, z],
-        s: [width, 0.7, 5.2],
+        p: [x, height + 0.3, z],
+        s: [width, 0.7, ROW_DEPTH],
         c: row % 3 === 0 ? COLORS.seatAlt : COLORS.seat,
         r: yaw,
       });
 
+      // Spectators sit in discrete seats. How many fit is a function of the
+      // arc this slice actually spans - a fixed count crammed into a narrow
+      // slice near the plate is what used to make the crowd intersect itself.
       const n = noise(x, z, row);
-      if (n > 0.3) {
-        const seats = 2 + Math.floor(n * 3);
+      const seats = Math.min(seatsAcross(r, slices, CROWD_PITCH), 1 + Math.floor(n * 3));
+      if (n > 0.3 && seats > 0) {
         for (let s = 0; s < seats; s++) {
-          const offset = (s / seats - 0.5) * width * 0.85;
+          const offset = (s - (seats - 1) / 2) * CROWD_PITCH;
           const c = CROWD_COLORS[Math.floor(noise(x + s * 3.1, z, row + s) * CROWD_COLORS.length)];
           blocks.push({
             p: [x + tangentX * offset, height + 1.5, z + tangentZ * offset],
-            s: [1.35, 1.8, 1.35],
+            s: [CROWD_SIZE, 1.8, CROWD_SIZE],
             c,
             r: yaw,
           });
@@ -174,7 +199,7 @@ function stands(blocks: Block[]) {
     }
 
     // Facade above the top row, to close off the sky line.
-    const rTop = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + rows * 5.2;
+    const rTop = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + rows * ROW_SPACING;
     const widthTop = ((Math.PI * 2 * rTop) / slices) * 1.08;
     blocks.push({
       p: [Math.sin(theta) * rTop, 20, -Math.cos(theta) * rTop],
@@ -217,7 +242,7 @@ function foulLineSeats(blocks: Block[]) {
 
     // Four shallow bleacher rows behind it.
     for (let row = 0; row < 4; row++) {
-      const r = edge + 3 + row * 3.4;
+      const r = edge + 3 + row * FOUL_ROW_SPACING;
       const height = 4.4 + row * 1.7;
       const width = ((Math.PI * 2 * r) / slices) * 1.1;
       const x = Math.sin(theta) * r;
@@ -225,26 +250,26 @@ function foulLineSeats(blocks: Block[]) {
 
       blocks.push({
         p: [x, height / 2, z],
-        s: [width, height, 3.4],
+        s: [width, height, FOUL_ROW_DEPTH],
         c: shade(COLORS.concrete, (noise(x, z, 30 + row) - 0.5) * 0.06),
         r: yaw,
       });
       blocks.push({
-        p: [x, height + 0.3, z],
-        s: [width, 0.6, 3.4],
+        p: [x, height + 0.25, z],
+        s: [width, 0.6, FOUL_ROW_DEPTH],
         c: row % 2 === 0 ? COLORS.seat : COLORS.seatAlt,
         r: yaw,
       });
 
       const n = noise(x, z, 40 + row);
-      if (n > 0.36) {
-        const seats = 2 + Math.floor(n * 2);
+      const seats = Math.min(seatsAcross(r, slices, CROWD_PITCH), 1 + Math.floor(n * 2));
+      if (n > 0.36 && seats > 0) {
         for (let sIdx = 0; sIdx < seats; sIdx++) {
-          const offset = (sIdx / seats - 0.5) * width * 0.85;
+          const offset = (sIdx - (seats - 1) / 2) * CROWD_PITCH;
           const c = CROWD_COLORS[Math.floor(noise(x + sIdx * 3.7, z, row + sIdx) * CROWD_COLORS.length)];
           blocks.push({
             p: [x + tangentX * offset, height + 1.4, z + tangentZ * offset],
-            s: [1.3, 1.7, 1.3],
+            s: [CROWD_SIZE, 1.7, CROWD_SIZE],
             c,
             r: yaw,
           });
@@ -254,9 +279,23 @@ function foulLineSeats(blocks: Block[]) {
   }
 }
 
+/**
+ * Where the light towers stand. Exported so the night lighting rig can hang
+ * real lights on the towers you can actually see, rather than approximating
+ * them from somewhere else.
+ */
+export const TOWER_ANGLES = [-74, -40, 40, 74];
+export const TOWER_LAMP_HEIGHT = 114;
+
+export function towerPosition(deg: number): [number, number, number] {
+  const theta = (deg * Math.PI) / 180;
+  const r = fieldRadius(theta) + 96;
+  return [Math.sin(theta) * r, TOWER_LAMP_HEIGHT, -Math.cos(theta) * r];
+}
+
 function lightTowers(blocks: Block[]) {
   // None near dead center: a tower there sits in the broadcast sight line.
-  for (const deg of [-74, -40, 40, 74]) {
+  for (const deg of TOWER_ANGLES) {
     const theta = (deg * Math.PI) / 180;
     const r = fieldRadius(theta) + 96;
     const x = Math.sin(theta) * r;

@@ -35,7 +35,7 @@ export function History({
 
   return (
     <div
-      className="w-[300px] font-mono"
+      className="w-[212px] font-mono sm:w-[300px]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -50,7 +50,11 @@ export function History({
       >
         <div className="mb-1 flex items-center justify-between text-[9px] tracking-[0.2em] text-white/40">
           <span>{open ? "GAME LOG" : "LAST PLAY"}</span>
-          <span>{pinned ? "CLICK TO CLOSE" : open ? "CLICK TO PIN" : "HOVER FOR LOG"}</span>
+          {/* Hovering is not a thing on a phone, so the hint has to differ. */}
+          <span className="hidden sm:inline">
+            {pinned ? "CLICK TO CLOSE" : open ? "CLICK TO PIN" : "HOVER FOR LOG"}
+          </span>
+          <span className="sm:hidden">{open ? "TAP TO CLOSE" : "TAP FOR LOG"}</span>
         </div>
         {!open && (latest?.description ?? snapshot.lastPlay ?? "—")}
         {open && (

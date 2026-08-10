@@ -284,9 +284,38 @@ grass does not meet the stands at a hard, evenly-lit seam.
 
 ### Pacing
 
-Runners cover a base in 1.9s (2.7s on a home-run trot) — quicker than life, slow
-enough to follow. Real games leave ~20s between pitches, which is plenty of room;
-the simulated game paces itself to match so its animations are not clipped.
+The whole point of the animation is that a viewer can follow what happened, so
+everything runs slower than the physics would give. A fly ball hangs for 3.4s, a
+home run 4.2s; hang time is the part of a batted ball you actually read — where
+it is going, who is chasing it, whether it will drop. Runners cover a base in
+2.6s (3.4s on a home-run trot). A double that is over before you have found the
+ball has not communicated anything.
+
+Real games leave ~20s between pitches, which is plenty of room; the simulated
+game paces itself to match so its animations are not clipped.
+
+### A hit is not an out
+
+Every batted ball used to end with the fielder playing a catch at the landing
+spot, which made a clean single look exactly like a flyout. The ball now knows
+whether it was caught: on a `field_out`, `double_play` or `sac_fly` off a ball in
+the air it finishes at glove height and never touches the grass, and on anything
+else it lands, takes two decaying hops while it rolls out, throws dirt, and is
+run down and gathered before the throw. Runners who are out have their tracks
+pushed past that moment, so a flyout cannot resolve while the ball is still up.
+
+### On a phone
+
+`fov` in three.js is vertical, so a tall narrow viewport sees a much *narrower*
+slice of the world horizontally — on a portrait phone the diamond falls out of
+frame at either side. `Framing` holds the horizontal field of view roughly
+constant instead, widening the vertical one as the aspect narrows. That leaves a
+lot of empty grass above and below, so the camera rig also pulls its framing in
+toward the infield in proportion to how portrait the screen is.
+
+The HUD narrows to 212px, the controls drop to their icons, the weather line and
+the connection badge are dropped, and the log's hint says "tap" rather than
+"hover".
 
 ## Known gaps
 

@@ -38,7 +38,7 @@ function ControlButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`border-2 px-3 py-1.5 font-mono text-[11px] tracking-widest transition-colors ${
+      className={`border-2 px-2.5 py-2 font-mono text-[11px] tracking-widest transition-colors sm:px-3 sm:py-1.5 ${
         active
           ? "border-amber-300 bg-amber-300 text-slate-950"
           : "border-black/60 bg-slate-950/80 text-white/80 hover:border-white/60 hover:text-white"
@@ -119,7 +119,7 @@ export function Viewer({
       <Scene onRenderer={onRenderer} />
 
       {/* Top-left: scoreboard and the play log */}
-      <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
+      <div className="absolute left-2 top-2 z-10 flex flex-col gap-2 sm:left-4 sm:top-4">
         {snapshot ? (
           <>
             <Scorebug snapshot={snapshot} />
@@ -133,19 +133,19 @@ export function Viewer({
       </div>
 
       {/* Top-right: controls */}
-      <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
-        <div className="flex gap-2">
+      <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4 sm:gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           <Link
             href="/"
-            className="border-2 border-black/60 bg-slate-950/80 px-3 py-1.5 font-mono text-[11px] tracking-widest text-white/80 hover:border-white/60 hover:text-white"
+            className="border-2 border-black/60 bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] tracking-widest text-white/80 hover:border-white/60 hover:text-white sm:px-3 sm:py-1.5"
           >
-            ← GAMES
+            ←<span className="hidden sm:inline"> GAMES</span>
           </Link>
           <ControlButton onClick={onSnapshot} title="Save a shareable image">
-            📸 SNAPSHOT
+            📸<span className="hidden sm:inline"> SNAPSHOT</span>
           </ControlButton>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           <ControlButton
             onClick={() => {
               const next = !soundOn;
@@ -156,13 +156,14 @@ export function Viewer({
             active={soundOn}
             title="Bat, mitt and crowd audio"
           >
-            {soundOn ? "🔊 SOUND" : "🔇 MUTED"}
+            {soundOn ? "🔊" : "🔇"}
+            <span className="hidden sm:inline">{soundOn ? " SOUND" : " MUTED"}</span>
           </ControlButton>
           <ControlButton onClick={() => setShowRoster(!showRoster)} active={showRoster}>
             LINEUP
           </ControlButton>
         </div>
-        <div className="flex items-center gap-2 font-mono text-[10px] tracking-widest text-white/50">
+        <div className="hidden items-center gap-2 font-mono text-[10px] tracking-widest text-white/50 sm:flex">
           <span
             className={`h-2 w-2 ${
               connection === "live"
@@ -177,13 +178,13 @@ export function Viewer({
       </div>
 
       {/* Center: play callouts */}
-      <div className="pointer-events-none absolute left-1/2 top-24 z-10 -translate-x-1/2">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-full -translate-x-1/2 -translate-y-1/2 px-3 sm:top-24 sm:w-auto sm:translate-y-0 sm:px-0">
         <Callout />
       </div>
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (
-        <div className="absolute bottom-4 left-4 z-10 max-h-[46vh] w-[300px] overflow-auto border-2 border-black/60 bg-slate-950/85 p-3 font-mono text-[11px] text-white/80">
+        <div className="absolute bottom-2 left-2 z-10 max-h-[42vh] w-[min(300px,calc(100vw-1rem))] overflow-auto border-2 border-black/60 bg-slate-950/85 p-3 font-mono text-[11px] text-white/80 sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
           <div className="mb-2 tracking-widest text-amber-300">
             {snapshot.teams[snapshot.fieldingSide].abbrev} DEFENSE
           </div>
@@ -220,12 +221,12 @@ export function Viewer({
       )}
 
       {/* Bottom-right: status */}
-      <div className="absolute bottom-4 right-4 z-10 max-w-[46vw] text-right font-mono text-[10px] leading-relaxed tracking-widest text-white/45">
+      <div className="absolute bottom-2 right-2 z-10 hidden max-w-[46vw] text-right font-mono text-[10px] leading-relaxed tracking-widest text-white/45 sm:bottom-4 sm:right-4 sm:block">
         {snapshot ? `${snapshot.venue.toUpperCase()} · ${snapshot.status.detailed.toUpperCase()}` : ""}
       </div>
 
       {snapshot?.status.isFinal && (
-        <div className="absolute inset-0 z-30 flex items-start justify-end p-4">
+        <div className="absolute inset-0 z-30 flex items-start justify-end p-2 sm:p-4">
           <GameOver snapshot={snapshot} />
         </div>
       )}

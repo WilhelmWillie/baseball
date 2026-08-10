@@ -115,10 +115,12 @@ const CONTACT = fp(0, 2.6, 3.1);
 
 /**
  * Seconds a runner takes to cover one base. A real sprint home-to-first is
- * about 4.3s; these are quicker than life but slow enough to follow.
+ * about 4.3s. These are still quicker than life, but the point of the whole
+ * animation is that a viewer can follow what happened, and a double that is
+ * over before you have found the ball has not communicated anything.
  */
-const RUN_PER_BASE = 1.9;
-const TROT_PER_BASE = 2.7;
+const RUN_PER_BASE = 2.6;
+const TROT_PER_BASE = 3.4;
 
 function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
@@ -190,20 +192,26 @@ function apexFor(ball: BattedBall): number {
   }
 }
 
+/**
+ * How long the ball is in the air. Deliberately longer than the physics would
+ * give: hang time is the part of a batted ball a viewer actually reads - where
+ * it is going, who is chasing it, whether it will drop - and rushing it turns
+ * every play into a blur.
+ */
 function flightDuration(ball: BattedBall): number {
-  if (ball.isHomeRun) return 3.1;
+  if (ball.isHomeRun) return 4.2;
   switch (ball.trajectory) {
     case "ground_ball":
     case "bunt":
-      return 1.15;
+      return 1.7;
     case "line_drive":
-      return 1.25;
+      return 1.9;
     case "popup":
-      return 3.0;
+      return 4.0;
     case "fly_ball":
-      return 2.5;
+      return 3.4;
     default:
-      return 1.8;
+      return 2.6;
   }
 }
 
@@ -225,6 +233,22 @@ const CROWD_WEIGHT: Partial<
   double_play: { magnitude: 0.85, favorsBatter: false },
   generic: { magnitude: 0.35, favorsBatter: false },
 };
+
+/** Where the ball sits when it is lying on the grass, and glove height. */
+const BALL_RADIUS = 0.45;
+const GLOVE_HEIGHT = 5.4;
+/** How high the first hop carries. */
+const HOP_HEIGHT = 7;
+
+/**
+ * Plays where the defence retired the batter with the ball they hit. Anything
+ * else means the ball was not caught, and has to reach the ground.
+ */
+const CAUGHT_KINDS = new Set<PlayResultEvent["kind"]>([
+  "field_out",
+  "double_play",
+  "sac_fly",
+]);
 
 /** Plays where the batter actually got a hit off the pitcher. */
 const HIT_KINDS = new Set<PlayResultEvent["kind"]>([
@@ -875,14 +899,47 @@ export class Director {
   private compileResult(result: PlayResultEvent): Anim {
     const ball = result.ball;
     const tracks = this.prepareRunners(result);
-    const runnerEnd = tracks.reduce((max, r) => Math.max(max, r.end), 0);
 
     const landing = ball ? fp(ball.lateral, ball.depth, 0) : null;
     const ballDuration = ball ? flightDuration(ball) : 0;
     const apex = ball ? apexFor(ball) : 0;
     const fielderKey = ball && !ball.isHomeRun ? `def:${ball.fielder}` : null;
-    const throwStart = ball ? ballDuration + 0.25 : 0;
-    const throwEnd = throwStart + 0.55;
+
+    /**
+     * Was the ball caught on the fly? This is the difference between a hit and
+     * an out, and it used to be missing: every batted ball ended with the
+     * fielder playing a catch at the landing spot, so a clean single looked
+     * exactly like a flyout. A ball that is not caught has to reach the
+     * ground, bounce, and be run down.
+     */
+    const caughtInAir =
+      !!ball &&
+      !ball.isHomeRun &&
+      CAUGHT_KINDS.has(result.kind) &&
+      ball.trajectory !== "ground_ball" &&
+      ball.trajectory !== "bunt";
+
+    // How long the ball spends bouncing and rolling before it is gathered.
+    const groundTime = ball && !caughtInAir && !ball.isHomeRun ? 1.15 : 0;
+    const gatherAt = ballDuration + groundTime;
+    const throwStart = ball ? gatherAt + 0.4 : 0;
+    const throwEnd = throwStart + 0.6;
+    /** Where the ball ends up after the hop and the roll. */
+    const restPoint =
+      landing && groundTime > 0
+        ? landing.clone().multiplyScalar(1.09)
+        : landing;
+
+    // A runner cannot be out before the play that retires him. Pushing the
+    // out tracks past the catch (or past the throw arriving) is what stops a
+    // flyout resolving while the ball is still in the air.
+    if (ball) {
+      const settled = caughtInAir ? ballDuration : throwEnd;
+      for (const track of tracks) {
+        if (track.isOut) track.end = Math.max(track.end, settled + 0.2);
+      }
+    }
+    const runnerEnd = tracks.reduce((max, r) => Math.max(max, r.end), 0);
 
     // Where a throw goes: the base an out was recorded at, else first.
     const outTrack = tracks.find((r) => r.isOut);
@@ -891,7 +948,7 @@ export class Director {
       : BASE_POSITIONS.first.clone().setY(2.5);
 
     // Long enough after the call for the beam-out to finish playing.
-    const holdAfter = result.kind === "home_run" ? 3.4 : 1.5;
+    const holdAfter = result.kind === "home_run" ? 4.2 : 2.4;
     const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
     const startPoint = CONTACT.clone();
@@ -972,13 +1029,36 @@ export class Director {
           if (t <= ballDuration) {
             const u = clamp01(t / ballDuration);
             const flat = startPoint.clone().lerp(landing, u);
+            // A ball that is caught finishes at the glove; one that is not
+            // finishes on the ground, which is what makes the difference
+            // legible from any camera.
+            const endHeight = caughtInAir ? GLOVE_HEIGHT : BALL_RADIUS;
             const height = ball.isHomeRun
               ? apex * Math.sin(Math.PI * Math.min(1, u * 0.92)) + 2
-              : apex * 4 * u * (1 - u) + 1.2;
-            this.ball.position.set(flat.x, Math.max(0.45, height), flat.z);
+              : apex * 4 * u * (1 - u) + startPoint.y * (1 - u) + endHeight * u;
+            this.ball.position.set(flat.x, Math.max(BALL_RADIUS, height), flat.z);
             this.ball.visible = true;
             this.ball.scale = 2.8;
             this.pushTrail();
+          } else if (!ball.isHomeRun && t <= gatherAt && groundTime > 0 && restPoint) {
+            // On the deck: two decaying hops while it rolls out, so the ball is
+            // visibly *down* rather than teleporting into somebody's glove.
+            const u = clamp01((t - ballDuration) / groundTime);
+            const flat = landing.clone().lerp(restPoint, easeOut(u));
+            const hop =
+              Math.abs(Math.sin(u * Math.PI * 2)) * (1 - u) * (1 - u) * HOP_HEIGHT;
+            this.ball.position.set(flat.x, BALL_RADIUS + hop, flat.z);
+            this.ball.visible = true;
+            this.pushTrail();
+            cue.at("bounce", t, ballDuration, () => {
+              this.onSound?.("mitt", 0.25);
+              this.fx.spray(
+                landing.clone().setY(0.4),
+                landing.clone().setY(0).normalize().setY(0.8),
+                14,
+                0.8,
+              );
+            });
           } else if (ball.isHomeRun) {
             // Carry it into the seats.
             const u = clamp01((t - ballDuration) / 1.2);
@@ -990,18 +1070,14 @@ export class Director {
             this.ball.visible = true;
             this.pushTrail();
           } else if (t <= throwEnd) {
+            const held = restPoint ?? landing;
             if (!landed) {
               landed = true;
-              this.ball.position.copy(landing).setY(0.6);
-              // Dirt off the first hop, thrown on down the line the ball was
-              // already travelling. A grounder digs in; a fly ball drops in.
-              const skip = landing.clone().setY(0).normalize().setY(0.7);
-              const hard = ball.trajectory === "ground_ball" || ball.trajectory === "line_drive";
-              this.fx.spray(landing.clone().setY(0.4), skip, hard ? 16 : 8, hard ? 1 : 0.5);
+              this.ball.position.copy(held).setY(caughtInAir ? GLOVE_HEIGHT : BALL_RADIUS);
             }
             if (t >= throwStart) {
               const u = clamp01((t - throwStart) / (throwEnd - throwStart));
-              const p = landing.clone().setY(3.2).lerp(throwTarget, easeInOut(u));
+              const p = held.clone().setY(3.2).lerp(throwTarget, easeInOut(u));
               p.y = 3.2 + 6 * u * (1 - u) * 4;
               this.ball.position.copy(p);
               this.pushTrail();
@@ -1015,19 +1091,19 @@ export class Director {
         if (fielderKey && landing) {
           const fielder = this.actors.get(fielderKey);
           if (fielder) {
-            const u = clamp01(t / Math.max(0.35, ballDuration));
-            const target = landing.clone().setY(0);
+            const u = clamp01(t / Math.max(0.35, gatherAt));
+            const target = (restPoint ?? landing).clone().setY(0);
             fielder.position.lerp(target, Math.min(1, u * 0.16 + dt * 2.2));
             fielder.facing = yawToward(fielder.position, target.distanceTo(fielder.position) > 1 ? target : fp(0, 0));
-            if (t < ballDuration) {
+            if (t < gatherAt) {
               fielder.pose = "run";
               fielder.poseT = (fielder.poseT + dt * 1.6) % 1;
             } else if (t < throwStart) {
-              cue.at("field", t, ballDuration, () =>
+              cue.at("field", t, gatherAt, () =>
                 this.fx.puff(fielder.position.clone(), 7, { spread: 3.2, lift: 2, size: 0.8 }),
               );
               fielder.pose = "catch";
-              fielder.poseT = clamp01((t - ballDuration) / 0.25);
+              fielder.poseT = clamp01((t - gatherAt) / 0.25);
             } else if (t < throwEnd) {
               fielder.pose = "throw";
               fielder.poseT = clamp01((t - throwStart) / 0.55);

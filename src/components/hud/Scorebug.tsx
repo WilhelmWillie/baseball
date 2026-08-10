@@ -84,7 +84,7 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
 
   return (
     <div className="select-none font-mono">
-      <div className="pointer-events-none w-[300px] border-2 border-black/60 bg-slate-950/80 p-3 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px]">
+      <div className="pointer-events-none w-[212px] border-2 border-black/60 bg-slate-950/80 p-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px] sm:w-[300px] sm:p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5">
             <TeamRow
@@ -116,7 +116,7 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
         </div>
 
-        <div className="mt-3 space-y-1.5 border-t border-white/15 pt-2 text-[11px] leading-relaxed">
+        <div className="mt-2 space-y-1 border-t border-white/15 pt-1.5 text-[10px] leading-snug sm:mt-3 sm:space-y-1.5 sm:pt-2 sm:text-[11px]">
           <div>
             <div className="flex justify-between gap-2">
               <span className="text-white/45">AB</span>
@@ -143,8 +143,9 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
         </div>
 
-        {/* What the park is actually like, which is also what lit the scene. */}
-        <div className="mt-2 flex items-center gap-2 border-t border-white/10 pt-2 text-[10px] tracking-wide text-white/45">
+        {/* What the park is like - and what lit the scene. Dropped on a phone,
+            where the screen is better spent on the game than on the weather. */}
+        <div className="mt-2 hidden items-center gap-2 border-t border-white/10 pt-2 text-[10px] tracking-wide text-white/45 sm:flex">
           <span className="text-white/70">{conditions.condition}</span>
           {conditions.temp && <span>{conditions.temp}°</span>}
           {conditions.windLabel && <span className="truncate">{conditions.windLabel}</span>}

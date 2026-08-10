@@ -165,7 +165,7 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
 
   return (
     <div className="pointer-events-auto flex h-full w-full items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto border-2 border-amber-300/70 bg-slate-950/95 font-mono shadow-[8px_8px_0_rgba(0,0,0,0.5)]">
+      <div className="max-h-[92dvh] w-full max-w-3xl overflow-y-auto overscroll-contain border-2 border-amber-300/70 bg-slate-950/95 font-mono shadow-[8px_8px_0_rgba(0,0,0,0.5)]">
         <div className="border-b border-white/10 px-6 py-5">
           <div className="flex items-baseline justify-between gap-4">
             <div>

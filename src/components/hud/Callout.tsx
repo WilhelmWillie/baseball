@@ -41,7 +41,7 @@ export function Callout() {
     <div className="pointer-events-none flex flex-col items-center font-mono">
       <div
         key={call.at}
-        className={`animate-[callout_240ms_ease-out] border-2 bg-slate-950/95 px-5 py-2 text-2xl tracking-[0.2em] shadow-[5px_5px_0_rgba(0,0,0,0.7)] ${TONE[call.tone]}`}
+        className={`animate-[callout_240ms_ease-out] border-2 bg-slate-950/95 px-3 py-1.5 text-lg tracking-[0.15em] shadow-[5px_5px_0_rgba(0,0,0,0.7)] sm:px-5 sm:py-2 sm:text-2xl sm:tracking-[0.2em] ${TONE[call.tone]}`}
       >
         {call.text}
       </div>

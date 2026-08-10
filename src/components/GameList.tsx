@@ -152,8 +152,8 @@ export function GameList() {
   const rest = data?.games.filter((g) => g.state !== "live") ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 pb-20">
-      <header className="py-12">
+    <div className="mx-auto w-full max-w-5xl px-4 pb-16 sm:px-6 sm:pb-20">
+      <header className="py-8 sm:py-12">
         <h1 className="font-mono text-3xl tracking-[0.3em] text-white sm:text-4xl">
           MLB<span className="text-amber-300">3D</span>
         </h1>
@@ -217,8 +217,10 @@ export function GameList() {
             </section>
           )}
 
+          {/* Feed errors quote the URL, which is long enough to push the page
+              sideways on a phone if it is allowed to stay one word. */}
           {failed && (
-            <p className="mt-8 border-2 border-red-900 bg-red-950/40 p-4 font-mono text-[11px] leading-relaxed tracking-wide text-red-200">
+            <p className="mt-8 break-all border-2 border-red-900 bg-red-950/40 p-4 font-mono text-[11px] leading-relaxed tracking-wide text-red-200">
               {failed}
             </p>
           )}

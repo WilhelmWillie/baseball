@@ -23,10 +23,11 @@ import {
 export const DEMO_GAME_PK = 747001;
 
 const SECONDS_PER_PITCH = 7;
-// Plays hold longer now: the call waits for the diamond to settle it, and an
-// out is followed by the beam-out. Real games leave ~20s between pitches, so
-// this stays well inside what a live feed would give us.
-const SECONDS_AFTER_PLAY = 9;
+// Plays hold a long time now: the ball hangs, it bounces and gets run down,
+// runners cover the bases at a followable pace, and only then does the call go
+// up. Real games leave ~20s between pitches, so this stays inside what a live
+// feed would give us.
+const SECONDS_AFTER_PLAY = 15;
 
 /** Inverse of the Gameday hit-coordinate mapping, so the demo feed carries
  *  the same raw coordinate space a real game does. */

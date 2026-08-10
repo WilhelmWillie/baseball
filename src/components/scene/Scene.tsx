@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sky } from "@react-three/drei";
-import { Vector3, type WebGLRenderer } from "three";
+import { Vector3, type PerspectiveCamera, type WebGLRenderer } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
@@ -41,6 +41,14 @@ function CameraRig({ director }: { director: Director }) {
 
   useFrame((state, delta) => {
     const desired = director.desiredCamera();
+    // A phone held upright sees a very tall slice of the world, and most of it
+    // is empty grass above and below the play. Pulling the framing in toward
+    // the diamond spends that space on the game instead.
+    const portrait = clamp01((0.85 - state.viewport.aspect) / 0.4);
+    if (portrait > 0) {
+      desired.target.lerp(INFIELD, portrait * 0.6);
+      desired.position.lerp(desired.target, portrait * 0.14);
+    }
     const cut = director.cameraCut !== lastCut.current;
     if (cut) lastCut.current = director.cameraCut;
 
@@ -107,6 +115,41 @@ function Actors({ director }: { director: Director }) {
       })}
     </>
   );
+}
+
+/**
+ * Keeps the framing sane on a phone. `fov` in three.js is *vertical*, so a tall
+ * narrow viewport sees a much narrower slice of the world horizontally - on a
+ * portrait phone the diamond falls out of frame at either side. Holding the
+ * horizontal field of view roughly constant instead, by widening the vertical
+ * one as the aspect narrows, keeps the same shot on every screen.
+ */
+function applyFraming(camera: PerspectiveCamera, aspect: number) {
+  if (!camera.isPerspectiveCamera) return;
+  const horizontal = 2 * Math.atan(Math.tan((BASE_FOV * Math.PI) / 360) * BASE_ASPECT);
+  const fov = (2 * Math.atan(Math.tan(horizontal / 2) / Math.max(0.45, aspect)) * 180) / Math.PI;
+  const next = Math.min(78, Math.max(BASE_FOV, fov));
+  if (Math.abs(camera.fov - next) < 0.01) return;
+  camera.fov = next;
+  camera.updateProjectionMatrix();
+}
+
+function Framing() {
+  useFrame((state) => {
+    applyFraming(state.camera as PerspectiveCamera, state.viewport.aspect);
+  });
+  return null;
+}
+
+/** The framing the shot list was composed against: a 16:9 desktop window. */
+const BASE_FOV = 50;
+const BASE_ASPECT = 16 / 9;
+
+/** Roughly the middle of the diamond, in world space. */
+const INFIELD = new Vector3(0, 6, -63);
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 function RendererBridge({ onReady }: { onReady: (gl: WebGLRenderer) => void }) {
@@ -205,6 +248,7 @@ export function Scene({ onRenderer }: SceneProps) {
       <Weather conditions={conditions} />
 
       <Engine />
+      <Framing />
       <CameraRig director={director} />
       {onRenderer && <RendererBridge onReady={onRenderer} />}
     </Canvas>

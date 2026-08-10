@@ -213,7 +213,7 @@ export const POSITION_ABBREV: Record<PositionKey, string> = {
 /** Standard, no-shift defensive alignment. */
 export const FIELDING_SPOTS: Record<PositionKey, Vector3> = {
   pitcher: fp(0, RUBBER_DEPTH - 2, MOUND_HEIGHT),
-  catcher: fp(0, -6.5),
+  catcher: fp(0, -11),
   first: fp(52, 79),
   second: fp(38, 129),
   third: fp(-52, 81),
@@ -225,11 +225,11 @@ export const FIELDING_SPOTS: Record<PositionKey, Vector3> = {
 
 /** Batter's box. A right-handed hitter stands on the third-base side. */
 export function batterSpot(batSide: "R" | "L"): Vector3 {
-  return fp(batSide === "R" ? -3.9 : 3.9, 2.2);
+  return fp(batSide === "R" ? -6 : 6, 2.4);
 }
 
 export function onDeckSpot(batSide: "R" | "L"): Vector3 {
-  return fp(batSide === "R" ? -34 : 34, -14);
+  return fp(batSide === "R" ? -40 : 40, -20);
 }
 
 /**

@@ -116,9 +116,14 @@ towers, the center-field scoreboard — is generated in `src/lib/field/park.ts` 
 a flat list of boxes and drawn by `Park.tsx` in a single `InstancedMesh`, so the
 whole stadium costs one draw call.
 
-Players are low-poly figures with jointed knees and elbows. Two species share
-one skeleton — aliens for the home club, robots for the visitors — so the whole
-pose vocabulary drives both. Uniforms come from a hardcoded palette keyed by MLB
+Players are low-poly figures with jointed knees and elbows, drawn at roughly
+2.4x life size — they exist to communicate the state of the game from a camera
+80 feet up, not to be anatomically sensible next to a 90-foot base path. Two
+species share one skeleton — aliens for the home club, robots for the visitors
+— so the whole pose vocabulary drives both. Panels are chamfered rather than
+hard-edged (`components/scene/geometry.ts` builds rounded boxes from an
+extruded, bevelled profile, since three.js has none in core), and they use
+Phong shading so the directional lights give them a specular highlight. Uniforms come from a hardcoded palette keyed by MLB
 team id (the API doesn't publish club colors); if both clubs' primaries are too
 close to tell apart, the visitors fall back to their secondary. Species is a
 second, redundant read on who is who.

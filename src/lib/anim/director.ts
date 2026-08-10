@@ -352,14 +352,18 @@ export class Director {
     return team ? [team.palette.primary, team.palette.secondary] : ["#ffd447", "#ffffff"];
   }
 
-  /** Paper over the infield when a run scores. */
+  /**
+   * Paper over the infield when a run scores - for the home club only. A park
+   * does not fire its cannons for the visitors, same as the fireworks.
+   */
   private throwConfetti(amount = 150) {
+    if (this.snapshot?.battingSide !== "home") return;
     this.fx.burstConfetti(fp(0, 8, 12), amount, this.celebrationColors());
   }
 
   /**
    * Shells over the outfield. The park only sets these off for its own club -
-   * a visiting home run does not get fireworks, it gets a groan.
+   * a visiting home run does not get a light show, it gets a groan.
    */
   private launchFireworks(count: number) {
     if (this.snapshot?.battingSide !== "home") return;

@@ -32,8 +32,6 @@ class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
-  private ambienceGain: GainNode | null = null;
-  private ambienceSource: AudioBufferSourceNode | null = null;
   private muted = false;
 
   get enabled(): boolean {
@@ -84,58 +82,18 @@ class Sfx {
     if (this.master && this.ctx) {
       this.master.gain.setTargetAtTime(muted ? 0 : MASTER_GAIN, this.ctx.currentTime, 0.05);
     }
-    if (muted) this.stopAmbience();
-    else this.startAmbience();
   }
 
-  /** Low, continuous crowd murmur under everything else. */
-  startAmbience() {
-    const ctx = this.context();
-    if (!ctx || !this.noise || !this.master || this.ambienceSource || this.muted) return;
-
-    const source = ctx.createBufferSource();
-    source.buffer = this.noise;
-    source.loop = true;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 420;
-    filter.Q.value = 0.6;
-
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    gain.gain.setTargetAtTime(0.05, ctx.currentTime, 1.5);
-
-    // A slow wander so the murmur never sits perfectly still.
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.07;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.02;
-    lfo.connect(lfoGain).connect(gain.gain);
-    lfo.start();
-
-    source.connect(filter).connect(gain).connect(this.master);
-    source.start();
-
-    this.ambienceSource = source;
-    this.ambienceGain = gain;
-  }
-
-  stopAmbience() {
-    if (!this.ctx || !this.ambienceSource || !this.ambienceGain) return;
-    const now = this.ctx.currentTime;
-    this.ambienceGain.gain.setTargetAtTime(0, now, 0.3);
-    const source = this.ambienceSource;
-    setTimeout(() => {
-      try {
-        source.stop();
-      } catch {
-        // Already stopped.
-      }
-    }, 1200);
-    this.ambienceSource = null;
-    this.ambienceGain = null;
-  }
+  // TODO: source a real ballpark ambience bed.
+  //
+  // There used to be a synthesized one here - filtered noise with a slow LFO -
+  // and it read as tape hiss rather than as a crowd, which is worse than
+  // silence. A convincing bed needs actual recorded material: a loopable
+  // murmur, ideally a couple of layers that can be crossfaded by how much is
+  // going on. Everything else in this file is generated precisely because it
+  // is short and transient; a continuous bed is the one thing synthesis does
+  // not do well. Whatever we use needs a licence that permits redistribution,
+  // since it would ship with the app.
 
   play(name: SoundName, options: SoundOptions = {}) {
     if (this.muted) return;
@@ -418,7 +376,6 @@ class Sfx {
   }
 
   dispose() {
-    this.stopAmbience();
     void this.ctx?.close();
     this.ctx = null;
     this.master = null;

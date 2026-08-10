@@ -49,9 +49,9 @@ an overcast day is flat and grey. Rain and snow fall, wind blows the confetti
 and the dust downfield, and a closed roof gets its own indoor rig. The scorebug
 prints the conditions it is lighting from.
 
-**Celebrations** — confetti erupts over home plate on every run scored, and the
-park sets off fireworks for its own club only: a visiting home run gets a groan,
-not a light show. Home runs get a bigger volley. Dirt sprays off the
+**Celebrations** — the park celebrates its own club only: confetti over the
+plate and fireworks over the outfield when the *home* side scores, and nothing
+but a groan when the visitors do. Home runs get a bigger volley. Dirt sprays off the
 first hop, dust hangs where a runner slides in, and the mound puffs as the
 pitcher lands. Anyone retired beams out: a column of motes in their club's
 colour, and the figure shrinks up into it.
@@ -64,7 +64,9 @@ with W/L/S decisions). It can be dismissed to keep watching the park.
 an allegiance: it is the *home* crowd, so it cheers what helps the home club
 and groans at everything else. A strikeout by the home pitcher gets a cheer;
 a home run by the visitors gets a groan. Everything
-is synthesized with Web Audio; there are no audio files. Sounds are cued off the
+is synthesized with Web Audio; there are no audio files. There is no continuous
+ambience bed — see the TODO in `src/lib/audio/sfx.ts`, which wants real recorded
+material rather than the filtered noise that used to sit there. Sounds are cued off the
 animation clock, so the crack lands with the swing rather than with the poll that
 reported it. Browsers block audio until the page is interacted with, so the first
 click anywhere starts it. The 🔊 button mutes.

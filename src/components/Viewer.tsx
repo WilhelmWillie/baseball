@@ -103,18 +103,14 @@ export function Viewer({
   }, [flash]);
 
   // Audio cannot start until the page has been interacted with, so the first
-  // gesture anywhere wakes the context and brings up the crowd.
+  // gesture anywhere wakes the context.
   useEffect(() => {
-    const wake = () => {
-      sfx.resume();
-      sfx.startAmbience();
-    };
+    const wake = () => sfx.resume();
     window.addEventListener("pointerdown", wake, { once: true });
     window.addEventListener("keydown", wake, { once: true });
     return () => {
       window.removeEventListener("pointerdown", wake);
       window.removeEventListener("keydown", wake);
-      sfx.stopAmbience();
     };
   }, []);
 

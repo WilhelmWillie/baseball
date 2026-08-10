@@ -196,52 +196,52 @@ type AddPart = (
 ) => Mesh;
 
 /**
- * A batting helmet, built in a normalised frame: the head is a unit sphere at
- * the origin, and the caller scales the group to fit whichever skull it is
- * going on.
- *
- * The first version was a plain dome with a slab stuck on the front, which
- * landed level with the eyes and read as a beak. What makes this one read as a
- * helmet is the ordering: the shell sits *above* the brow, the brim hangs off
- * the front of the shell and tilts down over the eyes, and the underside of
- * that brim is matte black the way a real one is to cut glare.
+ * A batting helmet, built in a normalised frame whose **origin is the rim** -
+ * the bottom edge of the shell - with a nominal head radius of 1 at that
+ * plane. Positioning by the rim is what makes it fittable: the caller drops
+ * the group at the height where the helmet should stop and the face begins,
+ * and `height` stretches the shell to cover however much skull is above it.
+ * An alien cranium needs far more of that than a robot's head does.
  */
 function buildHelmet(
   addTo: AddPart,
   parent: Group,
   materials: { helmet: Material; trim: Material; dark: Material },
-  opts: { flaps: 1 | 2; flapSide: number },
+  opts: { flaps: 1 | 2; flapSide: number; height: number },
 ) {
   const { helmet, trim, dark } = materials;
+  const h = opts.height;
+  // The dome is a sphere cut a little past its equator, so its bottom edge
+  // sits slightly below its centre. Lifting the centre by that much puts the
+  // edge exactly on y = 0 - which is what lets the caller position the helmet
+  // by its rim instead of guessing at its middle.
+  const centre = 0.1305 * h;
 
-  // Shell, a touch wider than the head so it reads as sitting over it.
-  addTo(parent, GEO.dome, helmet, [0, -0.1, 0], [2.16, 2.05, 2.1], undefined, true);
-  // The back drops lower than the front, as a real one does.
-  addTo(parent, GEO.dome, helmet, [0, -0.46, -0.2], [2.04, 1.5, 1.66]);
-  // Rim around the bottom edge picks the shape out against the head.
-  addTo(parent, GEO.ring, trim, [0, -0.1, 0], [2.18, 2.12, 0.9], [Math.PI / 2, 0, 0]);
+  addTo(parent, GEO.dome, helmet, [0, centre, 0], [2.16, 2.05 * h, 2.1], undefined, true);
+  // The back drops below the rim, as a real one does.
+  addTo(parent, GEO.dome, helmet, [0, -0.34, -0.2], [2.0, 1.5 * h, 1.62]);
+  // Rim picks the edge out against the head.
+  addTo(parent, GEO.ring, trim, [0, 0, 0], [2.2, 2.14, 0.85], [Math.PI / 2, 0, 0]);
 
-  // Raised centre ridge and a button on the crown.
-  addTo(parent, GEO.helmetRidge, trim, [0, 0.94, -0.04], [1, 1, 0.8], [0.06, 0, 0]);
-  addTo(parent, GEO.lowSphere, trim, [0, 1.06, -0.04], [0.18, 0.18, 0.18]);
-
-  // Vents down each side of the ridge.
+  // Raised centre ridge, vents either side, and a button on the crown.
+  addTo(parent, GEO.helmetRidge, trim, [0, 1.02 * h, -0.04], [1, 1, 0.8], [0.06, 0, 0]);
+  addTo(parent, GEO.lowSphere, trim, [0, 1.14 * h, -0.04], [0.18, 0.18, 0.18]);
   for (const side of [-1, 1]) {
     for (const z of [0.34, 0, -0.34]) {
-      addTo(parent, GEO.helmetVent, dark, [side * 0.42, 0.94, z], [1, 1, 1], [0, 0, side * 0.12]);
+      addTo(parent, GEO.helmetVent, dark, [side * 0.42, 0.96 * h, z], [1, 1, 1], [0, 0, side * 0.12]);
     }
   }
 
-  // Brim: hung off the front of the shell, above the brow, angled down.
-  addTo(parent, GEO.helmetBrim, helmet, [0, 0.12, 0.82], [0.9, 1, 0.86], [-0.3, 0, 0], true);
-  // Matte underside, the way a real one is to cut glare.
-  addTo(parent, GEO.helmetBrim, dark, [0, 0.04, 0.83], [0.84, 0.55, 0.8], [-0.3, 0, 0]);
+  // Brim: on the rim line at the front, angled down over the brow. Matte
+  // black underneath, the way a real one is to cut glare.
+  addTo(parent, GEO.helmetBrim, helmet, [0, 0.12, 0.86], [0.92, 1, 0.86], [-0.3, 0, 0], true);
+  addTo(parent, GEO.helmetBrim, dark, [0, 0.04, 0.87], [0.86, 0.55, 0.8], [-0.3, 0, 0]);
 
-  // Ear flaps. A hitter wears one, on the side turned toward the pitcher;
-  // a second is drawn for runners, who have usually swapped to a double flap.
+  // Ear flaps hang below the rim. A hitter wears one, on the side turned
+  // toward the pitcher; runners have usually swapped to a double.
   const sides = opts.flaps === 2 ? [-1, 1] : [opts.flapSide];
   for (const side of sides) {
-    addTo(parent, GEO.helmetFlap, helmet, [side * 0.9, -0.34, 0.14], [1, 0.86, 0.86], [0, 0, side * 0.2], true);
+    addTo(parent, GEO.helmetFlap, helmet, [side * 0.94, -0.3, 0.14], [1, 0.86, 0.86], [0, 0, side * 0.2], true);
   }
 }
 
@@ -379,8 +379,11 @@ const REST: PoseValues = {
   twist: 0,
   legL: 0,
   legR: 0,
-  kneeL: 0.08,
-  kneeR: 0.08,
+  // Straight. A knee angle swings the shin backwards, heel toward the butt,
+  // so "a little soft" on a standing figure reads as a half-kneel rather than
+  // as an athletic stance - the weight has to come from the torso instead.
+  kneeL: 0,
+  kneeR: 0,
   armL: 0,
   armR: 0,
   elbowL: -0.25,
@@ -444,12 +447,11 @@ function poseValues(
     case "ready":
       return {
         ...REST,
-        // Was a deep half-squat that read as kneeling. A fielder between
-        // pitches is upright with the knees barely soft.
-        crouch: 0.13 + life.breath * 0.035,
-        lean: 0.1,
-        kneeL: 0.24,
-        kneeR: 0.24,
+        // Stood up straight. Anything less than straight bends the wrong way
+        // on this rig; the athletic read comes from the forward lean, the
+        // weight shift and the breath instead.
+        crouch: 0.02 + life.breath * 0.03,
+        lean: 0.13,
         armL: -0.5,
         armR: -0.5,
         elbowL: -0.85 + life.breath * 0.05,
@@ -854,8 +856,11 @@ export function Player({
       // A tall teardrop cranium tapering to a small chin.
       add(head, GEO.sphere, materials.skin, [0, 0.8, 0], [1.52, 1.94, 1.36], undefined, true);
       add(head, GEO.sphere, materials.skin, [0, 0.16, 0.06], [0.94, 0.92, 1.02]);
-      // Brow ridge.
-      add(head, GEO.box, materials.skin, [0, 0.98, 0.5], [1.02, 0.12, 0.24]);
+      // Brow ridge. Skipped under a helmet, where the brim occupies exactly
+      // this space and the ridge would poke through it.
+      if (!wearsHelmet) {
+        add(head, GEO.box, materials.skin, [0, 0.98, 0.5], [1.02, 0.12, 0.24]);
+      }
       for (const side of [-1, 1]) {
         add(
           head,
@@ -890,13 +895,13 @@ export function Player({
       // on a tapered alien cranium never sat right. The cranium is tall and
       // narrow, so the helmet is scaled to match rather than sat on top.
       if (wearsHelmet) {
+        // Rim just above the eyes; the shell is stretched tall (height 1.05)
+        // because there is a whole cranium above that line to cover.
         const lid = new Group();
-        // The cranium is tall and narrow, so the shell is stretched to match
-        // rather than perched on top of it.
-        lid.position.set(0, 0.82, 0);
-        lid.scale.set(0.85, 0.94, 0.78);
+        lid.position.set(0, 0.95, 0);
+        lid.scale.set(0.75, 0.72, 0.69);
         head.add(lid);
-        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide: flapSide });
+        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide, height: 1.05 });
       }
     } else {
       add(head, GEO.robotSkull, materials.skin, [0, 0.66, 0], [1, 1, 1], undefined, true);
@@ -926,11 +931,14 @@ export function Player({
       danglers.push(antenna);
 
       if (wearsHelmet) {
+        // A box skull has only a little headroom above the visor, so the shell
+        // is flat (height 0.46) and wide enough to swallow the top corners -
+        // an ellipsoid needs the width to contain a box.
         const lid = new Group();
-        lid.position.set(0, 0.95, 0);
-        lid.scale.set(0.67, 0.63, 0.62);
+        lid.position.set(0, 1.0, 0);
+        lid.scale.set(0.84, 0.81, 0.78);
         head.add(lid);
-        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide: flapSide });
+        buildHelmet(add, lid, materials, { flaps: helmetFlaps, flapSide, height: 0.58 });
       }
     }
 

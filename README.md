@@ -160,15 +160,25 @@ turns their head, on detuned waves seeded per player so no two are in step. The
 catcher gets his own squat pose with the legs folded under him, facing the
 mound.
 
+Nobody bends their knees to stand. A knee angle on this rig swings the shin
+backwards, heel toward the butt, so "a little soft" on a standing figure reads
+as a half-kneel — the athletic look has to come from the forward lean, the
+weight shift and the breath instead.
+
 Only hitters and runners wear anything on their heads — a cap perched on a
-tapered alien cranium never sat right. What they wear is a real batting helmet:
-a shell fitted to the skull it is going on (the alien cranium is tall and
-narrow, so the shell is stretched rather than perched on top of it), a trim rim
-picking the shape out, a raised centre ridge with vents either side, and a brim
-hung off the *front* of the shell and angled down over the brow, matte black
-underneath the way a real one is to cut glare. Hitters wear a single ear flap on
-the side turned toward the pitcher, runners a double. Antennae route out through
-the back rather than straight up through the crown.
+tapered alien cranium never sat right. What they wear is a real batting helmet,
+built in a frame whose **origin is the rim**: the caller drops it at the height
+where the helmet should stop and the face begins, and a `height` factor stretches
+the shell over however much skull is above that line. That is what makes it
+fittable to two very different heads, and the fit is solved against the actual
+skull geometry rather than by eye — an alien cranium rises a full unit above the
+eyes and needs a tall shell, while a robot's box head has barely any headroom
+above the visor but needs a wide one, because containing a box's top corners in
+an ellipsoid costs width. Add a trim rim picking the shape out, a raised centre
+ridge with vents either side, and a brim on the rim line angled down over the
+brow, matte black underneath the way a real one is to cut glare. Hitters wear a
+single ear flap on the side turned toward the pitcher, runners a double.
+Antennae route out through the back rather than straight up through the crown.
 
 Gloves are built rather than approximated — fanned finger stalls, a laced
 web, a padded heel — and they differ by position: a round mitt for the catcher,

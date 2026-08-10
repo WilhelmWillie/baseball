@@ -12,7 +12,7 @@ const DEMO_INTERVAL = 1800;
  * Polls the live feed. The spec's V0 guidance is plain polling, so that is what
  * this does - the interval tightens while the game is actually in progress.
  */
-export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0) {
+export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0, demoQuery = "") {
   const ingest = useGameStore((s) => s.ingest);
   const failed = useGameStore((s) => s.failed);
   const reset = useGameStore((s) => s.reset);
@@ -28,7 +28,7 @@ export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0) {
     const poll = async () => {
       try {
         const url = isDemo
-          ? `/api/game/demo?t=${(demoOffset + (Date.now() - demoStart.current) / 1000).toFixed(1)}`
+          ? `/api/game/demo?t=${(demoOffset + (Date.now() - demoStart.current) / 1000).toFixed(1)}${demoQuery}`
           : `/api/game/${gamePk}`;
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) throw new Error(`Feed responded ${res.status}`);
@@ -72,5 +72,5 @@ export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0) {
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [gamePk, isDemo, demoOffset, ingest, failed, reset]);
+  }, [gamePk, isDemo, demoOffset, demoQuery, ingest, failed, reset]);
 }

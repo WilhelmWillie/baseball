@@ -13,6 +13,7 @@ import {
   MeshPhongMaterial,
   PlaneGeometry,
   SphereGeometry,
+  type Sprite,
   TorusGeometry,
   Vector3,
   type Material,
@@ -148,10 +149,117 @@ const GEO = {
   vent: roundedBox(0.62, 0.08, 0.1, 0.03),
   finger: roundedBox(0.14, 0.44, 0.14, 0.06),
   toe: roundedBox(0.24, 0.2, 0.5, 0.08),
+
+  // Glove parts. A mitt is most of what a fielder is doing with their hands,
+  // so it gets real fingers, a laced web and a padded heel instead of a
+  // squashed sphere.
+  glovePalm: roundedBox(1.32, 1.02, 0.56, 0.24),
+  gloveBack: roundedBox(1.18, 0.86, 0.2, 0.09),
+  gloveFinger: roundedBox(0.31, 1.02, 0.44, 0.14),
+  gloveThumb: roundedBox(0.44, 0.9, 0.48, 0.18),
+  gloveHeel: roundedBox(1.16, 0.44, 0.58, 0.2),
+  gloveWeb: roundedBox(0.46, 0.78, 0.14, 0.06),
+  lace: roundedBox(0.9, 0.09, 0.11, 0.04),
+  laceShort: roundedBox(0.4, 0.08, 0.1, 0.035),
+  wristStrap: roundedBox(1.06, 0.26, 0.62, 0.11),
 };
 
 function alienSkin(playerId: number): string {
   return ALIEN_SKIN[playerId % ALIEN_SKIN.length];
+}
+
+/** Gloves differ by position, and the difference is easy to read from a camera. */
+type GloveKind = "fielder" | "mitt" | "first";
+
+function gloveFor(positionKey?: string): GloveKind {
+  if (positionKey === "catcher") return "mitt";
+  if (positionKey === "first") return "first";
+  return "fielder";
+}
+
+/**
+ * Builds a glove into `parent`, in a frame where +Y runs from the wrist toward
+ * the fingertips and +Z is the pocket. The caller flips it onto the arm.
+ *
+ * `thumbSide` is which way the thumb points: a right-handed thrower wears the
+ * glove on the left hand with the thumb inboard, so it follows the arm.
+ */
+function buildGlove(
+  addTo: (
+    parent: Group,
+    geometry: BufferGeometry,
+    material: Material,
+    position: [number, number, number],
+    scale?: [number, number, number],
+    rotation?: [number, number, number],
+    shadow?: boolean,
+  ) => Mesh,
+  parent: Group,
+  materials: { glove: Material; gloveDark: Material; lace: Material },
+  kind: GloveKind,
+  thumbSide: number,
+) {
+  const { glove, gloveDark, lace } = materials;
+  // A first baseman's mitt is longer and narrower; a catcher's is round and
+  // has no separated fingers at all.
+  const long = kind === "first" ? 1.22 : 1;
+  const wide = kind === "first" ? 0.86 : 1;
+
+  // Heel and wrist, where the padding is thickest.
+  addTo(parent, GEO.wristStrap, gloveDark, [0, -0.12, -0.02], [wide, 1, 1]);
+  addTo(parent, GEO.gloveHeel, glove, [0, 0.24, 0.04], [wide, 1, 1], undefined, true);
+  addTo(parent, GEO.glovePalm, glove, [0, 0.86 * long, 0.06], [wide, long, 1], undefined, true);
+  // The back of the hand reads flatter than the pocket side.
+  addTo(parent, GEO.gloveBack, gloveDark, [0, 0.86 * long, -0.24], [wide, long, 1]);
+
+  if (kind === "mitt") {
+    // A catcher's mitt: a padded ring around a deep pocket.
+    addTo(parent, GEO.lowSphere, gloveDark, [0, 0.98, 0.1], [1.36, 1.36, 0.5]);
+    addTo(parent, GEO.ring, glove, [0, 1.0, 0.12], [1.62, 1.62, 1.15], [0, 0, 0], true);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      addTo(parent, GEO.laceShort, lace, [Math.sin(a) * 0.8, 1.0 + Math.cos(a) * 0.8, 0.24], [0.6, 1, 1], [0, 0, -a]);
+    }
+  } else {
+    // Four fanned finger stalls, laced across the tips.
+    for (let i = 0; i < 4; i++) {
+      const x = (-1.5 + i) * 0.33 * wide;
+      addTo(
+        parent,
+        GEO.gloveFinger,
+        glove,
+        [x, 1.78 * long, 0.02],
+        [1, long, 1],
+        [0.12, 0, -x * 0.34],
+        true,
+      );
+    }
+    addTo(parent, GEO.lace, lace, [0, 2.2 * long, 0.1], [wide, 1, 1], [0.1, 0, 0]);
+    addTo(parent, GEO.lace, lace, [0, 1.44 * long, 0.16], [wide * 0.92, 1, 1]);
+  }
+
+  // Thumb, and the laced web that spans the gap to the first finger.
+  addTo(
+    parent,
+    GEO.gloveThumb,
+    glove,
+    [thumbSide * 0.76 * wide, 1.02 * long, 0.06],
+    [1, long, 1],
+    [0.1, 0, thumbSide * 0.3],
+    true,
+  );
+  const webX = thumbSide * 0.48 * wide;
+  addTo(parent, GEO.gloveWeb, gloveDark, [webX, 1.62 * long, 0.12], [1, long, 1], [0, 0, thumbSide * 0.18]);
+  for (const dy of [-0.22, 0, 0.22]) {
+    addTo(
+      parent,
+      GEO.laceShort,
+      lace,
+      [webX, (1.62 + dy) * long, 0.2],
+      [0.9, 1, 1],
+      [0, 0, thumbSide * 0.18],
+    );
+  }
 }
 
 interface Limbs {
@@ -448,6 +556,7 @@ export function Player({
   accent = "#ffffff",
 }: PlayerProps) {
   const rootRef = useRef<Group>(null);
+  const labelRef = useRef<Sprite>(null);
   const limbsRef = useRef<Limbs | null>(null);
   const key = actor.key;
   const isAlien = species === "alien";
@@ -482,10 +591,15 @@ export function Player({
         emissiveIntensity: 0.85,
       }),
       boot: phong(BOOT, 30, "#3a3a3a"),
-      glove: phong("#6b4526", 14, "#2a2a2a"),
+      glove: phong("#7a4f2a", 16, "#3a2a1c"),
+      // Worn-in leather is darker in the pocket and at the heel.
+      gloveDark: phong("#4e3119", 12, "#2a1c10"),
+      lace: phong("#e0bc86", 20, "#4a3a24"),
       bat: phong("#c89a5c", 30, "#4a4a4a"),
     };
   }, [uniform, actor.playerId, isAlien]);
+
+  const label = labelText ?? actor.shortName;
 
   const numberMaterial = useMemo(() => {
     if (!actor.number) return null;
@@ -747,15 +861,18 @@ export function Player({
       add(batGroup, GEO.batBarrel, materials.bat, [0, 1.74, 0], [1.15, 1.86, 1.15], undefined, true);
       add(batGroup, GEO.lowSphere, materials.bat, [0, 2.66, 0], [0.46, 0.26, 0.46]);
     } else if (actor.role === "fielder") {
-      const glove = new Mesh(GEO.sphere, materials.glove);
-      glove.scale.set(1.1, 1.24, 0.66);
-      glove.position.set(0, -1.14, 0.12);
-      glove.castShadow = true;
+      // Built pointing "up" from the wrist, then flipped onto the end of the
+      // forearm: rolling about Z keeps the pocket facing forward while the
+      // fingers carry on down the arm.
+      const kind = gloveFor(actor.positionKey);
+      const glove = new Group();
+      glove.position.set(0, -1.02, 0.1);
+      // The catcher presents the mitt down the arm at the pitcher; everyone
+      // else carries the glove with the pocket facing forward.
+      glove.rotation.set(kind === "mitt" ? 1.9 : 0.24, 0, Math.PI);
+      glove.scale.setScalar(kind === "mitt" ? 0.92 : 0.84);
       armL.elbow.add(glove);
-      const web = new Mesh(GEO.box, materials.dark);
-      web.scale.set(0.9, 0.12, 0.5);
-      web.position.set(0, -0.62, 0.12);
-      armL.elbow.add(web);
+      buildGlove(add, glove, materials, kind, 1);
     }
 
     const parts: Limbs = {
@@ -774,7 +891,7 @@ export function Player({
       bat: batGroup,
     };
     return { model: root, limbs: parts };
-  }, [materials, numberMaterial, actor.role, isAlien, wearsHelmet]);
+  }, [materials, numberMaterial, actor.role, actor.positionKey, isAlien, wearsHelmet]);
 
   // The frame loop mutates the three.js graph in place, which is the R3F
   // contract but not something a memoized value may be used for.
@@ -834,6 +951,16 @@ export function Player({
       parts.bat.quaternion.setFromUnitVectors(UP, BAT_AIM);
     }
 
+    // Sprites grow as the camera closes in, which is exactly wrong for a name
+    // plate: on a tight shot it would fill the frame. Scale it back down by
+    // distance so it reads the same size wherever the camera is.
+    const plate = labelRef.current;
+    if (plate) {
+      const distance = state.camera.position.distanceTo(group.position);
+      const size = 4.6 * Math.max(0.34, Math.min(1.25, distance / 95));
+      plate.scale.set(labelAspect(label) * size, size, 1);
+    }
+
     // Antennae lag behind the head, which sells the motion.
     const wobble = Math.sin(state.clock.elapsedTime * 5 + live.playerId) * 0.14;
     for (let i = 0; i < parts.danglers.length; i++) {
@@ -842,13 +969,11 @@ export function Player({
     }
   });
 
-  const label = labelText ?? actor.shortName;
-
   return (
     <group ref={rootRef} position={actor.position} rotation={[0, actor.facing, 0]}>
       <primitive object={model} />
       {showLabel && (
-        <sprite position={[0, 17.2, 0]} scale={[labelAspect(label) * 4.6, 4.6, 1]}>
+        <sprite ref={labelRef} position={[0, 17.2, 0]}>
           <spriteMaterial map={getLabelTexture(label, accent)} depthTest={false} transparent />
         </sprite>
       )}

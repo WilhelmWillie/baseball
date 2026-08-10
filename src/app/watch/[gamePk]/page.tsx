@@ -6,12 +6,24 @@ export default async function WatchPage({
   searchParams,
 }: {
   params: Promise<{ gamePk: string }>;
-  searchParams: Promise<{ at?: string }>;
+  searchParams: Promise<{ at?: string; hour?: string; wx?: string; wind?: string }>;
 }) {
   const { gamePk } = await params;
-  const { at } = await searchParams;
+  const { at, hour, wx, wind } = await searchParams;
   const isDemo = gamePk === "demo" || Number(gamePk) === DEMO_GAME_PK;
-  // ?at=<seconds> jumps into the simulated game part-way through.
+  // ?at=<seconds> jumps into the simulated game part-way through, and
+  // ?hour= / ?wx= / ?wind= put it under any sky you like.
   const offset = isDemo ? Math.max(0, Number(at ?? 0) || 0) : 0;
-  return <Viewer gamePk={isDemo ? "demo" : gamePk} isDemo={isDemo} demoOffset={offset} />;
+  const demoQuery = Object.entries({ hour, wx, wind })
+    .filter(([, value]) => value)
+    .map(([key, value]) => `&${key}=${encodeURIComponent(value as string)}`)
+    .join("");
+  return (
+    <Viewer
+      gamePk={isDemo ? "demo" : gamePk}
+      isDemo={isDemo}
+      demoOffset={offset}
+      demoQuery={demoQuery}
+    />
+  );
 }

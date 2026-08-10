@@ -67,7 +67,34 @@ export interface BallState {
   trail: Vector3[];
 }
 
-export type CameraMode = "broadcast" | "wide" | "ball" | "base" | "free";
+/**
+ * The shot vocabulary. Broadcasts do not ease between angles - they cut - and
+ * they change lenses to say something about the moment: tight on the pitcher
+ * with two strikes, low down the line off the bat, wide when the ball is gone.
+ */
+export type CameraMode =
+  | "broadcast"
+  | "wide"
+  | "ball"
+  | "base"
+  | "free"
+  /** Low and tight down the third-base line, looking out with the ball. */
+  | "low"
+  /** Long lens from behind the plate, framed on the pitcher. */
+  | "mound"
+  /** Over the catcher, tight on the hitter. */
+  | "slot"
+  /** Travels with whichever actor `cameraFollowKey` names. */
+  | "follow";
+
+/** How long a shot holds before anything less urgent may replace it. */
+const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
+  low: 1.1,
+  mound: 0.9,
+  slot: 0.9,
+  wide: 1.2,
+  follow: 1,
+};
 
 export interface CallOut {
   text: string;
@@ -242,6 +269,16 @@ export class Director {
   cameraFollow = 0.35;
   cameraFocus = fp(0, 60, 4);
   cameraPosition = fp(0, -84, 44);
+  /**
+   * Bumped every time the shot changes on a cut rather than a move. The rig
+   * watches it and snaps, which is the whole difference between a broadcast
+   * and a security camera.
+   */
+  cameraCut = 0;
+  /** Actor the `follow` shot travels with. */
+  cameraFollowKey: string | null = null;
+  /** Decaying knock on the lens after a hard-hit ball. */
+  cameraShake = 0;
   callout: CallOut | null = null;
   snapshot: GameSnapshot | null = null;
   /** Set while an animation is playing, so the store holds back new state. */
@@ -265,6 +302,9 @@ export class Director {
   private currentStart = 0;
   private idleTime = 0;
   private freeCamera = false;
+  private shotStart = 0;
+  /** Counts pitches, so the pre-pitch shot varies without being random. */
+  private pitchCount = 0;
 
   constructor() {
     this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
@@ -309,6 +349,30 @@ export class Director {
   private launchFireworks(count: number) {
     this.fx.fireworkShow(fp(0, 230, 6), count, this.celebrationColors());
     this.onSound?.("launch");
+  }
+
+  /**
+   * Change the shot. `cut` jumps rather than eases; a shot that has not yet
+   * served out its hold refuses to be replaced, so nothing strobes between two
+   * angles when several things happen at once.
+   */
+  private setShot(mode: CameraMode, opts: { cut?: boolean; force?: boolean; follow?: string } = {}) {
+    if (this.freeCamera) return;
+    if (mode === this.cameraMode) {
+      if (opts.follow) this.cameraFollowKey = opts.follow;
+      return;
+    }
+    const hold = SHOT_HOLD[this.cameraMode] ?? 0;
+    if (!opts.force && hold > 0 && this.now() - this.shotStart < hold * 1000) return;
+    this.cameraMode = mode;
+    this.shotStart = this.now();
+    this.cameraFollowKey = opts.follow ?? null;
+    if (opts.cut) this.cameraCut += 1;
+  }
+
+  /** A hard-hit ball knocks the lens. `amount` is 0..1. */
+  private knockCamera(amount: number) {
+    this.cameraShake = Math.max(this.cameraShake, amount);
   }
 
   setFreeCamera(free: boolean) {
@@ -484,6 +548,8 @@ export class Director {
 
     this.busy = !this.isIdle();
     this.queueLength = this.queue.length;
+    // The knock on the lens dies away over about half a second.
+    if (this.cameraShake > 0) this.cameraShake = Math.max(0, this.cameraShake - dt * 2.4);
 
     if (this.isIdle()) {
       this.idleTime += dt;
@@ -521,8 +587,10 @@ export class Director {
         actor.poseT += dt;
       }
     }
-    if (this.idleTime > 0.6 && !this.freeCamera && this.cameraMode !== "broadcast") {
-      this.cameraMode = "broadcast";
+    // Everything settles back to the broadcast framing between plays, and it
+    // cuts there rather than drifting across the park.
+    if (this.idleTime > 0.9 && this.cameraMode !== "broadcast") {
+      this.setShot("broadcast", { cut: true });
     }
     if (this.ball.visible && this.idleTime > 1.2) {
       this.ball.visible = false;
@@ -609,7 +677,11 @@ export class Director {
           this.ball.visible = false;
           return;
         }
-        cue.at("release", t, windupEnd, () => this.onSound?.("pitch"));
+        cue.at("release", t, windupEnd, () => {
+          this.onSound?.("pitch");
+          // The stride foot lands in front of the rubber and kicks up the mound.
+          this.fx.puff(fp(0, RELEASE_DEPTH - 5, 0.6), 9, { spread: 3.4, lift: 2.6, size: 0.85 });
+        });
         if (t <= plateTime) {
           const u = clamp01((t - windupEnd) / (plateTime - windupEnd));
           const inv = 1 - u;
@@ -656,10 +728,20 @@ export class Director {
       label: `pitch:${pitch.id}`,
       duration,
       onStart: () => {
-        if (!this.freeCamera) this.cameraMode = "broadcast";
+        this.pitchCount += 1;
+        // Two strikes is worth a tight look at the hitter; every fourth pitch
+        // otherwise gets the long lens on the pitcher, cut back at release.
+        if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
+        else if (this.pitchCount % 4 === 0) this.setShot("mound", { cut: true, force: true });
+        else this.setShot("broadcast", { force: true });
       },
       update: (t) => {
         flight.update(t);
+        if (this.cameraMode === "mound") {
+          cue.at("cutback", t, flight.windupEnd, () =>
+            this.setShot("broadcast", { cut: true, force: true }),
+          );
+        }
         if (swings || pitch.outcome === "in_play") {
           this.swingAt(t, flight.plateTime - 0.16, false);
         }
@@ -726,7 +808,15 @@ export class Director {
       duration: contactAt + inner.duration,
       onStart: () => inner.onStart?.(),
       update: (t) => {
-        cue.at("crack", t, contactAt, () => this.onSound?.("crack"));
+        cue.at("crack", t, contactAt, () => {
+          this.onSound?.("crack");
+          // Chips of dirt off the back foot as the hitter turns on it.
+          this.fx.spray(CONTACT.clone().setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
+          // The camera reacts to contact the way a crowd does.
+          const big = result.kind === "home_run" || result.kind === "triple";
+          this.knockCamera(big ? 0.85 : result.ball ? 0.4 : 0.2);
+          if (big) this.setShot("low", { cut: true, force: true });
+        });
         if (t <= contactAt) {
           flight.update(t);
           this.swingAt(t, contactAt - 0.16, true);
@@ -786,9 +876,9 @@ export class Director {
       label: `result:${result.id}`,
       duration,
       onStart: () => {
-        if (!this.freeCamera && ball) {
+        if (ball) {
           this.cameraFollow = result.kind === "home_run" ? 0.6 : 0.32;
-          this.cameraMode = "ball";
+          this.setShot("ball");
         }
         this.announce(result);
       },
@@ -837,6 +927,11 @@ export class Director {
             if (!landed) {
               landed = true;
               this.ball.position.copy(landing).setY(0.6);
+              // Dirt off the first hop, thrown on down the line the ball was
+              // already travelling. A grounder digs in; a fly ball drops in.
+              const skip = landing.clone().setY(0).normalize().setY(0.7);
+              const hard = ball.trajectory === "ground_ball" || ball.trajectory === "line_drive";
+              this.fx.spray(landing.clone().setY(0.4), skip, hard ? 16 : 8, hard ? 1 : 0.5);
             }
             if (t >= throwStart) {
               const u = clamp01((t - throwStart) / (throwEnd - throwStart));
@@ -862,6 +957,9 @@ export class Director {
               fielder.pose = "run";
               fielder.poseT = (fielder.poseT + dt * 1.6) % 1;
             } else if (t < throwStart) {
+              cue.at("field", t, ballDuration, () =>
+                this.fx.puff(fielder.position.clone(), 7, { spread: 3.2, lift: 2, size: 0.8 }),
+              );
               fielder.pose = "catch";
               fielder.poseT = clamp01((t - ballDuration) / 0.25);
             } else if (t < throwEnd) {
@@ -890,6 +988,14 @@ export class Director {
             actor.pose = "run";
             actor.poseT = (actor.poseT + dt * 1.9) % 1;
           } else {
+            // Spikes into the bag. A runner who was thrown out slid hardest.
+            cue.at(`slide:${track.actorKey}`, t, track.end, () =>
+              this.fx.puff(actor.position.clone(), track.isOut ? 22 : 13, {
+                spread: track.isOut ? 8 : 5.5,
+                lift: 3,
+                size: 1.15,
+              }),
+            );
             actor.pose = track.isOut ? "dejected" : track.scored ? "celebrate" : "ready";
             if (track.isOut) actor.visible = t < track.end + 0.6;
             if (track.scored) actor.visible = t < track.end + 0.9;
@@ -897,12 +1003,22 @@ export class Director {
         }
 
         // --- Camera ---
-        if (!this.freeCamera && ball) {
-          if (result.kind === "home_run" && t > ballDuration + 0.9) {
-            this.cameraMode = "wide";
-          } else if (t > (ball ? throwEnd : 0)) {
-            this.cameraMode = "broadcast";
-          }
+        // A home run is three shots: low off the bat, wide as it leaves, then
+        // back to the plate for the trot. A strikeout is one, on the pitcher.
+        if (result.kind === "home_run") {
+          cue.at("hr:wide", t, ballDuration + 0.85, () =>
+            this.setShot("wide", { cut: true, force: true }),
+          );
+          cue.at("hr:trot", t, ballDuration + 3.4, () => {
+            const trot = tracks.find((track) => track.scored);
+            this.setShot("follow", { cut: true, force: true, follow: trot?.actorKey });
+          });
+        } else if (!ball) {
+          cue.at("react", t, 0.4, () => {
+            if (result.kind === "strikeout") this.setShot("mound", { cut: true, force: true });
+          });
+        } else if (t > throwEnd) {
+          this.setShot("broadcast");
         }
       },
       onEnd: () => {
@@ -1053,11 +1169,11 @@ export class Director {
       duration: 1.8,
       onStart: () => {
         this.setCallout(event.description.toUpperCase(), "neutral", "Teams change sides");
-        if (!this.freeCamera) this.cameraMode = "wide";
+        this.setShot("wide", { cut: true, force: true });
       },
       update: () => {},
       onEnd: () => {
-        if (!this.freeCamera) this.cameraMode = "broadcast";
+        this.setShot("broadcast", { cut: true, force: true });
       },
     };
   }
@@ -1087,6 +1203,30 @@ export class Director {
       }
       case "base":
         return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
+      case "low": {
+        // Low down the third-base line, looking out with the ball. Nothing
+        // sells distance like a camera at eye level under a rising fly.
+        // Aimed under the ball rather than at it, so the ball sits high in
+        // frame with the park beneath it instead of against bare sky.
+        const ball = this.ball.position;
+        const target = new Vector3(ball.x * 0.82, ball.y * 0.5 + 8, ball.z * 0.82);
+        return { position: fp(-62, -18, 13), target, lerp: 2.6 };
+      }
+      case "mound":
+        // Long lens from behind the plate, framed on the pitcher.
+        return { position: fp(3, -34, 11), target: fp(0, 55, 5.5), lerp: 2.1 };
+      case "slot":
+        // Over the catcher's shoulder, tight on the hitter.
+        return { position: fp(13, -21, 12), target: fp(1, 7, 5), lerp: 2.3 };
+      case "follow": {
+        const actor = this.cameraFollowKey ? this.actors.get(this.cameraFollowKey) : undefined;
+        const at = actor ? actor.position : fp(0, 40, 0);
+        return {
+          position: new Vector3(at.x + 40, 30, at.z + 54),
+          target: new Vector3(at.x, 9, at.z),
+          lerp: 3.4,
+        };
+      }
       default:
         return {
           position: fp(0, -78, 55),

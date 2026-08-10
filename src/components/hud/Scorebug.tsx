@@ -57,7 +57,7 @@ function TeamRow({
 }
 
 export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
-  const { teams, score, count, batter, defense } = snapshot;
+  const { teams, score, count, batter, defense, conditions } = snapshot;
   const arrow = snapshot.isTopInning ? "▲" : "▼";
 
   return (
@@ -103,6 +103,13 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
             <span className="text-white/45">P</span>
             <span className="truncate text-white/80">{defense.pitcher?.name ?? "—"}</span>
           </div>
+        </div>
+
+        {/* What the park is actually like, which is also what lit the scene. */}
+        <div className="mt-2 flex items-center gap-2 border-t border-white/10 pt-2 text-[10px] tracking-wide text-white/45">
+          <span className="text-white/70">{conditions.condition}</span>
+          {conditions.temp && <span>{conditions.temp}°</span>}
+          {conditions.windLabel && <span className="truncate">{conditions.windLabel}</span>}
         </div>
       </div>
     </div>

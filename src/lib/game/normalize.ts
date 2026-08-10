@@ -2,6 +2,7 @@ import {
   POSITION_KEYS,
   type PositionKey,
 } from "@/lib/field/geometry";
+import { readConditions } from "@/lib/field/sky";
 import { buildUniforms, paletteFor } from "@/lib/mlb/teams";
 import type {
   MlbBoxscoreTeam,
@@ -277,6 +278,15 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
       isPreview: abstract === "Preview",
     },
     venue: gameData?.venue?.name ?? "Ballpark",
+    conditions: readConditions({
+      condition: gameData?.weather?.condition,
+      temp: gameData?.weather?.temp,
+      wind: gameData?.weather?.wind,
+      time: gameData?.datetime?.time,
+      ampm: gameData?.datetime?.ampm,
+      dateTime: gameData?.datetime?.dateTime,
+      venueName: gameData?.venue?.name,
+    }),
     teams: { home, away },
     score: {
       home: linescore?.teams?.home?.runs ?? 0,

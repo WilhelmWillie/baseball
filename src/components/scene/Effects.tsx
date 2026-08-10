@@ -8,12 +8,14 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   Object3D,
 } from "three";
 import type { Fx, Particle } from "@/lib/anim/particles";
 
 const MAX_CONFETTI = 900;
 const MAX_SPARKS = 1400;
+const MAX_DUST = 460;
 
 /** Push a particle list into an InstancedMesh, hiding the unused slots. */
 function writeInstances(
@@ -49,7 +51,7 @@ function writeInstances(
 
 /** Confetti and fireworks, driven by the director's effect system. */
 export function Effects({ fx }: { fx: Fx }) {
-  const { confettiMesh, sparkMesh, dummy, scratch } = useMemo(() => {
+  const { confettiMesh, sparkMesh, dustMesh, dummy, scratch } = useMemo(() => {
     // Thin rectangles tumble like paper.
     const confettiGeo = new BoxGeometry(1, 0.12, 0.55);
     const confettiMat = new MeshBasicMaterial({ toneMapped: false });
@@ -68,9 +70,19 @@ export function Effects({ fx }: { fx: Fx }) {
     sparks.frustumCulled = false;
     sparks.visible = false;
 
+    // Dirt is lit, not glowing, so it sits in the scene rather than on top of
+    // it - and it is the one effect that has to look like it belongs on the
+    // ground.
+    const dustGeo = new IcosahedronGeometry(0.62, 0);
+    const dustMat = new MeshLambertMaterial({ transparent: true, opacity: 0.72, depthWrite: false });
+    const dust = new InstancedMesh(dustGeo, dustMat, MAX_DUST);
+    dust.frustumCulled = false;
+    dust.visible = false;
+
     return {
       confettiMesh: confetti,
       sparkMesh: sparks,
+      dustMesh: dust,
       dummy: new Object3D(),
       scratch: new Color(),
     };
@@ -78,25 +90,26 @@ export function Effects({ fx }: { fx: Fx }) {
 
   useEffect(() => {
     return () => {
-      confettiMesh.geometry.dispose();
-      (confettiMesh.material as MeshBasicMaterial).dispose();
-      confettiMesh.dispose();
-      sparkMesh.geometry.dispose();
-      (sparkMesh.material as MeshBasicMaterial).dispose();
-      sparkMesh.dispose();
+      for (const mesh of [confettiMesh, sparkMesh, dustMesh]) {
+        mesh.geometry.dispose();
+        (mesh.material as MeshBasicMaterial).dispose();
+        mesh.dispose();
+      }
     };
-  }, [confettiMesh, sparkMesh]);
+  }, [confettiMesh, sparkMesh, dustMesh]);
 
   useFrame(() => {
     fx.update();
     writeInstances(confettiMesh, fx.confetti, dummy, scratch, MAX_CONFETTI, false);
     writeInstances(sparkMesh, fx.sparks, dummy, scratch, MAX_SPARKS, true);
+    writeInstances(dustMesh, fx.dust, dummy, scratch, MAX_DUST, true);
   });
 
   return (
     <>
       <primitive object={confettiMesh} />
       <primitive object={sparkMesh} />
+      <primitive object={dustMesh} />
     </>
   );
 }

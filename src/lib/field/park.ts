@@ -20,6 +20,8 @@ export interface Block {
   c: string;
   /** Rotation about Y, radians. */
   r?: number;
+  /** Lamp faces, drawn separately so they can be switched on after dark. */
+  glow?: boolean;
 }
 
 export const COLORS = {
@@ -271,6 +273,7 @@ function lightTowers(blocks: Block[]) {
         s: [3.4, 5.4, 1.4],
         c: COLORS.lamp,
         r: yaw,
+        glow: true,
       });
     }
   }

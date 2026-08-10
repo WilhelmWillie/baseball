@@ -690,7 +690,24 @@ const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th"]
  * Render the scripted game as it stands `elapsedSeconds` in. Pitches appear one
  * at a time and plays complete a beat later, exactly like the real feed.
  */
-export function buildDemoFeed(elapsedSeconds: number): MlbLiveFeed {
+export interface DemoWeather {
+  /** Local first-pitch hour, 0-24. Defaults to a 1:10 afternoon game. */
+  hour?: number;
+  condition?: string;
+  temp?: string;
+  wind?: string;
+}
+
+/** Formats an hour as MLB does: "1:10" plus "pm". */
+function clockLabel(hour: number): { time: string; ampm: string } {
+  const h = Math.floor(hour) % 24;
+  const minutes = Math.round((hour - Math.floor(hour)) * 60);
+  const ampm = h >= 12 ? "pm" : "am";
+  const display = h % 12 === 0 ? 12 : h % 12;
+  return { time: `${display}:${String(minutes).padStart(2, "0")}`, ampm };
+}
+
+export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {}): MlbLiveFeed {
   const t = Math.max(0, elapsedSeconds);
   const allPlays: MlbPlay[] = [];
   let state = initialState();
@@ -754,7 +771,12 @@ export function buildDemoFeed(elapsedSeconds: number): MlbLiveFeed {
     metaData: { timeStamp: new Date().toISOString() },
     gameData: {
       game: { pk: DEMO_GAME_PK, type: "R", season: String(new Date().getFullYear()) },
-      datetime: { dateTime: new Date().toISOString() },
+      datetime: {
+        // The demo runs on its own clock, so first pitch is reported as
+        // "now minus however far in we are".
+        dateTime: new Date(Date.now() - t * 1000).toISOString(),
+        ...clockLabel(weather.hour ?? 13.17),
+      },
       status: {
         abstractGameState: finished ? "Final" : started ? "Live" : "Preview",
         codedGameState: finished ? "F" : started ? "I" : "P",
@@ -764,6 +786,11 @@ export function buildDemoFeed(elapsedSeconds: number): MlbLiveFeed {
       teams: { away: AWAY_TEAM, home: HOME_TEAM },
       players: playersDict(),
       venue: { name: "Demo Park" },
+      weather: {
+        condition: weather.condition ?? "Sunny",
+        temp: weather.temp ?? "74",
+        wind: weather.wind ?? "7 mph, Out To CF",
+      },
     },
     liveData: {
       plays: { allPlays, currentPlay: activePlay },

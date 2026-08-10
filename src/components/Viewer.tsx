@@ -53,13 +53,16 @@ export function Viewer({
   gamePk,
   isDemo,
   demoOffset = 0,
+  demoQuery = "",
 }: {
   gamePk: string;
   isDemo: boolean;
   /** Start the simulated game this many seconds in. */
   demoOffset?: number;
+  /** Extra query passed through to the simulated feed (time of day, weather). */
+  demoQuery?: string;
 }) {
-  useLiveFeed(gamePk, isDemo, demoOffset);
+  useLiveFeed(gamePk, isDemo, demoOffset, demoQuery);
 
   const snapshot = useGameStore((s) => s.snapshot);
   const history = useGameStore((s) => s.history);

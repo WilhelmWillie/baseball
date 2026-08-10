@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Sky } from "@react-three/drei";
 import { Vector3, type WebGLRenderer } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
+import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
 import { Park } from "./Park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
 import { Player } from "./Player";
 import { Effects } from "./Effects";
+import { ContactShadows, GroundOcclusion } from "./Shadows";
+import { Weather } from "./Weather";
 
 /** Drives the animation clock and promotes feed state once the queue drains. */
 function Engine() {
@@ -23,21 +26,43 @@ function Engine() {
   return null;
 }
 
+/**
+ * Drives the camera from the director's shot list. Two things matter here: a
+ * change of shot cuts rather than sliding the camera across the park, and a
+ * hard-hit ball knocks the lens for a moment afterwards.
+ */
 function CameraRig({ director }: { director: Director }) {
   const target = useRef(new Vector3());
+  const shake = useRef(new Vector3());
   const initialised = useRef(false);
+  const lastCut = useRef(director.cameraCut);
 
   useFrame((state, delta) => {
     if (director.isFreeCamera()) return;
     const desired = director.desiredCamera();
-    if (!initialised.current) {
+    const cut = director.cameraCut !== lastCut.current;
+    if (cut) lastCut.current = director.cameraCut;
+
+    if (!initialised.current || cut) {
       state.camera.position.copy(desired.position);
       target.current.copy(desired.target);
       initialised.current = true;
+    } else {
+      const k = Math.min(1, delta * desired.lerp);
+      state.camera.position.lerp(desired.position, k);
+      target.current.lerp(desired.target, k);
     }
-    const k = Math.min(1, delta * desired.lerp);
-    state.camera.position.lerp(desired.position, k);
-    target.current.lerp(desired.target, k);
+
+    const knock = director.cameraShake;
+    if (knock > 0.001) {
+      const t = state.clock.elapsedTime;
+      shake.current.set(
+        Math.sin(t * 47) * knock * 1.6,
+        Math.sin(t * 39 + 1.7) * knock * 1.2,
+        Math.sin(t * 53 + 0.6) * knock * 1.1,
+      );
+      state.camera.position.add(shake.current);
+    }
     state.camera.lookAt(target.current);
   });
 
@@ -98,6 +123,14 @@ export interface SceneProps {
 export function Scene({ onRenderer }: SceneProps) {
   const director = useGameStore((s) => s.director);
   const cameraFree = useGameStore((s) => s.cameraFree);
+  const conditions = useGameStore((s) => s.snapshot?.conditions) ?? DEFAULT_CONDITIONS;
+
+  // Recomputed only when the conditions object changes, which is once a poll.
+  const look = useMemo(() => skyLook(conditions), [conditions]);
+
+  useEffect(() => {
+    director.fx.wind.copy(conditions.wind);
+  }, [director, conditions]);
 
   return (
     <Canvas
@@ -111,31 +144,50 @@ export function Scene({ onRenderer }: SceneProps) {
       }}
       camera={{ fov: 50, near: 2, far: 4000, position: [0, 92, 132] }}
     >
-      <Sky sunPosition={[-260, 190, 190]} turbidity={5} rayleigh={1.2} />
+      {look.background ? (
+        <color attach="background" args={[look.background]} />
+      ) : (
+        <Sky
+          sunPosition={look.skySun}
+          turbidity={look.turbidity}
+          rayleigh={look.rayleigh}
+          mieCoefficient={look.mie}
+        />
+      )}
+      {look.fog && <fogExp2 attach="fog" args={[look.fog.color, look.fog.density]} />}
 
-      <hemisphereLight args={["#cfe6ff", "#42663a", 0.8]} />
-      <ambientLight intensity={0.3} />
+      <hemisphereLight args={[look.hemiSky, look.hemiGround, look.hemiIntensity]} />
+      <ambientLight intensity={look.ambient} />
       <directionalLight
-        position={[-300, 380, 220]}
-        intensity={1.25}
+        position={look.sun}
+        intensity={look.sunIntensity}
+        color={look.sunColor}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-near={100}
-        shadow-camera-far={900}
+        shadow-camera-far={1400}
         shadow-camera-left={-320}
         shadow-camera-right={320}
         shadow-camera-top={320}
         shadow-camera-bottom={-320}
         shadow-bias={-0.0006}
       />
-      <directionalLight position={[240, 190, -280]} intensity={0.25} color="#ffe6bd" />
+      {/* Bounce off the far side, so nothing sits in pure black. */}
+      <directionalLight
+        position={[-look.sun[0] * 0.7, 190, -280]}
+        intensity={look.fillIntensity}
+        color={look.fillColor}
+      />
 
       <Field />
-      <Park />
+      <GroundOcclusion />
+      <Park lampsLit={look.lampsLit} />
+      <ContactShadows director={director} />
       <Actors director={director} />
       <Ball director={director} />
       <Effects fx={director.fx} />
+      <Weather conditions={conditions} />
 
       <Engine />
       <CameraRig director={director} />

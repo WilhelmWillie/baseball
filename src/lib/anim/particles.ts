@@ -37,6 +37,10 @@ interface Shell {
 
 const MAX_CONFETTI = 900;
 const MAX_SPARKS = 1400;
+const MAX_DUST = 460;
+
+/** Infield dirt, in a few shades so a puff is not one flat color. */
+const DIRT_COLORS = ["#a97c4e", "#96683c", "#bb9068", "#8a6136", "#c2a077"];
 
 const CONFETTI_EXTRA = ["#ffd447", "#ff6b6b", "#4ecdc4", "#f7f7f2", "#b388ff"];
 const FIREWORK_BRIGHTS = ["#ffd447", "#ff5f8f", "#5ce1e6", "#b6ff5c", "#ffffff"];
@@ -56,20 +60,92 @@ function randomIn(min: number, max: number): number {
 export class Fx {
   confetti: Particle[] = [];
   sparks: Particle[] = [];
+  /** Kicked-up dirt: cheap, but it is what makes a slide land. */
+  dust: Particle[] = [];
+  /**
+   * Wind at the park, in field space and feet per second. Anything light
+   * enough to be pushed around by it drifts downwind.
+   */
+  wind = new Vector3();
   private shells: Shell[] = [];
   private lastUpdate = 0;
   /** Fired when a shell bursts, so audio can land with the flash. */
   onBurst?: (intensity: number) => void;
 
   get active(): boolean {
-    return this.confetti.length > 0 || this.sparks.length > 0 || this.shells.length > 0;
+    return (
+      this.confetti.length > 0 ||
+      this.sparks.length > 0 ||
+      this.dust.length > 0 ||
+      this.shells.length > 0
+    );
   }
 
   clear() {
     this.lastUpdate = 0;
     this.confetti.length = 0;
     this.sparks.length = 0;
+    this.dust.length = 0;
     this.shells.length = 0;
+  }
+
+  /**
+   * A puff of dirt that swells and hangs. `spread` is how wide it opens out,
+   * `lift` how much of it goes up rather than out.
+   */
+  puff(origin: Vector3, count: number, opts: { spread?: number; lift?: number; size?: number } = {}) {
+    const spread = opts.spread ?? 5;
+    const lift = opts.lift ?? 4;
+    const size = opts.size ?? 1;
+    for (let i = 0; i < count; i++) {
+      if (this.dust.length >= MAX_DUST) break;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = randomIn(0.3, 1) * spread;
+      this.dust.push({
+        pos: origin.clone().add(new Vector3(randomIn(-1, 1), randomIn(0, 1.2), randomIn(-1, 1))),
+        vel: new Vector3(Math.cos(angle) * speed, randomIn(0.4, 1.4) * lift, Math.sin(angle) * speed),
+        color: new Color(DIRT_COLORS[Math.floor(Math.random() * DIRT_COLORS.length)]),
+        life: randomIn(0.7, 1.5),
+        maxLife: 1.5,
+        size: randomIn(0.9, 2.2) * size,
+        spin: new Vector3(),
+        rot: new Vector3(),
+        // Dust barely falls - it hangs and thins out.
+        gravity: -3.2,
+        drag: 2.4,
+        flutter: 0,
+        phase: 0,
+      });
+    }
+  }
+
+  /**
+   * Dirt thrown along a direction: a ball skipping off the infield, or spikes
+   * digging in. Heavier and faster than a puff, and it drops back down.
+   */
+  spray(origin: Vector3, direction: Vector3, count: number, force = 1) {
+    const aim = direction.lengthSq() > 0 ? direction.clone().normalize() : new Vector3(0, 1, 0);
+    for (let i = 0; i < count; i++) {
+      if (this.dust.length >= MAX_DUST) break;
+      const scatter = new Vector3(randomIn(-1, 1), randomIn(-0.1, 1), randomIn(-1, 1)).normalize();
+      this.dust.push({
+        pos: origin.clone().add(new Vector3(randomIn(-0.8, 0.8), randomIn(0, 0.8), randomIn(-0.8, 0.8))),
+        vel: aim
+          .clone()
+          .multiplyScalar(randomIn(6, 15) * force)
+          .addScaledVector(scatter, randomIn(3, 9) * force),
+        color: new Color(DIRT_COLORS[Math.floor(Math.random() * DIRT_COLORS.length)]),
+        life: randomIn(0.45, 0.9),
+        maxLife: 0.9,
+        size: randomIn(0.4, 1.1),
+        spin: new Vector3(),
+        rot: new Vector3(),
+        gravity: -34,
+        drag: 0.9,
+        flutter: 0,
+        phase: 0,
+      });
+    }
   }
 
   /** A burst of tumbling paper above a point. */
@@ -183,11 +259,14 @@ export class Fx {
       this.shells.splice(i, 1);
     }
 
-    this.step(this.confetti, step, true);
-    this.step(this.sparks, step, false);
+    this.step(this.confetti, step, true, 0.5);
+    this.step(this.sparks, step, false, 0.15);
+    this.step(this.dust, step, false, 1);
   }
 
-  private step(list: Particle[], dt: number, flutter: boolean) {
+  private step(list: Particle[], dt: number, flutter: boolean, windPull: number) {
+    const wind = this.wind;
+    const blown = windPull > 0 && wind.lengthSq() > 0;
     for (let i = list.length - 1; i >= 0; i--) {
       const p = list[i];
       p.life -= dt;
@@ -199,6 +278,11 @@ export class Fx {
       const damping = Math.max(0, 1 - p.drag * dt);
       p.vel.x *= damping;
       p.vel.z *= damping;
+      // Drag pulls each particle toward the speed of the air around it.
+      if (blown) {
+        p.vel.x += (wind.x - p.vel.x) * Math.min(1, p.drag * windPull * dt);
+        p.vel.z += (wind.z - p.vel.z) * Math.min(1, p.drag * windPull * dt);
+      }
       if (flutter) {
         p.phase += dt * p.flutter;
         p.vel.x += Math.cos(p.phase) * p.flutter * dt * 2.2;

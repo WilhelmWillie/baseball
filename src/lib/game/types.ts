@@ -1,4 +1,5 @@
 import type { BaseId, PositionKey } from "@/lib/field/geometry";
+import type { Conditions } from "@/lib/field/sky";
 import type { TeamPalette, Uniform } from "@/lib/mlb/teams";
 
 export type TeamSide = "home" | "away";
@@ -83,6 +84,8 @@ export interface GameSnapshot {
     isPreview: boolean;
   };
   venue: string;
+  /** Time of day and weather at the park, which drive the lighting. */
+  conditions: Conditions;
   teams: Record<TeamSide, TeamInfo>;
   score: Record<TeamSide, number>;
   hits: Record<TeamSide, number>;

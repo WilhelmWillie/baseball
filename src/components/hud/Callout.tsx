@@ -5,10 +5,10 @@ import type { CallOut } from "@/lib/anim/director";
 import { useGameStore } from "@/store/gameStore";
 
 const TONE: Record<CallOut["tone"], string> = {
-  neutral: "border-white/40 text-white",
-  good: "border-emerald-300 text-emerald-200",
-  bad: "border-red-400 text-red-200",
-  big: "border-amber-300 text-amber-200",
+  neutral: "border-bark/15 bg-card text-bark",
+  good: "border-grass-deep bg-grass text-card",
+  bad: "border-clay bg-card text-clay",
+  big: "border-bark bg-clay text-card",
 };
 
 /**
@@ -38,15 +38,15 @@ export function Callout() {
   if (!call) return null;
 
   return (
-    <div className="pointer-events-none flex flex-col items-center font-mono">
+    <div className="pointer-events-none flex flex-col items-center">
       <div
         key={call.at}
-        className={`animate-[callout_240ms_ease-out] border-2 bg-slate-950/95 px-3 py-1.5 text-lg tracking-[0.15em] shadow-[5px_5px_0_rgba(0,0,0,0.7)] sm:px-5 sm:py-2 sm:text-2xl sm:tracking-[0.2em] ${TONE[call.tone]}`}
+        className={`animate-[callout_320ms_cubic-bezier(0.34,1.56,0.64,1)] rounded-2xl border-2 px-4 py-2 font-display text-xl font-extrabold lip-float sm:px-6 sm:py-2.5 sm:text-3xl ${TONE[call.tone]}`}
       >
         {call.text}
       </div>
       {call.detail && (
-        <div className="mt-1 max-w-md bg-slate-950/85 px-2 py-0.5 text-center text-[11px] tracking-wide text-white/80">
+        <div className="mt-1.5 max-w-md rounded-full bg-card/95 px-3 py-1 text-center text-[11px] font-semibold text-bark lip-float">
           {call.detail}
         </div>
       )}

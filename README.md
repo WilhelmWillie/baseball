@@ -1,8 +1,10 @@
-# MLB 3D
+# Ballpark
 
-Pick a live MLB game and watch it unfold in a low-poly 3D ballpark. Pitches,
-batted balls and baserunners are driven by the real MLB Stats API — the app
-doesn't simulate baseball, it interprets MLB's event stream and animates it.
+**Watch baseball come to life.** Pick a game. Grab a seat. Watch every pitch,
+hit, and baserunner unfold in a charming low-poly ballpark.
+
+Everything on the field is driven by the real MLB Stats API — the app doesn't
+simulate baseball, it interprets MLB's event stream and animates it.
 
 ```
 MLB Stats API → adapter → normalized events → animation queue → three.js
@@ -340,7 +342,7 @@ dropped, and the log's hint says "tap" rather than "hover".
 
 - Defensive shifts aren't modelled; fielders stand in standard positions.
 - There are no dugouts or bench figures in the 3D scene; the bench is listed in
-  the LINEUP panel instead.
+  the Lineup panel instead.
 - The simulated game runs a scripted 20 at-bats, so it ends after two innings.
 - Every park uses the same generic dimensions rather than the real venue's.
 - Fielders converge on the ball and throw, but relays and rundowns are a single

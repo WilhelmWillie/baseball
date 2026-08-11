@@ -55,25 +55,35 @@ export function getNumberTexture(value: string, background: string, foreground: 
   return texture;
 }
 
-/** Floating name tag. */
+function labelWidth(text: string): number {
+  return Math.max(72, text.slice(0, 14).length * LABEL_CHAR + 34);
+}
+
+/** Floating name tag: a little cream pill in the club's colour. */
 export function getLabelTexture(text: string, accent: string): Texture {
   const key = `label:${text}:${accent}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const label = text.toUpperCase().slice(0, 14);
-  const width = Math.max(64, label.length * LABEL_CHAR + 22);
+  const label = text.slice(0, 14);
+  const width = labelWidth(label);
 
   const { canvas, ctx } = makeCanvas(width, LABEL_HEIGHT);
-  ctx.fillStyle = "rgba(10,12,17,0.9)";
-  ctx.fillRect(0, 0, width, LABEL_HEIGHT);
-  ctx.fillStyle = accent;
-  ctx.fillRect(0, LABEL_HEIGHT - 5, width, 5);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "600 24px ui-sans-serif, system-ui, sans-serif";
+  const inset = 4;
+  const radius = (LABEL_HEIGHT - inset * 2) / 2;
+  ctx.beginPath();
+  ctx.roundRect(inset, inset, width - inset * 2, LABEL_HEIGHT - inset * 2, radius);
+  ctx.fillStyle = "rgba(255,252,245,0.96)";
+  ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  ctx.fillStyle = "#4a3524";
+  ctx.font = '700 23px ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, width / 2, LABEL_HEIGHT / 2 - 1);
+  ctx.fillText(label, width / 2, LABEL_HEIGHT / 2);
 
   const texture = finish(canvas);
   cache.set(key, texture);
@@ -81,8 +91,7 @@ export function getLabelTexture(text: string, accent: string): Texture {
 }
 
 export function labelAspect(text: string): number {
-  const label = text.toUpperCase().slice(0, 14);
-  return Math.max(64, label.length * LABEL_CHAR + 22) / LABEL_HEIGHT;
+  return labelWidth(text.slice(0, 14)) / LABEL_HEIGHT;
 }
 
 export function disposeTextures() {

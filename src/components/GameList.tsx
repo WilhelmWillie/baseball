@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { GameSummary } from "@/lib/game/schedule";
+import { Ball } from "@/components/brand/Ball";
 
 interface SchedulePayload {
   date: string;
@@ -13,10 +14,31 @@ interface SchedulePayload {
 }
 
 function timeLabel(iso: string | null): string {
-  if (!iso) return "TBD";
-  return new Date(iso)
-    .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    .toUpperCase();
+  if (!iso) return "Time TBD";
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function StatusPill({ game }: { game: GameSummary }) {
+  if (game.state === "live") {
+    return (
+      <span className="flex items-center gap-1.5 rounded-full bg-grass px-2.5 py-1 text-[11px] font-bold text-white">
+        <span className="h-1.5 w-1.5 animate-[blink_1.4s_ease-in-out_infinite] rounded-full bg-card" />
+        {game.isTopInning ? "Top" : "Bot"} {game.inningOrdinal ?? ""} · {game.outs ?? 0} out
+      </span>
+    );
+  }
+  if (game.state === "final") {
+    return (
+      <span className="rounded-full bg-paper-deep px-2.5 py-1 text-[11px] font-bold text-bark-soft">
+        Final
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-clay-soft/60 px-2.5 py-1 text-[11px] font-bold text-bark">
+      {timeLabel(game.startTime)}
+    </span>
+  );
 }
 
 function TeamLine({
@@ -31,14 +53,22 @@ function TeamLine({
   return (
     <div className="flex items-center gap-3">
       <span
-        className="inline-block h-6 w-6 border-2 border-black/50"
+        className="inline-block h-7 w-7 shrink-0 rounded-full ring-2 ring-card"
         style={{ backgroundColor: team.palette.primary }}
       />
-      <span className={`w-14 text-sm tracking-widest ${dim ? "text-white/55" : "text-white"}`}>
+      <span
+        className={`w-12 font-display text-lg font-extrabold leading-none ${
+          dim ? "text-bark-soft" : "text-bark"
+        }`}
+      >
         {team.abbrev}
       </span>
-      <span className="flex-1 truncate text-xs text-white/45">{team.name}</span>
-      <span className={`w-8 text-right text-lg ${dim ? "text-white/45" : "text-white"}`}>
+      <span className="flex-1 truncate text-sm text-bark-soft">{team.name}</span>
+      <span
+        className={`w-8 text-right font-display text-2xl font-extrabold leading-none ${
+          dim ? "text-bark-soft/70" : "text-grass-deep"
+        }`}
+      >
         {score ?? "–"}
       </span>
     </div>
@@ -54,50 +84,40 @@ function GameCard({ game }: { game: GameSummary }) {
   const watchable = isLive || game.isDemo;
 
   const shell =
-    "group block border-2 border-black/60 bg-slate-950/70 p-4 transition-all";
+    "group block rounded-3xl border-2 bg-card p-4 transition-all duration-200 sm:p-5";
   const interactive = watchable
-    ? "hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-[5px_5px_0_rgba(0,0,0,0.5)]"
-    : "cursor-not-allowed opacity-55";
+    ? "border-grass-deep/12 lip hover:-translate-y-1 hover:-rotate-[0.4deg] hover:border-grass/60"
+    : "cursor-not-allowed border-bark/8 bg-card/60 opacity-70";
 
   const body = (
     <>
-      <div className="mb-3 flex items-center justify-between font-mono text-[10px] tracking-widest">
-        <span
-          className={
-            isLive
-              ? "flex items-center gap-1.5 text-emerald-300"
-              : game.state === "final"
-                ? "text-white/35"
-                : "text-amber-300"
-          }
-        >
-          {isLive && <span className="h-2 w-2 animate-pulse bg-emerald-400" />}
-          {isLive
-            ? `${game.isTopInning ? "TOP" : "BOT"} ${game.inningOrdinal ?? ""} · ${game.outs ?? 0} OUT`
-            : game.state === "final"
-              ? "FINAL"
-              : timeLabel(game.startTime)}
-        </span>
-        <span className="truncate pl-3 text-white/30">{game.venue}</span>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <StatusPill game={game} />
+        <span className="truncate text-xs text-bark-soft/80">{game.venue}</span>
       </div>
 
-      <div className="space-y-2 font-mono">
+      <div className="space-y-2.5">
         <TeamLine team={game.away} score={game.away.score} dim={!isLive && game.state !== "final"} />
         <TeamLine team={game.home} score={game.home.score} dim={!isLive && game.state !== "final"} />
       </div>
 
-      <div
-        className={`mt-3 flex items-center justify-between font-mono text-[10px] tracking-widest text-white/30 ${
-          watchable ? "group-hover:text-amber-300" : ""
-        }`}
-      >
-        <span>{game.isDemo ? "SIMULATED GAME" : game.statusText.toUpperCase()}</span>
-        <span>
-          {watchable
-            ? "WATCH IN 3D →"
-            : game.state === "final"
-              ? "GAME OVER"
-              : "NOT STARTED"}
+      <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
+        <span className="truncate text-bark-soft">
+          {game.isDemo ? "A game we made up, always ready" : game.statusText}
+        </span>
+        <span
+          className={`shrink-0 font-bold ${watchable ? "text-grass" : "text-bark-soft/70"}`}
+        >
+          {watchable ? (
+            <>
+              Grab a seat{" "}
+              <span className="inline-block transition-transform group-hover:translate-x-1">→</span>
+            </>
+          ) : game.state === "final" ? (
+            "That's a wrap"
+          ) : (
+            "Not yet"
+          )}
         </span>
       </div>
     </>
@@ -115,6 +135,19 @@ function GameCard({ game }: { game: GameSummary }) {
     <Link href={href} className={`${shell} ${interactive}`}>
       {body}
     </Link>
+  );
+}
+
+function SectionTitle({ children, count }: { children: React.ReactNode; count?: number }) {
+  return (
+    <h2 className="mb-3 flex items-center gap-2 font-display text-xl font-extrabold text-grass-deep">
+      {children}
+      {count !== undefined && count > 0 && (
+        <span className="rounded-full bg-grass-mist px-2 py-0.5 font-sans text-xs font-bold text-grass-deep">
+          {count}
+        </span>
+      )}
+    </h2>
   );
 }
 
@@ -152,64 +185,51 @@ export function GameList() {
   const rest = data?.games.filter((g) => g.state !== "live") ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-16 sm:px-6 sm:pb-20">
-      <header className="py-8 sm:py-12">
-        <h1 className="font-mono text-3xl tracking-[0.3em] text-white sm:text-4xl">
-          MLB<span className="text-amber-300">3D</span>
-        </h1>
-        <p className="mt-3 max-w-xl font-mono text-xs leading-relaxed tracking-wide text-white/50">
-          PICK A LIVE GAME AND WATCH IT UNFOLD IN A LOW-POLY 3D BALLPARK. PITCHES, HITS AND
-          BASERUNNERS ARE DRIVEN BY THE REAL MLB STATS API.
-        </p>
-      </header>
-
+    <div>
       {loading && (
-        <div className="border-2 border-black/60 bg-slate-950/70 p-8 text-center font-mono text-xs tracking-widest text-white/50">
-          LOADING TODAY&apos;S SCHEDULE…
+        <div className="flex items-center justify-center gap-3 rounded-3xl border-2 border-grass-deep/12 bg-card p-10 text-sm text-bark-soft lip">
+          <Ball className="h-6 w-6 animate-[bob_1.6s_ease-in-out_infinite]" />
+          Looking up today&apos;s games…
         </div>
       )}
 
       {!loading && (
         <>
           <section>
-            <h2 className="mb-3 font-mono text-xs tracking-[0.3em] text-emerald-300">
-              LIVE NOW {live.length > 0 && `· ${live.length}`}
-            </h2>
+            <SectionTitle count={live.length}>Playing right now</SectionTitle>
             {live.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {live.map((game) => (
                   <GameCard key={game.gamePk} game={game} />
                 ))}
               </div>
             ) : (
-              <div className="border-2 border-black/60 bg-slate-950/70 p-6 font-mono text-xs leading-relaxed tracking-wide text-white/55">
-                <p className="text-white/75">NO MLB GAMES ARE IN PROGRESS RIGHT NOW.</p>
-                <p className="mt-2">
+              <div className="rounded-3xl border-2 border-grass-deep/12 bg-card p-6 text-sm leading-relaxed text-bark-soft lip">
+                <p className="font-display text-lg font-bold text-bark">
+                  The park is quiet at the moment.
+                </p>
+                <p className="mt-1">
                   {failed
-                    ? "THE SCHEDULE FEED COULD NOT BE REACHED FROM THIS SERVER."
-                    : "CHECK BACK AROUND FIRST PITCH, OR TAKE THE SIMULATED GAME BELOW FOR A SPIN."}
+                    ? "We couldn't reach the schedule from here — the simulated game below still works."
+                    : "Nothing is in progress. Come back around first pitch, or take the game below for a spin."}
                 </p>
               </div>
             )}
           </section>
 
           {data?.demo && (
-            <section className="mt-8">
-              <h2 className="mb-3 font-mono text-xs tracking-[0.3em] text-amber-300">
-                ALWAYS AVAILABLE
-              </h2>
-              <div className="grid gap-3 sm:grid-cols-2">
+            <section className="mt-10">
+              <SectionTitle>Always open</SectionTitle>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <GameCard game={{ ...data.demo, isDemo: true }} />
               </div>
             </section>
           )}
 
           {rest.length > 0 && (
-            <section className="mt-8">
-              <h2 className="mb-3 font-mono text-xs tracking-[0.3em] text-white/40">
-                REST OF THE SLATE
-              </h2>
-              <div className="grid gap-3 sm:grid-cols-2">
+            <section className="mt-10">
+              <SectionTitle>Rest of the slate</SectionTitle>
+              <div className="grid gap-4 sm:grid-cols-2">
                 {rest.map((game) => (
                   <GameCard key={game.gamePk} game={game} />
                 ))}
@@ -220,7 +240,7 @@ export function GameList() {
           {/* Feed errors quote the URL, which is long enough to push the page
               sideways on a phone if it is allowed to stay one word. */}
           {failed && (
-            <p className="mt-8 break-all border-2 border-red-900 bg-red-950/40 p-4 font-mono text-[11px] leading-relaxed tracking-wide text-red-200">
+            <p className="mt-8 break-all rounded-2xl border-2 border-clay/30 bg-clay-soft/25 p-4 text-xs leading-relaxed text-bark">
               {failed}
             </p>
           )}

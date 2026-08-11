@@ -4,6 +4,13 @@ import type { GameSnapshot } from "@/lib/game/types";
 const TARGET_WIDTH = 1600;
 const FOOTER = 168;
 
+/** Ballpark's palette, as the footer needs it. */
+const PAPER = "#fffcf5";
+const GRASS = "#3f8f5b";
+const GRASS_DEEP = "#1f5a39";
+const BARK = "#4a3524";
+const BARK_SOFT = "#8b6d52";
+
 function text(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -13,7 +20,7 @@ function text(
   color: string,
   align: CanvasTextAlign = "left",
 ) {
-  ctx.font = `bold ${size}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+  ctx.font = `700 ${size}px ui-rounded, "SF Pro Rounded", Nunito, "Segoe UI", system-ui, sans-serif`;
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = color;
@@ -38,8 +45,8 @@ function drawDiamond(
     ctx.translate(cx + dx, cy + dy);
     ctx.rotate(Math.PI / 4);
     ctx.lineWidth = 3;
-    ctx.strokeStyle = filled ? "#fcd34d" : "rgba(255,255,255,0.4)";
-    ctx.fillStyle = filled ? "#fcd34d" : "transparent";
+    ctx.strokeStyle = filled ? GRASS : "rgba(74,53,36,0.3)";
+    ctx.fillStyle = filled ? GRASS : "transparent";
     const half = size * 0.42;
     ctx.beginPath();
     ctx.rect(-half, -half, half * 2, half * 2);
@@ -73,11 +80,11 @@ export async function captureSnapshot(
 
   ctx.drawImage(source, 0, 0, width, height);
 
-  // Footer.
-  ctx.fillStyle = "#0b1018";
+  // Footer: a strip of the same warm paper the rest of Ballpark is printed on.
+  ctx.fillStyle = PAPER;
   ctx.fillRect(0, height, width, FOOTER);
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.fillRect(0, height, width, 4);
+  ctx.fillStyle = GRASS;
+  ctx.fillRect(0, height, width, 6);
 
   const baseY = height + 62;
   const { teams, score } = snapshot;
@@ -88,60 +95,54 @@ export async function captureSnapshot(
     [teams.home, score.home, baseY + 58],
   ];
   for (const [team, runs, y] of rows) {
+    ctx.beginPath();
+    ctx.arc(56, y - 10, 16, 0, Math.PI * 2);
     ctx.fillStyle = team.palette.primary;
-    ctx.fillRect(40, y - 26, 32, 32);
-    ctx.strokeStyle = "rgba(0,0,0,0.6)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(40, y - 26, 32, 32);
-    text(ctx, team.abbrev, 90, y, 30, "#f4f6f8");
-    text(ctx, String(runs), 250, y, 34, "#ffffff", "right");
+    ctx.fill();
+    ctx.strokeStyle = PAPER;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    text(ctx, team.abbrev, 90, y, 30, BARK);
+    text(ctx, String(runs), 250, y, 34, GRASS_DEEP, "right");
   }
 
   const batting = snapshot.battingSide === "away" ? baseY : baseY + 58;
-  text(ctx, "●", 272, batting, 22, "#fcd34d");
+  text(ctx, "●", 272, batting, 22, GRASS);
 
   // Inning + count.
   const midX = 360;
   text(
     ctx,
-    `${snapshot.isTopInning ? "TOP" : "BOT"} ${snapshot.inningOrdinal.toUpperCase()}`,
+    `${snapshot.isTopInning ? "Top" : "Bot"} ${snapshot.inningOrdinal}`,
     midX,
     height + 52,
     26,
-    "#fcd34d",
+    GRASS_DEEP,
   );
   text(
     ctx,
-    `${snapshot.count.balls}-${snapshot.count.strikes}   ${snapshot.count.outs} OUT`,
+    `${snapshot.count.balls}-${snapshot.count.strikes}   ${snapshot.count.outs} out`,
     midX,
     height + 92,
     24,
-    "#cbd5e1",
+    BARK_SOFT,
   );
   drawDiamond(ctx, midX + 250, height + 66, 26, snapshot);
 
   // Matchup.
   const rightX = width - 40;
-  text(ctx, `AB  ${snapshot.batter?.name ?? "—"}`, rightX, height + 52, 24, "#f4f6f8", "right");
+  text(ctx, `AB  ${snapshot.batter?.name ?? "—"}`, rightX, height + 52, 24, BARK, "right");
   text(
     ctx,
     `P   ${snapshot.defense.pitcher?.name ?? "—"}`,
     rightX,
     height + 88,
     24,
-    "rgba(244,246,248,0.75)",
+    BARK_SOFT,
     "right",
   );
-  text(
-    ctx,
-    snapshot.venue.toUpperCase(),
-    rightX,
-    height + 126,
-    18,
-    "rgba(244,246,248,0.45)",
-    "right",
-  );
-  text(ctx, "MLB 3D LIVE", 40, height + 140, 18, "rgba(244,246,248,0.4)");
+  text(ctx, snapshot.venue, rightX, height + 126, 18, BARK_SOFT, "right");
+  text(ctx, "Ballpark", 40, height + 140, 20, GRASS);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     out.toBlob((b) => (b ? resolve(b) : reject(new Error("Snapshot encoding failed"))), "image/png");
@@ -167,7 +168,7 @@ export async function shareOrDownload(
     navigator.canShare({ files: [file] });
   if (canShare) {
     try {
-      await navigator.share({ files: [file], title: "MLB 3D Live" });
+      await navigator.share({ files: [file], title: "Ballpark" });
       return "shared";
     } catch {
       // Dismissed or unsupported - fall through to the download path.

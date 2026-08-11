@@ -1,11 +1,29 @@
 @import "tailwindcss";
 
+/**
+ * Ballpark's palette: a summer afternoon at the yard. Warm paper, mown grass,
+ * infield dirt. Everything else is a shade of one of those three.
+ */
 @theme inline {
-  --color-background: #0a0f18;
-  --color-foreground: #f4f6f8;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
-    "Liberation Mono", monospace;
-  --font-sans: var(--font-mono);
+  --color-paper: #f7efe1;
+  --color-paper-deep: #eee2cd;
+  --color-card: #fffcf5;
+
+  --color-grass: #3f8f5b;
+  --color-grass-deep: #1f5a39;
+  --color-grass-soft: #8fca9f;
+  --color-grass-mist: #dcedd9;
+
+  --color-bark: #4a3524;
+  --color-bark-soft: #8b6d52;
+  --color-clay: #c2764a;
+  --color-clay-soft: #e5b98e;
+
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-bark);
+
+  --font-display: var(--font-baloo), ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --font-sans: var(--font-nunito), ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
 }
 
 html,
@@ -14,27 +32,77 @@ body {
 }
 
 body {
-  background: #0a0f18;
-  color: #f4f6f8;
-  font-family: var(--font-mono);
+  background: var(--color-paper);
+  color: var(--color-bark);
+  font-family: var(--font-sans);
+}
+
+/* Chunky, toy-like depth: a solid lip under a card instead of a soft blur. */
+@utility lip {
+  box-shadow: 0 4px 0 0 var(--color-paper-deep), 0 8px 18px -8px rgba(74, 53, 36, 0.4);
+}
+
+@utility lip-sm {
+  box-shadow: 0 3px 0 0 rgba(31, 90, 57, 0.18), 0 6px 14px -8px rgba(74, 53, 36, 0.45);
+}
+
+/* Panels floating over the 3D park need their own lift, since the paper
+   background is not behind them. */
+@utility lip-float {
+  box-shadow: 0 4px 0 0 rgba(31, 90, 57, 0.22), 0 12px 26px -12px rgba(20, 40, 28, 0.7);
 }
 
 @keyframes callout {
   0% {
-    transform: scale(0.82) translateY(-6px);
+    transform: scale(0.7) translateY(10px) rotate(-3deg);
     opacity: 0;
   }
-  60% {
-    transform: scale(1.06);
+  55% {
+    transform: scale(1.09) translateY(0) rotate(1.5deg);
     opacity: 1;
   }
+  75% {
+    transform: scale(0.98) rotate(-1deg);
+  }
   100% {
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
     opacity: 1;
   }
 }
 
+/* A slow bob for the decorative bits on the landing page. */
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(-3deg);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 ::selection {
-  background: #fcd34d;
-  color: #0a0f18;
+  background: var(--color-grass-soft);
+  color: var(--color-grass-deep);
 }

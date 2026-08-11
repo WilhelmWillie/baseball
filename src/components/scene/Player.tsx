@@ -13,6 +13,7 @@ import {
   MeshPhongMaterial,
   PlaneGeometry,
   SphereGeometry,
+  type PerspectiveCamera,
   type Sprite,
   TorusGeometry,
   Vector3,
@@ -36,6 +37,9 @@ export type Species = "alien" | "robot";
  * anatomically sensible next to a 90-foot base path.
  */
 const SCALE = 2.35;
+
+/** `tan(fov/2)` of the broadcast lens, which name plates are sized against. */
+const BASE_LENS = Math.tan((50 * Math.PI) / 360);
 
 /**
  * Hip height in model units. Chosen so the soles of the feet land on y = 0 in
@@ -1338,11 +1342,15 @@ export function Player({
 
     // Sprites grow as the camera closes in, which is exactly wrong for a name
     // plate: on a tight shot it would fill the frame. Scale it back down by
-    // distance so it reads the same size wherever the camera is.
+    // distance so it reads the same size wherever the camera is. A long lens
+    // magnifies everything the same way, so the fixed seats - which watch the
+    // game through one - need the same treatment applied to the lens.
     const plate = labelRef.current;
     if (plate) {
-      const distance = state.camera.position.distanceTo(group.position);
-      const size = 4.6 * Math.max(0.34, Math.min(1.25, distance / 95));
+      const camera = state.camera as PerspectiveCamera;
+      const distance = camera.position.distanceTo(group.position);
+      const lens = Math.min(1, Math.tan((camera.fov * Math.PI) / 360) / BASE_LENS);
+      const size = 4.6 * lens * Math.max(0.34, Math.min(1.25, distance / 95));
       plate.scale.set(labelAspect(label) * size, size, 1);
     }
 

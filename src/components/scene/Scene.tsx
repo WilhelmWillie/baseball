@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Sky } from "@react-three/drei";
-import { Vector3, type PerspectiveCamera, type WebGLRenderer } from "three";
+import { Vector3, type PerspectiveCamera } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
@@ -29,27 +29,36 @@ function Engine() {
 }
 
 /**
- * Drives the camera from the director's shot list. Two things matter here: a
- * change of shot cuts rather than sliding the camera across the park, and a
- * hard-hit ball knocks the lens for a moment afterwards.
+ * Drives the camera from the director's shot list, or from the seat the viewer
+ * picked. Two things matter here: a change of shot cuts rather than sliding the
+ * camera across the park, and a hard-hit ball knocks the lens for a moment
+ * afterwards.
  */
 function CameraRig({ director }: { director: Director }) {
+  const view = useGameStore((s) => s.cameraView);
   const target = useRef(new Vector3());
   const shake = useRef(new Vector3());
   const initialised = useRef(false);
   const lastCut = useRef(director.cameraCut);
+  const lastView = useRef(view);
 
   useFrame((state, delta) => {
-    const desired = director.desiredCamera();
+    const desired = director.desiredCamera(view);
+    applyFraming(state.camera as PerspectiveCamera, state.viewport.aspect, desired.fov ?? BASE_FOV);
     // A phone held upright sees a very tall slice of the world, and most of it
     // is empty grass above and below the play. Pulling the framing in toward
-    // the diamond spends that space on the game instead.
+    // the diamond spends that space on the game instead. A chosen seat keeps
+    // its own aim - re-pointing it at the infield would not be that seat any
+    // more - but it still moves up a little, which costs the composition
+    // nothing and buys back some of the size the tall frame took away.
     const portrait = clamp01((0.85 - state.viewport.aspect) / 0.4);
     if (portrait > 0) {
-      desired.target.lerp(INFIELD, portrait * 0.6);
+      if (!desired.fixed) desired.target.lerp(INFIELD, portrait * 0.6);
       desired.position.lerp(desired.target, portrait * 0.14);
     }
-    const cut = director.cameraCut !== lastCut.current;
+    // Changing seats is a cut like any other.
+    const cut = director.cameraCut !== lastCut.current || view !== lastView.current;
+    lastView.current = view;
     if (cut) lastCut.current = director.cameraCut;
 
     if (!initialised.current || cut) {
@@ -123,27 +132,29 @@ function Actors({ director }: { director: Director }) {
  * portrait phone the diamond falls out of frame at either side. Holding the
  * horizontal field of view roughly constant instead, by widening the vertical
  * one as the aspect narrows, keeps the same shot on every screen.
+ *
+ * `base` is the lens the shot was composed on: the broadcast one, or the longer
+ * lens a fixed seat watches through.
  */
-function applyFraming(camera: PerspectiveCamera, aspect: number) {
+function applyFraming(camera: PerspectiveCamera, aspect: number, base: number) {
   if (!camera.isPerspectiveCamera) return;
-  const horizontal = 2 * Math.atan(Math.tan((BASE_FOV * Math.PI) / 360) * BASE_ASPECT);
+  const horizontal = 2 * Math.atan(Math.tan((base * Math.PI) / 360) * BASE_ASPECT);
   const fov = (2 * Math.atan(Math.tan(horizontal / 2) / Math.max(0.45, aspect)) * 180) / Math.PI;
-  const next = Math.min(78, Math.max(BASE_FOV, fov));
+  const next = Math.min(WIDEST, Math.max(base, fov));
   if (Math.abs(camera.fov - next) < 0.01) return;
   camera.fov = next;
   camera.updateProjectionMatrix();
 }
 
-function Framing() {
-  useFrame((state) => {
-    applyFraming(state.camera as PerspectiveCamera, state.viewport.aspect);
-  });
-  return null;
-}
-
 /** The framing the shot list was composed against: a 16:9 desktop window. */
 const BASE_FOV = 50;
 const BASE_ASPECT = 16 / 9;
+/**
+ * As wide as the correction is allowed to go. A long lens on a portrait phone
+ * would need a fisheye to hold its horizontal framing; past here the shot gives
+ * up some of its width instead.
+ */
+const WIDEST = 78;
 
 /** Roughly the middle of the diamond, in world space. */
 const INFIELD = new Vector3(0, 6, -63);
@@ -152,19 +163,7 @@ function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-function RendererBridge({ onReady }: { onReady: (gl: WebGLRenderer) => void }) {
-  const gl = useThree((s) => s.gl);
-  useEffect(() => {
-    onReady(gl);
-  }, [gl, onReady]);
-  return null;
-}
-
-export interface SceneProps {
-  onRenderer?: (gl: WebGLRenderer) => void;
-}
-
-export function Scene({ onRenderer }: SceneProps) {
+export function Scene() {
   const director = useGameStore((s) => s.director);
   const conditions = useGameStore((s) => s.snapshot?.conditions) ?? DEFAULT_CONDITIONS;
   const teams = useGameStore((s) => s.snapshot?.teams);
@@ -192,12 +191,7 @@ export function Scene({ onRenderer }: SceneProps) {
     <Canvas
       shadows
       dpr={[1, 2]}
-      gl={{
-        antialias: true,
-        // Required so the snapshot button can read pixels back out.
-        preserveDrawingBuffer: true,
-        powerPreference: "high-performance",
-      }}
+      gl={{ antialias: true, powerPreference: "high-performance" }}
       camera={{ fov: 50, near: 2, far: 4000, position: [0, 92, 132] }}
     >
       {look.background ? (
@@ -248,9 +242,7 @@ export function Scene({ onRenderer }: SceneProps) {
       <Weather conditions={conditions} />
 
       <Engine />
-      <Framing />
       <CameraRig director={director} />
-      {onRenderer && <RendererBridge onReady={onRenderer} />}
     </Canvas>
   );
 }

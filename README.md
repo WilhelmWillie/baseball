@@ -73,9 +73,13 @@ animation clock, so the crack lands with the swing rather than with the poll tha
 reported it. Browsers block audio until the page is interacted with, so the first
 click anywhere starts it. The 🔊 button mutes.
 
-**Snapshot** — the 📸 button composites the current frame with a baked-in
-scorebug and hands you a PNG (shared via the Web Share API on mobile, copied to
-the clipboard and downloaded elsewhere).
+**Camera modes** — the 🎥 button picks where you watch from. **Broadcast** is
+the default and is the directed feed: it cuts between angles as the game gives
+it something to say. The other three are seats that never cut — **Umpire** out
+behind the pitcher on a long lens, the angle a pitch is judged from;
+**Pitcher** from high above the plate, tight on the mound and the delivery; and
+**Bleachers** a dozen rows up in center field, where everything is small and far
+away and you can see the whole park. Your choice is remembered.
 
 **Simulated game** (`/watch/demo`) — a scripted game emitted in the exact shape
 of MLB's GUMBO feed, so it exercises the same adapter and animation path a real
@@ -284,11 +288,23 @@ trackable), **ball** tracking a batted ball, **low** at field level down the
 third-base line off a home run or a triple, **wide** as the ball leaves the park,
 and **follow** travelling with the runner on the trot. Each shot holds for a
 minimum time so nothing strobes when several things happen at once, and hard
-contact knocks the lens for about half a second. There is no manual camera: the
-shot list covers the game better than dragging an orbit control does.
+contact knocks the lens for about half a second.
+
+That directed feed is one of four camera modes, and the default. The other three
+are seats rather than shots: one vantage, one lens, held all game. They are
+placed the way the real cameras that inspired them are — the umpire seat is out
+past the mound because from close in the pitcher hides the plate, and the
+pitcher seat is high above the crowd behind home because from field level the
+catcher hides everything. A seat does not cut and it does not chase, but its
+gaze swings part-way after a ball hit away from what it is aimed at, the way a
+head turns; a pitch lands inside the framing and moves it not at all. Changing
+seats is itself a cut. There is still no orbit control — a fixed set of framings
+composed against the park reads better than one dragged around by hand.
 
 Name plates scale down as the camera closes in - sprites otherwise grow with
-proximity, and on a tight shot a plate would fill the frame.
+proximity, and on a tight shot a plate would fill the frame. The seats watch
+through a much longer lens than the broadcast one, which magnifies a sprite the
+same way proximity does, so the plates are scaled off the lens as well.
 
 ### Grounding
 
@@ -346,13 +362,17 @@ a bar along the bottom, where a thumb reaches them.
 
 `fov` in three.js is vertical, so a tall narrow viewport sees a much *narrower*
 slice of the world horizontally — on a portrait phone the diamond falls out of
-frame at either side. `Framing` holds the horizontal field of view roughly
-constant instead, widening the vertical one as the aspect narrows. That leaves a
-lot of empty grass above and below, so the camera rig also pulls its framing in
-toward the infield in proportion to how portrait the screen is.
+frame at either side. The rig holds the horizontal field of view roughly
+constant instead, widening the vertical one as the aspect narrows — off
+whichever lens the current shot was composed on. That leaves a lot of empty
+grass above and below, so it also pulls its framing in toward the infield in
+proportion to how portrait the screen is. A chosen seat keeps its own aim
+through that — re-pointing it at the infield would not be that seat any more —
+and only moves up a little.
 
-The controls drop to their icons, the weather line and the connection badge are
-dropped, and the log's hint says "tap" rather than "hover".
+The controls drop to their icons, the camera picker opens above the bar instead
+of below it, the weather line and the connection badge are dropped, and the
+log's hint says "tap" rather than "hover".
 
 ## Known gaps
 

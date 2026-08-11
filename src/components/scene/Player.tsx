@@ -770,6 +770,40 @@ function poseValues(
         batSwing: fire,
       };
     }
+    case "dive": {
+      // Laid out at a ball going past. Two beats: the arms are thrown out ahead
+      // first and the body follows them down, so it reads as reaching rather
+      // than as falling over.
+      //
+      // The rig only yaws, so the figure cannot actually go horizontal. What
+      // sells it instead is the torso folding to seventy degrees over hips
+      // dropped to shin height, with the legs trailing and the heels kicked up
+      // behind - and the heels are the reason this pose owes the ground
+      // `legDrop` like any other. Folding the knee up hard is what buys the
+      // hips their depth without putting the boots through the dirt.
+      const reach = clamp01(t / 0.3);
+      const land = clamp01((t - 0.25) / 0.55);
+      const hip = 0.55 * reach;
+      const knee = 1.5 * land;
+      return {
+        ...REST,
+        crouch: legDrop(hip, knee),
+        lean: 0.5 * reach + 0.72 * land,
+        legL: hip,
+        legR: hip * 0.85,
+        kneeL: knee,
+        kneeR: knee * 1.15,
+        // Both arms straight out ahead, glove side leading.
+        armL: -2.35 * reach,
+        armR: -1.95 * reach,
+        elbowL: -0.12,
+        elbowR: -0.3,
+        armSpread: 0.24 - 0.14 * reach,
+        // Head up, eyes on the ball, however far the rest of him is going.
+        headTilt: -0.3 - 0.35 * land,
+        roll: 0.18 * reach,
+      };
+    }
     case "catch":
       return {
         ...REST,

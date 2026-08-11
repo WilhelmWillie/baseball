@@ -92,6 +92,11 @@ The renderer never sees MLB's JSON. Two layers sit in between:
 | Animation | `src/lib/anim/director.ts` | Compiles events into timed animations; owns every actor's transform and pose |
 | Scene | `src/components/scene/` | React Three Fiber; reads the director each frame |
 
+The rest of this section is the reasoning behind the design.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the companion map: the full
+directory layout, what each file is responsible for, and which file to open for
+a given change.
+
 ### State never teleports
 
 `useLiveFeed` polls `feed/live` every ~5s while a game is live. New play events

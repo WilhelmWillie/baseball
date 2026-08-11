@@ -17,7 +17,7 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Ballpark — Watch Baseball Come to Life",
+  title: "Pocket Ballpark — Watch Baseball Come to Life",
   description:
     "Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a charming low-poly ballpark.",
 };

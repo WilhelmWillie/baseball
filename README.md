@@ -1,4 +1,4 @@
-# Ballpark
+# Pocket Ballpark
 
 **Watch baseball come to life.** Pick a game. Grab a seat. Watch every pitch,
 hit, and baserunner unfold in a charming low-poly ballpark.

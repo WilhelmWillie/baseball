@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /**
- * Ballpark's palette: a summer afternoon at the yard. Warm paper, mown grass,
- * infield dirt. Everything else is a shade of one of those three.
+ * Pocket Ballpark's palette: a summer afternoon at the yard. Warm paper, mown
+ * grass, infield dirt. Everything else is a shade of one of those three.
  */
 @theme inline {
   --color-paper: #f7efe1;

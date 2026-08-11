@@ -6,9 +6,10 @@ export default function Home() {
     <main className="min-h-dvh bg-paper bg-[radial-gradient(circle_at_12%_-8%,var(--color-grass-mist),transparent_60%)]">
       <div className="mx-auto w-full max-w-5xl px-5 pb-20 sm:px-8">
         <nav className="flex items-center justify-between py-6">
-          <span className="flex items-center gap-2 font-display text-2xl font-extrabold tracking-tight text-grass-deep">
+          <span className="flex items-center gap-2 font-display text-2xl font-extrabold tracking-tight">
             <Ball className="h-8 w-8" />
-            Ballpark
+            <span className="text-clay">Pocket</span>
+            <span className="-ml-1 text-grass-deep">Ballpark</span>
           </span>
           <span className="hidden rounded-full border-2 border-grass-deep/10 bg-card px-3 py-1.5 text-xs font-semibold text-bark-soft sm:inline">
             Powered by the MLB Stats API

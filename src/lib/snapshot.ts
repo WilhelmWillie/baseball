@@ -4,7 +4,7 @@ import type { GameSnapshot } from "@/lib/game/types";
 const TARGET_WIDTH = 1600;
 const FOOTER = 168;
 
-/** Ballpark's palette, as the footer needs it. */
+/** Pocket Ballpark's palette, as the footer needs it. */
 const PAPER = "#fffcf5";
 const GRASS = "#3f8f5b";
 const GRASS_DEEP = "#1f5a39";
@@ -80,7 +80,7 @@ export async function captureSnapshot(
 
   ctx.drawImage(source, 0, 0, width, height);
 
-  // Footer: a strip of the same warm paper the rest of Ballpark is printed on.
+  // Footer: a strip of the same warm paper the rest of the app is printed on.
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, height, width, FOOTER);
   ctx.fillStyle = GRASS;
@@ -142,7 +142,7 @@ export async function captureSnapshot(
     "right",
   );
   text(ctx, snapshot.venue, rightX, height + 126, 18, BARK_SOFT, "right");
-  text(ctx, "Ballpark", 40, height + 140, 20, GRASS);
+  text(ctx, "Pocket Ballpark", 40, height + 140, 20, GRASS);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     out.toBlob((b) => (b ? resolve(b) : reject(new Error("Snapshot encoding failed"))), "image/png");
@@ -168,7 +168,7 @@ export async function shareOrDownload(
     navigator.canShare({ files: [file] });
   if (canShare) {
     try {
-      await navigator.share({ files: [file], title: "Ballpark" });
+      await navigator.share({ files: [file], title: "Pocket Ballpark" });
       return "shared";
     } catch {
       // Dismissed or unsupported - fall through to the download path.

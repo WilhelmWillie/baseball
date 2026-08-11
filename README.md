@@ -243,10 +243,14 @@ background and switches to a warm, near-shadowless tower rig.
 
 After dark the field is lit from the four towers you can actually see rather
 than from one light overhead: `TowerLights.tsx` hangs a spotlight on each,
-aimed across the field rather than at the middle so the beams cross and cover
-it evenly. Two of the four cast real shadows, which is what gives every player
-the two or three faint shadows fanning out in different directions that say
-"night game" more than darkness does.
+aimed across the field rather than at the middle so the beams cross. The banks
+are split the way real ones are — the two towers down the lines throw wide into
+the opposite outfield gap, the pair inside them light the infield — because
+four cones pointed at the mound leave the gaps and the warning track sitting in
+the dark. The two infield banks cast the real shadows, since that is where the
+players are, and that is what gives every one of them the two or three faint
+shadows fanning out in different directions that say "night game" more than
+darkness does.
 
 Wind is parsed from MLB's phrasing ("8 mph, Out To CF") into a world-space
 velocity, and everything light enough — confetti, dust, rain — drifts downwind.

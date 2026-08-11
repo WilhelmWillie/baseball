@@ -213,11 +213,13 @@ export function skyLook(conditions: Conditions): SkyLook {
       mie: 0.004,
       // Just enough from above that nothing is pitch black; the four towers
       // do the real work.
-      sunIntensity: 0.3,
+      sunIntensity: 0.36,
       sunColor: "#ffeec7",
-      fillIntensity: 0.18,
+      // Off the outfield side, so the deep gaps are never darker than the
+      // infield the towers are pointed at.
+      fillIntensity: 0.26,
       fillColor: "#a9c0e8",
-      ambient: 0.3,
+      ambient: 0.34,
       hemiSky: "#28375c",
       hemiGround: "#26401f",
       hemiIntensity: 0.42,

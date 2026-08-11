@@ -141,8 +141,9 @@ space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
 Everything vertical — outfield wall, the raked seating bowl, bleachers running
-down both foul lines behind a low padded wall, the crowd, light towers and a
-city skyline on three hazy rings beyond the park — is generated in
+down both foul lines behind a low padded wall, the crowd, light towers, the
+wooden scoreboard over the batter's eye, and the town of gabled houses and
+oversized trees on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
 the tower lights can burn unlit by the sun after dark. Two rules keep a bowl of
@@ -153,6 +154,12 @@ than the gap between rows, because boxes that interpenetrate look solid while
 boxes whose faces land on exactly the same plane flicker. Foul ground
 tapers sharply past the bases, so the seats come right up against the lines
 rather than leaving acres of empty dirt.
+
+The park is painted as a toy rather than a broadcast: grass a shade sweeter
+than real turf, dirt the colour of a sandpit, cream stonework in place of grey
+concrete and mint seats, so the 3D scene and the interface around it are
+working from one palette. `sky.ts` lights it flatter and softer than a real
+afternoon would be for the same reason.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera

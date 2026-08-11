@@ -24,27 +24,33 @@ export interface Block {
   glow?: boolean;
 }
 
+/**
+ * A toy park rather than a televised one: grass a shade sweeter than real
+ * turf, dirt the colour of a sandpit, and cream stonework instead of the grey
+ * concrete a real bowl is poured from. It is the same paper/grass/dirt palette
+ * the interface uses, mixed for daylight.
+ */
 export const COLORS = {
-  grass: "#4b8f3d",
-  grassStripe: "#3f7b33",
-  foulGrass: "#3b7030",
-  dirt: "#a9743f",
-  moundDirt: "#b07c45",
-  track: "#8d5c31",
-  chalk: "#f4f4ee",
-  base: "#fbfbf5",
-  wall: "#1f5136",
-  wallPad: "#1a4530",
-  wallCap: "#e8c341",
-  pole: "#f4d13d",
-  concrete: "#9aa0a6",
-  concreteDark: "#848a90",
-  seat: "#2f5f8f",
-  seatAlt: "#27527d",
-  tower: "#70757a",
+  grass: "#5aa851",
+  grassStripe: "#4d9848",
+  foulGrass: "#4f9a4a",
+  dirt: "#c68a53",
+  moundDirt: "#cf9660",
+  track: "#c09263",
+  chalk: "#fbf6ea",
+  base: "#fffcf5",
+  wall: "#2f6b46",
+  wallPad: "#27573a",
+  wallCap: "#f0e0c0",
+  pole: "#f6d97a",
+  concrete: "#f0e3cb",
+  concreteDark: "#dfceb0",
+  seat: "#4fa07c",
+  seatAlt: "#43906e",
+  tower: "#e2d5bd",
   lamp: "#fff6c9",
-  scoreboard: "#22262b",
-  scoreboardFace: "#11161c",
+  scoreboard: "#6b503a",
+  scoreboardFace: "#43331f",
 };
 
 /**
@@ -58,7 +64,7 @@ export interface CrowdPalette {
   away: [string, string];
 }
 
-const NEUTRAL_CROWD = ["#dcdcdc", "#e2b07a", "#b9bec4", "#33363b", "#8a8f96", "#f0e6d2"];
+const NEUTRAL_CROWD = ["#f3e7d2", "#e6b183", "#cfd8c3", "#8b6d52", "#b8c7d6", "#f7cfc0"];
 
 /**
  * Picks a shirt. `roll` is the same stable noise the seat placement uses, so
@@ -329,20 +335,22 @@ function lightTowers(blocks: Block[]) {
   }
 }
 
-const SKYLINE_COLORS = ["#93a1b5", "#8593a9", "#9fadbf", "#7b8aa0", "#a8b3c2"];
+const SKYLINE_COLORS = ["#f2e4cb", "#e7d3b1", "#dde6d1", "#f0d3bb", "#dde3ef"];
+/** Every building wears a roof, in one of a handful of friendly colours. */
+const ROOF_COLORS = ["#c4614a", "#4f8f7d", "#8a6a4e", "#d09a4c", "#7d8fb5"];
 /** Daylight glass, not lit windows - this is an afternoon game. */
-const WINDOW_GLASS = "#c2d3e6";
+const WINDOW_GLASS = "#fff2d4";
 
 /**
- * A city beyond the park. Buildings sit on a wide arc well outside the bowl,
+ * A town beyond the park. Buildings sit on a wide arc well outside the bowl,
  * with the far ring paler than the near one so the depth reads as haze rather
  * than as a flat wall of boxes.
  */
 function skyline(blocks: Block[]) {
   const rings = [
-    { radius: 880, count: 42, minHeight: 60, maxHeight: 165, haze: 0.08 },
-    { radius: 1120, count: 34, minHeight: 55, maxHeight: 205, haze: 0.24 },
-    { radius: 1420, count: 26, minHeight: 45, maxHeight: 150, haze: 0.4 },
+    { radius: 880, count: 42, minHeight: 60, maxHeight: 150, haze: 0.08 },
+    { radius: 1120, count: 34, minHeight: 55, maxHeight: 180, haze: 0.24 },
+    { radius: 1420, count: 26, minHeight: 45, maxHeight: 140, haze: 0.4 },
   ];
 
   for (const [ringIndex, ring] of rings.entries()) {
@@ -365,15 +373,32 @@ function skyline(blocks: Block[]) {
 
       blocks.push({ p: [x, height / 2, z], s: [width, height, depth], c: body, r: yaw });
 
-      // Setback tier and a mast on the taller ones.
-      if (height > 140) {
+      // A roof, overhanging a little the way a toy house's does.
+      const roof = shade(
+        ROOF_COLORS[Math.floor(noise(i * 4.3, ringIndex * 9, 26) * ROOF_COLORS.length)],
+        ring.haze * 0.7,
+      );
+      blocks.push({
+        p: [x, height + 6, z],
+        s: [width + 9, 12, depth + 9],
+        c: roof,
+        r: yaw,
+      });
+
+      // Setback tier and a chimney on the taller ones.
+      if (height > 125) {
         blocks.push({
-          p: [x, height + 18, z],
+          p: [x, height + 30, z],
           s: [width * 0.55, 36, depth * 0.55],
           c: shade(body, 0.05),
           r: yaw,
         });
-        blocks.push({ p: [x, height + 48, z], s: [3, 24, 3], c: shade(body, -0.18), r: yaw });
+        blocks.push({
+          p: [x, height + 52, z],
+          s: [width * 0.6, 10, depth * 0.6],
+          c: roof,
+          r: yaw,
+        });
       }
 
       // Bands of glass on the nearest ring only - any more and the skyline
@@ -391,6 +416,93 @@ function skyline(blocks: Block[]) {
         }
       }
     }
+  }
+}
+
+/**
+ * A wooden scoreboard standing over the batter's eye, high enough to clear the
+ * facade behind it. The digits are decorative - the real count is on the HUD -
+ * but a park without a board out there does not look like a park.
+ */
+function scoreboard(blocks: Block[]) {
+  const z = -(fieldRadius(0) + 74);
+  const width = 150;
+  const height = 44;
+  const base = 52;
+
+  for (const dx of [-56, 56]) {
+    blocks.push({ p: [dx, base / 2, z], s: [7, base, 7], c: COLORS.scoreboard });
+  }
+  blocks.push({ p: [0, base + height / 2, z], s: [width, height, 5], c: COLORS.scoreboard });
+  blocks.push({
+    p: [0, base + height / 2, z + 3],
+    s: [width - 14, height - 12, 2],
+    c: COLORS.scoreboardFace,
+  });
+  // Two rows of lit digits, one per club.
+  for (let row = 0; row < 2; row++) {
+    for (let i = 0; i < 9; i++) {
+      blocks.push({
+        p: [-width / 2 + 20 + i * 14.5, base + height / 2 + (row === 0 ? 7 : -7), z + 4.6],
+        s: [6.5, 8, 1],
+        c: row === 0 ? "#f6e7c6" : "#e8d3a6",
+      });
+    }
+  }
+  // Shingled roof, overhanging the way the houses beyond it do.
+  blocks.push({ p: [0, base + height + 5, z], s: [width + 12, 9, 11], c: "#c4614a" });
+}
+
+const LEAF_COLORS = ["#5fa855", "#4e9a4c", "#79b45c", "#3f8f5b", "#8cbb5e"];
+const TRUNK_COLOR = "#7a5638";
+
+/**
+ * Trees among the houses, tall enough to clear the facade from a seat behind
+ * home. Each one is a trunk and three shrinking clumps of leaves, every clump
+ * turned a little off the last so no two trees present the same silhouette.
+ */
+function parkland(blocks: Block[]) {
+  const count = 46;
+  for (let i = 0; i < count; i++) {
+    const theta = -Math.PI * 0.78 + (i / (count - 1)) * Math.PI * 1.56;
+    const jitter = noise(i * 8.1, 3, 41);
+    const spin = noise(i * 2.9, 7, 42);
+    const r = 790 + jitter * 260;
+    const x = Math.sin(theta) * r;
+    const z = -Math.cos(theta) * r;
+    const yaw = yawAt(theta) + (spin - 0.5) * 0.9;
+    // Distance haze, same as the buildings behind them.
+    const haze = Math.max(0, (r - 860) / 900);
+    const leaf = shade(
+      LEAF_COLORS[Math.floor(noise(i * 5.7, 11, 43) * LEAF_COLORS.length)],
+      haze * 0.5 + (spin - 0.5) * 0.06,
+    );
+    const scale = 1.05 + jitter * 0.75;
+
+    blocks.push({
+      p: [x, 22 * scale, z],
+      s: [7 * scale, 44 * scale, 7 * scale],
+      c: shade(TRUNK_COLOR, haze * 0.6),
+      r: yaw,
+    });
+    blocks.push({
+      p: [x, 58 * scale, z],
+      s: [42 * scale, 34 * scale, 42 * scale],
+      c: leaf,
+      r: yaw,
+    });
+    blocks.push({
+      p: [x, 82 * scale, z],
+      s: [30 * scale, 24 * scale, 30 * scale],
+      c: shade(leaf, 0.07),
+      r: yaw + 0.6,
+    });
+    blocks.push({
+      p: [x, 99 * scale, z],
+      s: [17 * scale, 16 * scale, 17 * scale],
+      c: shade(leaf, 0.14),
+      r: yaw - 0.5,
+    });
   }
 }
 
@@ -413,7 +525,9 @@ export function buildPark(palette: CrowdPalette = DEFAULT_CROWD): Block[] {
   foulLineSeats(blocks, palette);
   stands(blocks, palette);
   lightTowers(blocks);
+  scoreboard(blocks);
   skyline(blocks);
+  parkland(blocks);
   cached = { key, blocks };
   return blocks;
 }

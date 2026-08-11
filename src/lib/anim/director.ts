@@ -16,6 +16,7 @@ import {
   type PositionKey,
 } from "@/lib/field/geometry";
 import type { SoundName } from "@/lib/audio/sfx";
+import { seatCamera, type CameraView, type Shot } from "./views";
 import { Fx } from "./particles";
 import { pitchArc } from "./pitches";
 import {
@@ -85,9 +86,12 @@ export interface BallState {
 }
 
 /**
- * The shot vocabulary. Broadcasts do not ease between angles - they cut - and
- * they change lenses to say something about the moment: tight on the pitcher
- * with two strikes, low down the line off the bat, wide when the ball is gone.
+ * The shot vocabulary of the broadcast view. Broadcasts do not ease between
+ * angles - they cut - and they change lenses to say something about the moment:
+ * tight on the pitcher with two strikes, low down the line off the bat, wide
+ * when the ball is gone. The fixed seats a viewer can switch to instead live in
+ * `views.ts`; while one of those is chosen this shot list still runs, it is
+ * simply not what the rig is looking through.
  */
 export type CameraMode =
   | "broadcast"
@@ -1441,8 +1445,15 @@ export class Director {
     };
   }
 
-  /** Desired camera placement for the current mode. */
-  desiredCamera(): { position: Vector3; target: Vector3; lerp: number } {
+  /**
+   * Desired camera placement. `view` is the seat the viewer picked: anything
+   * other than "broadcast" ignores the shot list and holds that vantage, so the
+   * game plays out in front of a camera that never cuts.
+   */
+  desiredCamera(view: CameraView = "broadcast"): Shot {
+    if (view !== "broadcast") {
+      return seatCamera(view, this.ball.visible ? this.ball.position : null);
+    }
     switch (this.cameraMode) {
       case "wide":
         return {

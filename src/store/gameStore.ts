@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { Director } from "@/lib/anim/director";
+import { DEFAULT_CAMERA_VIEW, rememberCameraView, type CameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
 import { extractEvents, seedCursor } from "@/lib/game/events";
 import { buildHistory, buildSnapshot, inningLabel, ordinalFor } from "@/lib/game/normalize";
@@ -27,10 +28,13 @@ interface GameStore {
   connection: ConnectionState;
   error: string | null;
   lastUpdate: number;
+  /** Which camera the viewer is watching through. Survives a game change. */
+  cameraView: CameraView;
 
   reset(): void;
   ingest(feed: MlbLiveFeed): void;
   failed(message: string): void;
+  setCameraView(view: CameraView): void;
   /** Promote pending state once the animation queue has drained. */
   settle(): void;
 }
@@ -45,6 +49,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   connection: "connecting",
   error: null,
   lastUpdate: 0,
+  cameraView: DEFAULT_CAMERA_VIEW,
 
   reset() {
     const director = new Director();
@@ -173,5 +178,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   failed(message) {
     set({ connection: "error", error: message });
+  },
+
+  setCameraView(view) {
+    // Deliberately outside `reset()`: a seat is a preference, not game state.
+    set({ cameraView: view });
+    rememberCameraView(view);
   },
 }));

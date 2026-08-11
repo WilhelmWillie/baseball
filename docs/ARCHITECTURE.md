@@ -64,8 +64,8 @@ src/
     sim/        scripted demo game, emitted in GUMBO's shape
 ```
 
-Roughly 10.8k lines across 43 source files. Two files dominate:
-`lib/anim/director.ts` (1504) and `components/scene/Player.tsx` (1367).
+Roughly 11.1k lines across 43 source files. Two files dominate:
+`lib/anim/director.ts` (1515) and `components/scene/Player.tsx` (1375).
 
 ## Routes
 
@@ -151,12 +151,18 @@ advances outs and score when a play's animation finishes.
 - The animation queue: `enqueue()`, `update(dt)`, `isIdle()`, `clearQueue()`.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
-- The camera shot list — `desiredCamera()`, `cameraCut`, `cameraShake`.
+- The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
 - Callbacks out: `onCount`, `onPlayResolved`, `onSound`.
 
 Timing constants live near the top with the reasoning attached (runner speed,
 swing duration, throw release fraction, the plate-height mapping that fits a
 real strike zone onto figures drawn at 2.4× life size).
+
+**`lib/anim/views.ts`** — the four camera modes the viewer can pick between.
+`broadcast` (the default) defers to the director's shot list; `umpire` and
+`pitcher` are first-person, and `bleachers` is a seat in center field. Each
+fixed one is a position, an aim, a lens and how far its gaze pans after a ball
+hit away from it. Also the localStorage helpers that remember the choice.
 
 **`lib/anim/pitches.ts`** — per-pitch-type `drop` and `run`, in g, applied as
 accelerations so the shape develops over the flight the way a real pitch does.
@@ -192,7 +198,8 @@ store, lays out the HUD, and loads the scene via `next/dynamic` with
 
 **`components/scene/Scene.tsx`** — the `<Canvas>` and the two `useFrame` loops:
 `Engine` advances the director and calls `settle()` when the queue drains;
-`CameraRig` cuts to the director's shot and widens framing on portrait viewports.
+`CameraRig` asks the director for the shot the chosen camera mode wants, cuts to
+it, applies the shot's lens and widens framing on portrait viewports.
 
 | Component | Draws |
 | --- | --- |
@@ -209,9 +216,6 @@ store, lays out the HUD, and loads the scene via `next/dynamic` with
 
 HUD components are plain DOM over the canvas: `hud/Scorebug.tsx`,
 `hud/Callout.tsx`, `hud/History.tsx`, `hud/GameOver.tsx`.
-
-**`lib/snapshot.ts`** — the 📸 button. Composites the WebGL frame with a
-canvas-drawn scorebug and shares, copies or downloads the PNG.
 
 **`lib/audio/sfx.ts`** — the `sfx` singleton. Every sound is synthesized with
 Web Audio primitives; there are no audio files. Cued off the animation clock, so
@@ -246,6 +250,7 @@ real game does. `DEMO_GAME_PK = 747001`.
 | How a play is interpreted | `lib/game/events.ts` |
 | What the HUD knows about | `GameSnapshot` in `lib/game/types.ts`, then `normalize.ts` |
 | Timing, pacing, poses, camera cuts | `lib/anim/director.ts` |
+| Where the fixed camera modes sit | `lib/anim/views.ts` |
 | How a pitch moves | `lib/anim/pitches.ts` |
 | Field dimensions, base paths, wall shape | `lib/field/geometry.ts` |
 | Stands, towers, skyline | `lib/field/park.ts` |

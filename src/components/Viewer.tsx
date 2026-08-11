@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import type { WebGLRenderer } from "three";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { useGameStore } from "@/store/gameStore";
-import { captureSnapshot, shareOrDownload } from "@/lib/snapshot";
+import { CAMERA_VIEWS, storedCameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
 import { Ball } from "@/components/brand/Ball";
 import { Scorebug } from "./hud/Scorebug";
@@ -71,38 +70,21 @@ export function Viewer({
   const connection = useGameStore((s) => s.connection);
   const error = useGameStore((s) => s.error);
 
+  const cameraView = useGameStore((s) => s.cameraView);
+  const setCameraView = useGameStore((s) => s.setCameraView);
+
   const [soundOn, setSoundOn] = useState(true);
-  const [flash, setFlash] = useState<string | null>(null);
   const [showRoster, setShowRoster] = useState(false);
-  const rendererRef = useRef<WebGLRenderer | null>(null);
+  const [showCameras, setShowCameras] = useState(false);
 
-  const onRenderer = useCallback((gl: WebGLRenderer) => {
-    rendererRef.current = gl;
-  }, []);
+  const activeView = CAMERA_VIEWS.find((v) => v.id === cameraView) ?? CAMERA_VIEWS[0];
 
-  const onSnapshot = useCallback(async () => {
-    const gl = rendererRef.current;
-    if (!gl || !snapshot) return;
-    try {
-      const { blob, filename } = await captureSnapshot(gl, snapshot);
-      const how = await shareOrDownload(blob, filename);
-      setFlash(
-        how === "shared"
-          ? "Snapshot shared!"
-          : how === "copied"
-            ? "Copied and saved!"
-            : "Snapshot saved!",
-      );
-    } catch (err) {
-      setFlash(err instanceof Error ? err.message : "Snapshot failed");
-    }
-  }, [snapshot]);
-
+  // Restored after mount rather than read while the store is created: the
+  // server has no localStorage, and the two renders have to agree.
   useEffect(() => {
-    if (!flash) return;
-    const timer = setTimeout(() => setFlash(null), 2600);
-    return () => clearTimeout(timer);
-  }, [flash]);
+    const saved = storedCameraView();
+    if (saved) setCameraView(saved);
+  }, [setCameraView]);
 
   // Audio cannot start until the page has been interacted with, so the first
   // gesture anywhere wakes the context.
@@ -118,7 +100,7 @@ export function Viewer({
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-grass-mist">
-      <Scene onRenderer={onRenderer} />
+      <Scene />
 
       {/* Scoreboard and play log: a full-width band across the top of a phone,
           a floating panel once there is room beside it. */}
@@ -145,9 +127,46 @@ export function Viewer({
           >
             ←<span className="hidden sm:inline"> Games</span>
           </Link>
-          <ControlButton onClick={onSnapshot} title="Save a shareable image">
-            📸<span className="hidden sm:inline"> Snapshot</span>
-          </ControlButton>
+          <div className="relative">
+            <ControlButton
+              onClick={() => setShowCameras(!showCameras)}
+              active={showCameras}
+              title="Change camera"
+            >
+              🎥<span className="hidden sm:inline"> {activeView.label}</span>
+            </ControlButton>
+            {/* The picker opens above the button on a phone, where the
+                controls sit along the bottom; below it once they move to the
+                top corner. */}
+            {showCameras && (
+              <div className="absolute bottom-full left-1/2 z-30 mb-2 w-48 -translate-x-1/2 overflow-hidden rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-1 lip-float sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mb-0 sm:mt-2 sm:translate-x-0">
+                {CAMERA_VIEWS.map((view) => (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => {
+                      setCameraView(view.id);
+                      setShowCameras(false);
+                    }}
+                    className={`flex w-full flex-col items-start rounded-xl px-3 py-2 text-left transition-colors ${
+                      view.id === cameraView
+                        ? "bg-grass text-card"
+                        : "text-bark hover:bg-grass-mist"
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{view.label}</span>
+                    <span
+                      className={`text-[10px] font-semibold ${
+                        view.id === cameraView ? "text-card/80" : "text-bark-soft"
+                      }`}
+                    >
+                      {view.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex gap-1.5 sm:gap-2">
           <ControlButton
@@ -234,12 +253,6 @@ export function Viewer({
       {snapshot?.status.isFinal && (
         <div className="absolute inset-0 z-30 flex items-start justify-end p-2 sm:p-4">
           <GameOver snapshot={snapshot} />
-        </div>
-      )}
-
-      {flash && (
-        <div className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-full border-2 border-grass bg-card px-4 py-2 text-xs font-bold text-grass-deep lip-float sm:bottom-20">
-          {flash}
         </div>
       )}
 

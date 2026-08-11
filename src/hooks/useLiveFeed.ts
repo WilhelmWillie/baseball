@@ -7,6 +7,13 @@ import type { MlbLiveFeed } from "@/lib/mlb/types";
 const LIVE_INTERVAL = 5000;
 const IDLE_INTERVAL = 15000;
 const DEMO_INTERVAL = 1800;
+/**
+ * While a pitch is held waiting on its result, the field is standing still and
+ * every poll is a chance to release it - so chase the result rather than
+ * waiting out the normal interval. Bounded by the hold timeout in `events.ts`,
+ * this costs a few extra requests at the end of an at-bat and nothing else.
+ */
+const CHASE_INTERVAL = 1500;
 
 /**
  * Polls the live feed. The spec's V0 guidance is plain polling, so that is what
@@ -45,12 +52,14 @@ export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0, dem
         }
       } finally {
         if (cancelled) return;
-        const snapshot = useGameStore.getState().snapshot;
-        const base = isDemo
-          ? DEMO_INTERVAL
-          : snapshot?.status.isLive
-            ? LIVE_INTERVAL
-            : IDLE_INTERVAL;
+        const { snapshot, cursor } = useGameStore.getState();
+        const base = cursor.hold
+          ? CHASE_INTERVAL
+          : isDemo
+            ? DEMO_INTERVAL
+            : snapshot?.status.isLive
+              ? LIVE_INTERVAL
+              : IDLE_INTERVAL;
         // Back off when the feed is unhappy.
         const delay = base * Math.min(4, 1 + failures);
         timer = setTimeout(poll, delay);

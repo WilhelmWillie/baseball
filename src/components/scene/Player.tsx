@@ -373,8 +373,20 @@ interface PoseValues {
   headYaw: number;
   /** Side-to-side weight shift. */
   sway: number;
+  /**
+   * Both legs leaning sideways from the hip. Paired with `sway` this keeps the
+   * feet planted while the hips travel over one of them - without it a weight
+   * shift drags the whole body, boots included, across the grass.
+   */
+  legSplay: number;
   /** Torso roll, which reads as shifting onto one leg. */
   roll: number;
+  /**
+   * Chest rise. Breathing belongs here rather than in `bob`, because the hips
+   * carry the legs with them - a breath taken through the hips lifts the boots
+   * off the ground and puts them back down again.
+   */
+  chest: number;
   bob: number;
   /** 0 = bat cocked over the shoulder, 1 = bat levelled through the zone. */
   batSwing: number;
@@ -400,7 +412,9 @@ const REST: PoseValues = {
   headTilt: 0,
   headYaw: 0,
   sway: 0,
+  legSplay: 0,
   roll: 0,
+  chest: 0,
   bob: 0,
   batSwing: 0,
 };
@@ -408,12 +422,19 @@ const REST: PoseValues = {
 /**
  * Small, constant motion so nobody looks like a statue between pitches.
  *
- * Two layers. Underneath, continuous waves - breathing, a weight shift, a head
- * that wanders - on detuned frequencies so they never resolve into an obvious
- * loop. On top, occasional *gestures*: a fielder rocking onto the other foot, a
- * sharp glance somewhere, a shuffle step. The gestures are what stop a field of
- * nine from reading as nine copies of the same sine wave; they fire on their own
- * slow cycle, and `clock` is offset per player so no two ever coincide.
+ * The motion lives in the body, not the hands. Waving the arms around is the
+ * cheapest thing to animate on this rig and by far the worst-looking: nine
+ * fielders all working their gloves reads as a nervous tic rather than as life.
+ * So the layers here are, in order of how much of the movement they carry:
+ * a weight shift from foot to foot, breathing, a settle down into the knees and
+ * back up, and the head looking around. The hands do almost nothing.
+ *
+ * Underneath everything are continuous waves on detuned frequencies, so they
+ * never resolve into an obvious loop. On top are occasional *gestures* - a rock
+ * onto the other foot, a sharp glance, a sink into a crouch - which are what
+ * stop a field of nine from reading as nine copies of the same sine wave. They
+ * fire on their own slow cycles, and `clock` is offset per player so no two
+ * ever coincide.
  */
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
@@ -422,7 +443,41 @@ function clamp01(v: number): number {
 /** The only poses in which a hitter is still holding the bat. */
 const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing"]);
 
+/**
+ * Distance from the hip joint down to the sole, in rig units. Rotating a leg
+ * about Z by `phi` moves that foot sideways by roughly `LEG_REACH * phi`, which
+ * is how `sway` gets cancelled at the ground.
+ */
+const LEG_REACH = 2.48;
+
+/**
+ * A squat that keeps its feet. Flexing the hip by `SQUAT_HIP` and the knee by
+ * `SQUAT_KNEE` folds the leg into a Z; this pair is chosen so the sole ends up
+ * back under the same spot of grass it started on, at any depth. The hips then
+ * have to drop by however much vertical reach the fold cost, which is what
+ * `squat` works out - guessing at it instead is what buries the boots.
+ */
+const SQUAT_HIP = 0.5;
+const SQUAT_KNEE = 1.077;
+/** Hip to knee, knee to sole, and how far the toe sits ahead of the ankle. */
+const THIGH = 1.32;
+const SHIN = 1.16;
+const TOE_AHEAD = 0.1;
+
+/** The pose channels a settle drives, at depth `g` (0 = stood up, 1 = deep). */
+function squat(g: number) {
+  const hip = -SQUAT_HIP * g;
+  const shin = hip + SQUAT_KNEE * g;
+  const reach = THIGH * Math.cos(hip) + SHIN * Math.cos(shin) + TOE_AHEAD * Math.sin(shin);
+  return {
+    crouch: THIGH + SHIN - reach,
+    leg: hip,
+    knee: SQUAT_KNEE * g,
+  };
+}
+
 function idleLife(clock: number) {
+  // Roughly twelve breaths a minute, which is slow enough to read as calm.
   const breath = Math.sin(clock * 1.15);
 
   // A gesture cycle: mostly idle, with a burst of movement near the end of it.
@@ -434,25 +489,46 @@ function idleLife(clock: number) {
   // Which way this player happens to be looking on this cycle.
   const glanceAim = Math.sin(clock * 0.037) * 3.7;
   const glance = gesture(7.3, 0.0, 0.22) * Math.sin(glanceAim) * 0.85;
-  // A rock from one foot to the other, and the shoulder roll that goes with it.
-  const shift = gesture(9.1, 0.35, 0.4);
-  const shiftDir = Math.sign(Math.sin(clock * 0.041 + 1.1)) || 1;
-  // An occasional little bounce, as if resetting the feet.
-  const hop = gesture(11.7, 0.6, 0.16);
+
+  // Weight from one foot to the other. A rock underneath at roughly one cycle
+  // every six seconds - slower than that and it stops reading as movement at
+  // all - with a decisive shove onto one side every few seconds on top, so the
+  // lean is always going somewhere but rarely centred.
+  const rock = Math.sin(clock * 1.05) * 0.5 + Math.sin(clock * 0.62 + 2.2) * 0.3;
+  const shove = gesture(5.5, 0.35, 0.5);
+  const shoveDir = Math.sign(Math.sin(clock * 0.13 + 1.1)) || 1;
+  const weight = clampUnit(rock + shove * shoveDir * 0.5);
+
+  // Sinking into the knees and standing back up: the between-pitches settle.
+  // Shallow and constant, deeper on the occasional gesture.
+  const sink = clamp01(0.12 + 0.07 * Math.sin(clock * 1.3 + 0.4) + gesture(7.9, 0.7, 0.35) * 0.32);
 
   return {
     headYaw:
       Math.sin(clock * 0.41) * 0.3 + Math.sin(clock * 0.17 + 1.3) * 0.2 + glance,
-    headTilt: Math.sin(clock * 0.29 + 0.7) * 0.07 + hop * 0.1,
-    sway: Math.sin(clock * 0.53) * 0.07 + shift * shiftDir * 0.34,
-    roll: Math.sin(clock * 0.47 + 2.1) * 0.04 + shift * shiftDir * 0.1,
+    headTilt: Math.sin(clock * 0.29 + 0.7) * 0.08 - sink * 0.12,
     breath,
-    bob: breath * 0.045 + hop * 0.16,
-    /** Weight on one leg: the knee on that side gives a little. */
-    lift: shift * shiftDir,
-    /** Hands fidget - a glove pound, a grip adjustment. */
-    fidget: gesture(6.1, 0.15, 0.3),
+    /** -1 fully on one foot, +1 fully on the other. */
+    weight,
+    /** How far down into the knees, 0..1. */
+    sink,
+    /** Hands: a grip adjustment now and then, and nothing else. */
+    fidget: gesture(13.7, 0.15, 0.12),
   };
+}
+
+/** Weight shift as pose channels: hips over one foot, feet where they were. */
+function lean(weight: number, amount = 0.5) {
+  const sway = weight * amount;
+  return {
+    sway,
+    legSplay: -sway / LEG_REACH,
+    roll: weight * 0.06,
+  };
+}
+
+function clampUnit(v: number): number {
+  return v < -1 ? -1 : v > 1 ? 1 : v;
 }
 
 function poseValues(
@@ -469,7 +545,11 @@ function poseValues(
     // bending the knee alone just kicks the heels up behind.
     return {
       ...REST,
-      crouch: 0.2 + life.breath * 0.03,
+      // A hitter rocks too, but only slightly - the stance is already loaded
+      // and anything bigger reads as stepping out of the box.
+      ...lean(life.weight, 0.14),
+      crouch: 0.2,
+      chest: life.breath * 0.035,
       lean: 0.06,
       twist: 0.34,
       legL: -0.55,
@@ -484,40 +564,40 @@ function poseValues(
       elbowIn: BAT_STANCE.elbowIn,
       headYaw: life.headYaw * 0.3,
       headTilt: life.headTilt,
-      bob: life.bob * 0.6,
     };
   }
 
   switch (pose) {
-    case "ready":
+    case "ready": {
+      // Waiting on the pitch: down in the knees, weight rolling from foot to
+      // foot, hands resting where they are. The athletic read comes from the
+      // settle and the forward lean, not from working the glove.
+      const settle = squat(life.sink);
       return {
         ...REST,
-        // Stood up straight. Anything less than straight bends the wrong way
-        // on this rig; the athletic read comes from the forward lean, the
-        // weight shift and the breath instead.
-        crouch: 0.02 + life.breath * 0.03,
-        lean: 0.13,
-        // Rocking onto one foot bends that knee and straightens the other.
-        legL: -Math.max(0, life.lift) * 0.3,
-        legR: -Math.max(0, -life.lift) * 0.3,
-        kneeL: Math.max(0, life.lift) * 0.34,
-        kneeR: Math.max(0, -life.lift) * 0.34,
-        armL: -0.5 - life.fidget * 0.35,
-        armR: -0.5 - life.fidget * 0.3,
-        elbowL: -0.85 + life.breath * 0.05 - life.fidget * 0.45,
-        elbowR: -0.85 - life.breath * 0.05 - life.fidget * 0.25,
-        armSpread: 0.34 + life.fidget * 0.1,
+        ...lean(life.weight),
+        crouch: settle.crouch,
+        chest: life.breath * 0.05,
+        lean: 0.13 + life.sink * 0.12,
+        legL: settle.leg,
+        legR: settle.leg,
+        kneeL: settle.knee,
+        kneeR: settle.knee,
+        armL: -0.5 - life.sink * 0.12,
+        armR: -0.5 - life.sink * 0.1,
+        elbowL: -0.85 + life.breath * 0.04 - life.fidget * 0.3,
+        elbowR: -0.85 - life.breath * 0.04 - life.fidget * 0.2,
+        armSpread: 0.34 + life.sink * 0.06,
         headYaw: life.headYaw,
         headTilt: life.headTilt,
-        sway: life.sway,
-        roll: life.roll,
-        bob: life.bob,
       };
+    }
     case "crouch":
       // The catcher: deep squat, glove hand up, mask pointed at the mound.
       return {
         ...REST,
-        crouch: 1.35 + life.breath * 0.03,
+        crouch: 1.35,
+        chest: life.breath * 0.04,
         lean: 0.34,
         legL: -1.45,
         legR: -1.45,
@@ -530,7 +610,6 @@ function poseValues(
         armSpread: 0.62,
         headTilt: -0.34,
         headYaw: life.headYaw * 0.25,
-        bob: life.bob * 0.5,
       };
     case "walk": {
       // Strolling down to first with the base awarded. Half the cadence of a
@@ -699,22 +778,26 @@ function poseValues(
         elbowR: -0.15,
         headTilt: 0.35,
       };
-    default:
+    default: {
+      // Standing around: the same life as `ready`, at about half the amplitude
+      // and without the crouch, since nobody is expecting a ball right now.
+      const settle = squat(life.sink * 0.45);
       return {
         ...REST,
-        crouch: 0.02,
-        legL: -Math.max(0, life.lift) * 0.24,
-        legR: -Math.max(0, -life.lift) * 0.24,
-        kneeL: Math.max(0, life.lift) * 0.28,
-        kneeR: Math.max(0, -life.lift) * 0.28,
-        elbowL: -0.25 - life.fidget * 0.3,
-        elbowR: -0.25 - life.fidget * 0.3,
+        ...lean(life.weight, 0.4),
+        crouch: settle.crouch,
+        chest: life.breath * 0.045,
+        lean: 0.04,
+        legL: settle.leg,
+        legR: settle.leg,
+        kneeL: settle.knee,
+        kneeR: settle.knee,
+        elbowL: -0.25 - life.fidget * 0.25,
+        elbowR: -0.25 - life.fidget * 0.25,
         headYaw: life.headYaw,
         headTilt: life.headTilt,
-        sway: life.sway,
-        roll: life.roll,
-        bob: life.bob,
       };
+    }
   }
 }
 
@@ -1153,8 +1236,15 @@ export function Player({
       state.clock.elapsedTime + live.playerId,
       actor.role === "batter",
     );
-    parts.hips.position.y = HIP_HEIGHT - v.crouch + v.bob;
+    // Leaning the legs sideways shortens their vertical reach, so the hips have
+    // to come down by the same amount or the boots lift off the grass.
+    parts.hips.position.y =
+      HIP_HEIGHT -
+      v.crouch +
+      v.bob -
+      (LEG_REACH - v.crouch) * (1 - Math.cos(v.legSplay));
     parts.hips.position.x = v.sway;
+    parts.torso.position.y = v.chest;
     parts.torso.rotation.x = v.lean;
     parts.torso.rotation.y = v.twist;
     parts.torso.rotation.z = v.roll;
@@ -1162,6 +1252,9 @@ export function Player({
     parts.head.rotation.y = v.headYaw - v.twist;
     parts.legL.rotation.x = v.legL;
     parts.legR.rotation.x = v.legR;
+    // Both legs lean together, so the hips can travel over a planted foot.
+    parts.legL.rotation.z = v.legSplay;
+    parts.legR.rotation.z = v.legSplay;
     parts.kneeL.rotation.x = v.kneeL;
     parts.kneeR.rotation.x = v.kneeR;
     parts.armL.rotation.x = v.armL;

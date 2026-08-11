@@ -261,6 +261,12 @@ export interface FeedCursor {
   completedAtBats: number[];
   inning: number;
   isTopInning: boolean;
+  /**
+   * A pitch that ended an at-bat but whose result MLB has not published yet.
+   * Held back so the pitch and its outcome play as one continuous animation
+   * instead of a swing followed by a wait. `since` bounds the wait.
+   */
+  hold: { id: string; since: number } | null;
 }
 
 export const EMPTY_CURSOR: FeedCursor = {
@@ -269,4 +275,5 @@ export const EMPTY_CURSOR: FeedCursor = {
   completedAtBats: [],
   inning: 0,
   isTopInning: true,
+  hold: null,
 };

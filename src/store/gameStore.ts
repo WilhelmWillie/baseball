@@ -125,7 +125,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { events, cursor: nextCursor } = extractEvents(feed, cursor);
     if (events.length > 0) director.enqueue(events);
 
-    if (director.isIdle() && events.length === 0) {
+    // A held pitch means the feed has moved on but the animation has not been
+    // allowed to start yet. Promoting the snapshot here would put the result on
+    // the scoreboard before anyone has seen the pitch, so it waits with it.
+    if (director.isIdle() && events.length === 0 && !nextCursor.hold) {
       director.applySnapshot(next);
       set({
         snapshot: next,
@@ -152,8 +155,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   settle() {
-    const { director, pending, pendingHistory } = get();
+    const { director, pending, pendingHistory, cursor } = get();
     if (!pending || !director.isIdle()) return;
+    // Idle only because a pitch is being held back - do not let the world skip
+    // ahead to a play it is about to animate.
+    if (cursor.hold) return;
     director.applySnapshot(pending);
     // The feed's log is authoritative and self-heals anything the animation
     // queue had to drop while catching up.

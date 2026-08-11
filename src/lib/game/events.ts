@@ -278,6 +278,45 @@ function atBatIndexOf(play: MlbPlay, fallback: number): number {
   return play.about?.atBatIndex ?? play.atBatIndex ?? fallback;
 }
 
+/**
+ * Which pitch ended this at-bat, by event index - or null if it is still open.
+ *
+ * Knowing this *before* MLB publishes the result is what lets us hold the pitch
+ * back. The count is rebuilt from the pitches rather than read off the feed's
+ * `count` field, because that field is documented as the count before the pitch
+ * in some places and after it in others; recounting is immune to both.
+ *
+ * Anything this misses (a foul tip caught for strike three reads as an ordinary
+ * foul, for one) simply is not held, which is the old behaviour rather than a
+ * new failure.
+ */
+function deciderIndex(playEvents: MlbPlayEvent[]): number | null {
+  let balls = 0;
+  let strikes = 0;
+
+  for (let j = 0; j < playEvents.length; j++) {
+    const event = playEvents[j];
+    if (!event.isPitch) continue;
+    const index = event.index ?? j;
+    const outcome = pitchOutcome(event);
+
+    if (outcome === "in_play" || outcome === "hit_by_pitch") return index;
+    if (outcome === "ball") balls += 1;
+    else if (outcome === "called_strike" || outcome === "swinging_strike") strikes += 1;
+    else if (outcome === "foul" && strikes < 2) strikes += 1;
+
+    if (balls >= 4 || strikes >= 3) return index;
+  }
+  return null;
+}
+
+/**
+ * How long to wait for a result before giving up and playing the pitch alone.
+ * MLB usually publishes one within a poll or two; if something has gone wrong
+ * upstream, a late animation still beats a frozen field.
+ */
+const HOLD_TIMEOUT_MS = 12000;
+
 /** Position the cursor at the live edge without emitting anything. */
 export function seedCursor(feed: MlbLiveFeed): FeedCursor {
   const plays = feed.liveData?.plays?.allPlays ?? [];
@@ -293,13 +332,20 @@ export function seedCursor(feed: MlbLiveFeed): FeedCursor {
       .map((p, i) => atBatIndexOf(p, i)),
     inning: linescore?.currentInning ?? 1,
     isTopInning: linescore?.isTopInning ?? true,
+    hold: null,
   };
 }
 
 /**
  * Walk the feed forward from `cursor` and emit everything that is new.
- * Pitches stream as they land; a play's result is only emitted once MLB marks
- * the play complete, which is when runner movement is final.
+ *
+ * Pitches stream as they land, with one exception: the pitch that *ends* an
+ * at-bat is held until MLB publishes the result. MLB marks a play complete a
+ * beat after the ball is put in play, so emitting the pitch on sight meant
+ * animating the delivery and the swing, then standing around until the next
+ * poll brought the outcome. Holding it costs a poll up front and buys a single
+ * unbroken play - the director fuses a pitch and the result behind it into one
+ * animation whenever they arrive together.
  */
 export function extractEvents(
   feed: MlbLiveFeed,
@@ -309,11 +355,13 @@ export function extractEvents(
   const linescore = feed.liveData?.linescore;
   const events: NormalizedEvent[] = [];
   const completed = new Set(cursor.completedAtBats);
+  const now = Date.now();
 
   let maxAtBat = cursor.atBatIndex;
   let maxEvent = cursor.eventIndex;
+  let hold: FeedCursor["hold"] = null;
 
-  for (let i = 0; i < plays.length; i++) {
+  outer: for (let i = 0; i < plays.length; i++) {
     const play = plays[i];
     const atBatIndex = atBatIndexOf(play, i);
     if (atBatIndex < cursor.atBatIndex) continue;
@@ -321,6 +369,9 @@ export function extractEvents(
     const playEvents = play.playEvents ?? [];
     const startFrom = atBatIndex === cursor.atBatIndex ? cursor.eventIndex : -1;
     const batSide = batSideOf(play);
+    const isComplete = Boolean(play.about?.isComplete);
+    // Only worth working out while the outcome is still missing.
+    const decider = isComplete ? null : deciderIndex(playEvents);
     let sawInPlay = false;
 
     for (let j = 0; j < playEvents.length; j++) {
@@ -331,8 +382,23 @@ export function extractEvents(
       if (event.isPitch) {
         const outcome = pitchOutcome(event);
         if (outcome === "in_play") sawInPlay = true;
+        const id = `${atBatIndex}-${eventIndex}-pitch`;
+
+        if (eventIndex === decider) {
+          // Already waiting on this one - keep the original clock so a stuck
+          // feed cannot hold the game hostage indefinitely.
+          const waiting = cursor.hold?.id === id ? cursor.hold : { id, since: now };
+          if (now - waiting.since < HOLD_TIMEOUT_MS) {
+            hold = waiting;
+            // Leave the cursor behind this pitch so the next poll re-reads it,
+            // and emit nothing further: everything after it in the feed
+            // belongs to a play this one has to precede.
+            break outer;
+          }
+        }
+
         const pitch: PitchEvent = {
-          id: `${atBatIndex}-${eventIndex}-pitch`,
+          id,
           type: "pitch",
           atBatIndex,
           eventIndex,
@@ -374,7 +440,7 @@ export function extractEvents(
       }
     }
 
-    if (play.about?.isComplete && !completed.has(atBatIndex)) {
+    if (isComplete && !completed.has(atBatIndex)) {
       completed.add(atBatIndex);
       const eventType = play.result?.eventType;
       const kind = kindOf(eventType);
@@ -413,8 +479,10 @@ export function extractEvents(
     }
   }
 
-  const inning = linescore?.currentInning ?? cursor.inning;
-  const isTopInning = linescore?.isTopInning ?? cursor.isTopInning;
+  // While a pitch is held the half-inning it belongs to is still in progress,
+  // so the linescore must not run ahead of it either.
+  const inning = hold ? cursor.inning : linescore?.currentInning ?? cursor.inning;
+  const isTopInning = hold ? cursor.isTopInning : linescore?.isTopInning ?? cursor.isTopInning;
   if (inning !== cursor.inning || isTopInning !== cursor.isTopInning) {
     const change: InningChangeEvent = {
       id: `inning-${inning}-${isTopInning ? "top" : "bot"}`,
@@ -435,6 +503,7 @@ export function extractEvents(
       completedAtBats: [...completed].slice(-40),
       inning,
       isTopInning,
+      hold,
     },
   };
 }

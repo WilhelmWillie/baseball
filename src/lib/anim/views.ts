@@ -22,8 +22,8 @@ export interface CameraViewOption {
 
 export const CAMERA_VIEWS: CameraViewOption[] = [
   { id: "broadcast", label: "Broadcast", hint: "Cuts with the play" },
-  { id: "umpire", label: "Umpire", hint: "Behind the pitcher" },
-  { id: "pitcher", label: "Pitcher", hint: "Tight on the mound" },
+  { id: "umpire", label: "Umpire", hint: "Behind the plate" },
+  { id: "pitcher", label: "Pitcher", hint: "From the mound" },
   { id: "bleachers", label: "Bleachers", hint: "Center field seats" },
 ];
 
@@ -52,31 +52,36 @@ export interface Shot {
  */
 const SEATS: Record<Exclude<CameraView, "broadcast">, Shot & { pan: number }> = {
   /**
-   * Out over center field, well behind the pitcher, on a long lens - the angle
-   * a pitch is judged from. Distance is what makes it work: from close in the
-   * pitcher would fill the frame and hide the plate, but from out here he sits
-   * small at the bottom of the shot with the hitter square to the lens.
+   * The umpire's own eyes: in the slot off the catcher's inside shoulder,
+   * looking straight out at the pitcher, with the pitch arriving at the lens.
+   *
+   * Higher than a person would stand, deliberately. The figures are drawn at
+   * 2.4x life size and a crouched catcher's head clears twelve feet, so an
+   * umpire at his real eye height would see nothing but the back of it. From
+   * here the helmet rides the bottom of the frame instead, which is what the
+   * job actually looks like.
    */
   umpire: {
-    position: fp(0, 200, 38),
-    target: fp(0, 4, 8),
-    lerp: 2.4,
-    fov: 18,
-    fixed: true,
-    pan: 0.25,
-  },
-  /**
-   * High above the seats behind the plate, long lens on the mound: the
-   * pitcher's face, his glove and the whole delivery, sighted over the catcher
-   * and the top of the hitter's helmet.
-   */
-  pitcher: {
-    position: fp(0, -110, 40),
+    position: fp(1.2, -20, 17),
     target: fp(0, RUBBER_DEPTH - 3, 8),
     lerp: 2.4,
-    fov: 12,
+    fov: 46,
     fixed: true,
-    pan: 0.12,
+    pan: 0.3,
+  },
+  /**
+   * The pitcher's own eyes - clearing his cap for the same reason the umpire
+   * clears the catcher's helmet, so the shot is the hitter sixty feet away and
+   * the infield spread out ahead rather than the back of his own head. His cap
+   * sits along the bottom of the frame, and the ball leaves past it.
+   */
+  pitcher: {
+    position: fp(0, RUBBER_DEPTH + 5.5, 21),
+    target: fp(0, 1, 6.5),
+    lerp: 2.4,
+    fov: 48,
+    fixed: true,
+    pan: 0.3,
   },
   /**
    * A dozen rows up in the center field bleachers, over the batter's eye and

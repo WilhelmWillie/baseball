@@ -75,11 +75,12 @@ click anywhere starts it. The 🔊 button mutes.
 
 **Camera modes** — the 🎥 button picks where you watch from. **Broadcast** is
 the default and is the directed feed: it cuts between angles as the game gives
-it something to say. The other three are seats that never cut — **Umpire** out
-behind the pitcher on a long lens, the angle a pitch is judged from;
-**Pitcher** from high above the plate, tight on the mound and the delivery; and
-**Bleachers** a dozen rows up in center field, where everything is small and far
-away and you can see the whole park. Your choice is remembered.
+it something to say. The other three are seats that never cut — **Umpire**
+through the umpire's own eyes, in the slot behind the catcher with the pitch
+arriving at the lens; **Pitcher** from the mound, your cap in the bottom of the
+frame and the hitter sixty feet away; and **Bleachers** a dozen rows up in
+center field, where everything is small and far away and you can see the whole
+park. Your choice is remembered.
 
 **Simulated game** (`/watch/demo`) — a scripted game emitted in the exact shape
 of MLB's GUMBO feed, so it exercises the same adapter and animation path a real
@@ -291,20 +292,25 @@ minimum time so nothing strobes when several things happen at once, and hard
 contact knocks the lens for about half a second.
 
 That directed feed is one of four camera modes, and the default. The other three
-are seats rather than shots: one vantage, one lens, held all game. They are
-placed the way the real cameras that inspired them are — the umpire seat is out
-past the mound because from close in the pitcher hides the plate, and the
-pitcher seat is high above the crowd behind home because from field level the
-catcher hides everything. A seat does not cut and it does not chase, but its
-gaze swings part-way after a ball hit away from what it is aimed at, the way a
-head turns; a pitch lands inside the framing and moves it not at all. Changing
-seats is itself a cut. There is still no orbit control — a fixed set of framings
-composed against the park reads better than one dragged around by hand.
+are seats rather than shots: one vantage, one lens, held all game. Two of them
+are somebody's eyes. Both sit a little higher than the person whose view they
+are — the figures are drawn at 2.4x life size, so a head is enormous, and an
+umpire at his real eye height would spend the game looking at the back of the
+catcher's helmet rather than over it. The pitcher's seat clears his own cap for
+the same reason, which leaves the cap itself along the bottom of the frame.
+
+A seat does not cut and it does not chase, but its gaze swings part-way after a
+ball hit away from what it is aimed at, the way a head turns; a pitch lands
+inside the framing and moves it not at all. Changing seats is itself a cut.
+There is still no orbit control — a fixed set of framings composed against the
+park reads better than one dragged around by hand.
 
 Name plates scale down as the camera closes in - sprites otherwise grow with
-proximity, and on a tight shot a plate would fill the frame. The seats watch
-through a much longer lens than the broadcast one, which magnifies a sprite the
-same way proximity does, so the plates are scaled off the lens as well.
+proximity, and on a tight shot a plate would fill the frame. The bleacher seat
+watches through a much longer lens than the broadcast one, which magnifies a
+sprite the same way proximity does, so the plates are scaled off the lens as
+well, and a plate whose player the lens is sitting on is dropped outright: from
+the mound, the pitcher does not need to be told his own name.
 
 ### Grounding
 

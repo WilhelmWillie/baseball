@@ -41,6 +41,10 @@ const SCALE = 2.35;
 /** `tan(fov/2)` of the broadcast lens, which name plates are sized against. */
 const BASE_LENS = Math.tan((50 * Math.PI) / 360);
 
+/** How high the name plate floats over the actor's feet. */
+const LABEL_HEIGHT = 17.2;
+const PLATE_AT = new Vector3();
+
 /**
  * Hip height in model units. Chosen so the soles of the feet land on y = 0 in
  * the resting pose - the figures used to sink about a foot into the dirt.
@@ -1348,9 +1352,16 @@ export function Player({
     const plate = labelRef.current;
     if (plate) {
       const camera = state.camera as PerspectiveCamera;
-      const distance = camera.position.distanceTo(group.position);
+      // Measured to the plate itself rather than to the feet under it. The two
+      // are the same number from any distance that matters, and from a lens
+      // sitting on top of a player they are not.
+      PLATE_AT.copy(group.position).y += LABEL_HEIGHT;
+      const distance = camera.position.distanceTo(PLATE_AT);
+      // Nobody reads the plate of a player they are standing inside: the first
+      // person seats put the lens on one, and his own name is not the shot.
+      plate.visible = distance > 13;
       const lens = Math.min(1, Math.tan((camera.fov * Math.PI) / 360) / BASE_LENS);
-      const size = 4.6 * lens * Math.max(0.34, Math.min(1.25, distance / 95));
+      const size = 4.6 * lens * Math.max(0.15, Math.min(1.25, distance / 95));
       plate.scale.set(labelAspect(label) * size, size, 1);
     }
 
@@ -1366,7 +1377,7 @@ export function Player({
     <group ref={rootRef} position={actor.position} rotation={[0, actor.facing, 0]}>
       <primitive object={model} />
       {showLabel && (
-        <sprite ref={labelRef} position={[0, 17.2, 0]}>
+        <sprite ref={labelRef} position={[0, LABEL_HEIGHT, 0]}>
           <spriteMaterial map={getLabelTexture(label, accent)} depthTest={false} transparent />
         </sprite>
       )}

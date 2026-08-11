@@ -18,9 +18,14 @@ import {
 import type { SoundName } from "@/lib/audio/sfx";
 import { Fx } from "./particles";
 import { pitchArc } from "./pitches";
+import {
+  GLOVE_HEIGHT,
+  heatOf,
+  planBattedBall,
+  type BattedPlan,
+} from "./batted";
 import { foulBallFor, runnerProgress } from "@/lib/game/events";
 import type {
-  BattedBall,
   GameSnapshot,
   NormalizedEvent,
   PitchEvent,
@@ -43,6 +48,8 @@ export type Pose =
   | "dejected"
   /** Hands on hips, head down - a pitcher who has just given one up. */
   | "annoyed"
+  /** Laid out full stretch at a ball going past. */
+  | "dive"
   | "crouch";
 
 export interface Actor {
@@ -214,47 +221,6 @@ export function basePathPoint(progress: number, bow = 0): Vector3 {
   return point;
 }
 
-function apexFor(ball: BattedBall): number {
-  if (ball.isHomeRun) return 78 + Math.min(60, ball.distance / 8);
-  switch (ball.trajectory) {
-    case "ground_ball":
-      return 2.5;
-    case "bunt":
-      return 3;
-    case "line_drive":
-      return 11;
-    case "popup":
-      return 95;
-    case "fly_ball":
-      return 42 + Math.min(50, ball.distance / 7);
-    default:
-      return Math.max(6, Math.min(70, ball.distance / 6));
-  }
-}
-
-/**
- * How long the ball is in the air. Deliberately longer than the physics would
- * give: hang time is the part of a batted ball a viewer actually reads - where
- * it is going, who is chasing it, whether it will drop - and rushing it turns
- * every play into a blur.
- */
-function flightDuration(ball: BattedBall): number {
-  if (ball.isHomeRun) return 4.2;
-  switch (ball.trajectory) {
-    case "ground_ball":
-    case "bunt":
-      return 1.7;
-    case "line_drive":
-      return 1.9;
-    case "popup":
-      return 4.0;
-    case "fly_ball":
-      return 3.4;
-    default:
-      return 2.6;
-  }
-}
-
 /**
  * How much each outcome moves the crowd, and which side it favours.
  * Plays not listed here (walks, hit batsmen) pass without a reaction.
@@ -273,12 +239,6 @@ const CROWD_WEIGHT: Partial<
   double_play: { magnitude: 0.85, favorsBatter: false },
   generic: { magnitude: 0.35, favorsBatter: false },
 };
-
-/** Where the ball sits when it is lying on the grass, and glove height. */
-const BALL_RADIUS = 0.45;
-const GLOVE_HEIGHT = 5.4;
-/** How high the first hop carries. */
-const HOP_HEIGHT = 7;
 
 /**
  * Plays where the defence retired the batter with the ball they hit. Anything
@@ -668,6 +628,7 @@ export class Director {
         actor.pose === "walk" ||
         actor.pose === "throw" ||
         actor.pose === "swing" ||
+        actor.pose === "dive" ||
         actor.pose === "annoyed" ||
         actor.pose === "celebrate"
       ) {
@@ -942,10 +903,16 @@ export class Director {
           this.onSound?.("crack");
           // Chips of dirt off the back foot as the hitter turns on it.
           this.fx.spray(CONTACT.clone().setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
-          // The camera reacts to contact the way a crowd does.
+          // The camera reacts to contact the way a crowd does, and how hard the
+          // ball was hit is most of that reaction.
+          const heat = result.ball ? heatOf(result.ball) : 0;
           const big = result.kind === "home_run" || result.kind === "triple";
-          this.knockCamera(big ? 0.85 : result.ball ? 0.4 : 0.2);
-          if (big) this.setShot("low", { cut: true, force: true });
+          this.knockCamera(big ? 0.85 : result.ball ? 0.2 + heat * 0.55 : 0.2);
+          // A ball scalded on a line deserves the same angle a home run gets:
+          // nothing sells a screamer like a camera at the height it is
+          // travelling at.
+          const screamer = result.ball?.trajectory === "line_drive" && heat > 0.72;
+          if (big || screamer) this.setShot("low", { cut: true, force: true });
         });
         if (t <= contactAt) {
           flight.update(t);
@@ -971,11 +938,6 @@ export class Director {
     const ball = result.ball;
     const tracks = this.prepareRunners(result);
 
-    const landing = ball ? fp(ball.lateral, ball.depth, 0) : null;
-    const ballDuration = ball ? flightDuration(ball) : 0;
-    const apex = ball ? apexFor(ball) : 0;
-    const fielderKey = ball && !ball.isHomeRun ? `def:${ball.fielder}` : null;
-
     /**
      * Was the ball caught on the fly? This is the difference between a hit and
      * an out, and it used to be missing: every batted ball ended with the
@@ -990,16 +952,25 @@ export class Director {
       ball.trajectory !== "ground_ball" &&
       ball.trajectory !== "bunt";
 
-    // How long the ball spends bouncing and rolling before it is gathered.
-    const groundTime = ball && !caughtInAir && !ball.isHomeRun ? 1.15 : 0;
-    const gatherAt = ballDuration + groundTime;
-    const throwStart = ball ? gatherAt + 0.4 : 0;
+    // Everything about the flight - the shape of the carry, where it first
+    // comes down, how it bounces out, who runs it down and who it beats on the
+    // way - is worked out once, up front. See `./batted`.
+    const plan: BattedPlan | null = ball
+      ? planBattedBall(ball, {
+          contact: CONTACT,
+          caught: caughtInAir,
+          hit: HIT_KINDS.has(result.kind),
+        })
+      : null;
+
+    const landing = plan ? plan.landing : null;
+    const ballDuration = plan ? plan.carryTime : 0;
+    const gatherAt = plan ? plan.gatherTime : 0;
+    const throwStart = plan ? gatherAt + 0.4 : 0;
     const throwEnd = throwStart + 0.6;
-    /** Where the ball ends up after the hop and the roll. */
-    const restPoint =
-      landing && groundTime > 0
-        ? landing.clone().multiplyScalar(1.09)
-        : landing;
+    /** Where the ball ends up after the hops and the roll. */
+    const restPoint = plan ? plan.rest : null;
+    const fielderKey = plan && !ball?.isHomeRun ? `def:${plan.fielder}` : null;
 
     // A runner cannot be out before the play that retires him. Pushing the
     // out tracks past the catch (or past the throw arriving) is what stops a
@@ -1022,9 +993,10 @@ export class Director {
     const holdAfter = result.kind === "home_run" ? 4.2 : 2.4;
     const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
-    const startPoint = CONTACT.clone();
     const cue = new Cue();
-    let landed = false;
+    /** Where the chasing defender and the diving one started from. */
+    let chaseFrom: Vector3 | null = null;
+    let diveFrom: Vector3 | null = null;
 
     /**
      * When the call goes up. Naming the play the instant it starts gives away
@@ -1061,7 +1033,10 @@ export class Director {
       duration,
       onStart: () => {
         if (ball) {
-          this.cameraFollow = result.kind === "home_run" ? 0.6 : 0.32;
+          // A ball that never gets above the infielders' heads needs the
+          // diamond in shot to read at all; one in the air can be chased.
+          this.cameraFollow =
+            result.kind === "home_run" ? 0.6 : plan && plan.apex < 14 ? 0.22 : 0.32;
           this.setShot("ball");
         }
       },
@@ -1096,39 +1071,28 @@ export class Director {
         }
 
         // --- Ball ---
-        if (ball && landing) {
-          if (t <= ballDuration) {
-            const u = clamp01(t / ballDuration);
-            const flat = startPoint.clone().lerp(landing, u);
-            // A ball that is caught finishes at the glove; one that is not
-            // finishes on the ground, which is what makes the difference
-            // legible from any camera.
-            const endHeight = caughtInAir ? GLOVE_HEIGHT : BALL_RADIUS;
-            const height = ball.isHomeRun
-              ? apex * Math.sin(Math.PI * Math.min(1, u * 0.92)) + 2
-              : apex * 4 * u * (1 - u) + startPoint.y * (1 - u) + endHeight * u;
-            this.ball.position.set(flat.x, Math.max(BALL_RADIUS, height), flat.z);
+        if (ball && plan && landing) {
+          if (t <= gatherAt) {
+            // One path covers the carry, the hops and the roll: the plan knows
+            // where the ball is at any moment, and how long it stays down there
+            // waiting to be picked up.
+            this.ball.position.copy(plan.at(t));
             this.ball.visible = true;
             this.ball.scale = 2.8;
             this.pushTrail();
-          } else if (!ball.isHomeRun && t <= gatherAt && groundTime > 0 && restPoint) {
-            // On the deck: two decaying hops while it rolls out, so the ball is
-            // visibly *down* rather than teleporting into somebody's glove.
-            const u = clamp01((t - ballDuration) / groundTime);
-            const flat = landing.clone().lerp(restPoint, easeOut(u));
-            const hop =
-              Math.abs(Math.sin(u * Math.PI * 2)) * (1 - u) * (1 - u) * HOP_HEIGHT;
-            this.ball.position.set(flat.x, BALL_RADIUS + hop, flat.z);
-            this.ball.visible = true;
-            this.pushTrail();
-            cue.at("bounce", t, ballDuration, () => {
-              this.onSound?.("mitt", 0.25);
-              this.fx.spray(
-                landing.clone().setY(0.4),
-                landing.clone().setY(0).normalize().setY(0.8),
-                14,
-                0.8,
-              );
+            // Every time it strikes the dirt it says so and throws some of it.
+            plan.bounces.forEach((when, i) => {
+              cue.at(`bounce:${i}`, t, when, () => {
+                const fade = i === 0 ? 1 : 0.45;
+                this.onSound?.("mitt", 0.3 * fade);
+                const where = this.ball.position.clone().setY(0.4);
+                this.fx.spray(
+                  where,
+                  where.clone().setY(0).normalize().setY(0.8),
+                  Math.round((8 + 10 * plan.heat) * fade),
+                  (0.5 + 0.4 * plan.heat) * fade,
+                );
+              });
             });
           } else if (ball.isHomeRun) {
             // Carry it into the seats.
@@ -1141,11 +1105,9 @@ export class Director {
             this.ball.visible = true;
             this.pushTrail();
           } else if (t <= throwEnd) {
+            // Gathered: it is in a glove now, not lying in the grass.
             const held = restPoint ?? landing;
-            if (!landed) {
-              landed = true;
-              this.ball.position.copy(held).setY(caughtInAir ? GLOVE_HEIGHT : BALL_RADIUS);
-            }
+            this.ball.position.copy(held).setY(caughtInAir ? GLOVE_HEIGHT : 3.2);
             if (t >= throwStart) {
               const u = clamp01((t - throwStart) / (throwEnd - throwStart));
               const p = held.clone().setY(3.2).lerp(throwTarget, easeInOut(u));
@@ -1162,11 +1124,19 @@ export class Director {
         if (fielderKey && landing) {
           const fielder = this.actors.get(fielderKey);
           if (fielder) {
+            // He runs a route rather than being dragged toward the ball a
+            // fraction at a time: he leaves his own spot, and he arrives at the
+            // moment the ball is gathered, which is what makes a ball in the
+            // gap cost more than one hit straight at him.
+            chaseFrom ??= fielder.position.clone();
             const u = clamp01(t / Math.max(0.35, gatherAt));
             // A ball at the wall would otherwise walk the fielder through it.
             const target = playableSpot((restPoint ?? landing).clone().setY(0));
-            fielder.position.lerp(target, Math.min(1, u * 0.16 + dt * 2.2));
-            fielder.facing = yawToward(fielder.position, target.distanceTo(fielder.position) > 1 ? target : fp(0, 0));
+            fielder.position.copy(chaseFrom).lerp(target, easeOut(u));
+            fielder.facing = yawToward(
+              fielder.position,
+              target.distanceTo(fielder.position) > 1 ? target : fp(0, 0),
+            );
             if (t < gatherAt) {
               fielder.pose = "run";
               fielder.poseT = (fielder.poseT + dt * 1.6) % 1;
@@ -1179,8 +1149,39 @@ export class Director {
             } else if (t < throwEnd) {
               fielder.pose = "throw";
               fielder.poseT = clamp01((t - throwStart) / 0.55);
-            } else {
+            } else if (fielder.pose === "throw" || fielder.pose === "catch") {
+              // Only ever undoing our own pose: a pitcher who fielded the ball
+              // and then wore the hit is sulking about it, and standing him
+              // back up every frame is not an improvement.
               fielder.pose = "ready";
+            }
+          }
+        }
+
+        // A ball that got through went past somebody: whoever it beat breaks
+        // on it, lays out, and comes up with a handful of infield dirt. This is
+        // most of what makes a ground-ball single look like one rather than
+        // like a routine play that happened to be scored a hit.
+        if (plan?.beaten) {
+          const diver = this.actors.get(`def:${plan.beaten.key}`);
+          if (diver) {
+            const lunge = Math.max(0.12, plan.beaten.at - 0.16);
+            diveFrom ??= diver.position.clone();
+            const u = clamp01(t / lunge);
+            diver.position.copy(diveFrom).lerp(plan.beaten.spot, easeOut(u));
+            diver.facing = yawToward(diveFrom, plan.beaten.spot);
+            if (t < lunge) {
+              diver.pose = "run";
+              diver.poseT = (diver.poseT + dt * 2.1) % 1;
+            } else if (t < lunge + 1.5) {
+              cue.at("dive", t, lunge, () =>
+                this.fx.puff(diver.position.clone(), 16, { spread: 6, lift: 2.4, size: 1 }),
+              );
+              diver.pose = "dive";
+              diver.poseT = clamp01((t - lunge) / 0.85);
+            } else if (diver.pose === "dive") {
+              // Back on his feet, watching it go.
+              diver.pose = "ready";
             }
           }
         }

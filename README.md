@@ -303,11 +303,11 @@ grass does not meet the stands at a hard, evenly-lit seam.
 ### Pacing
 
 The whole point of the animation is that a viewer can follow what happened, so
-everything runs slower than the physics would give. A fly ball hangs for 3.4s, a
-home run 4.2s; hang time is the part of a batted ball you actually read — where
-it is going, who is chasing it, whether it will drop. Runners cover a base in
-2.6s (3.4s on a home-run trot). A double that is over before you have found the
-ball has not communicated anything.
+everything runs slower than the physics would give. A fly ball hangs for three
+seconds and change, a home run for four; hang time is the part of a batted ball
+you actually read — where it is going, who is chasing it, whether it will drop.
+Runners cover a base in 2.6s (3.4s on a home-run trot). A double that is over
+before you have found the ball has not communicated anything.
 
 Real games leave ~20s between pitches, which is plenty of room; the simulated
 game paces itself to match so its animations are not clipped.
@@ -334,9 +334,46 @@ Every batted ball used to end with the fielder playing a catch at the landing
 spot, which made a clean single look exactly like a flyout. The ball now knows
 whether it was caught: on a `field_out`, `double_play` or `sac_fly` off a ball in
 the air it finishes at glove height and never touches the grass, and on anything
-else it lands, takes two decaying hops while it rolls out, throws dirt, and is
-run down and gathered before the throw. Runners who are out have their tracks
-pushed past that moment, so a flyout cannot resolve while the ball is still up.
+else it lands, bounces out, throws dirt, and is run down and gathered before the
+throw. Runners who are out have their tracks pushed past that moment, so a
+flyout cannot resolve while the ball is still up.
+
+### The shape of a batted ball
+
+`src/lib/anim/batted.ts` works out the flight. Knowing a ball was not caught is
+only half of it: for a while every ball in play was still one parabola from the
+bat to the spot MLB reported, so a line drive, a chopper through the hole and a
+ball in the gap all arced up, came down at somebody's feet and were collected.
+
+What separates them is where the ball stops being in the air, so a batted ball
+is two phases rather than one. The **carry** runs from the bat to first touch,
+and each trajectory takes a different share of the distance in it: a fly ball is
+reported where it came down and carries the whole way; a ground ball is reported
+where it was *fielded*, so it carries a third of that and is on the dirt inside
+forty feet; a line drive is hit flat, down early and still going when it gets
+there. The **run-out** is everything after — three hops laid out ballistically,
+each lower, shorter and slower than the last, and then a roll. A ball struck
+with something on it skids low and long; a soft one hops up and dies in the
+grass.
+
+The launch angle the feed gives us sets the height of the arc rather than a
+constant per trajectory, via the apex a projectile leaving at that angle would
+reach, exaggerated by an amount that depends on what is being described — hardly
+at all for a line drive, where flatness is the point, and heavily for a fly
+ball, where size is. And the top of the arc moves: a quarter-sine up and a
+quarter-cosine down can put the peak early, so a ball hit flat climbs quickly
+and then runs out on a long shallow tail, where `4u(1-u)` always topped out
+halfway and gave everything the lazy symmetry of a fly ball.
+
+The defence has to work for it. Whoever ends up with the ball leaves their own
+position and arrives as it is gathered, so a ball in the gap visibly costs more
+than one hit straight at somebody, and anything reaching the grass belongs to
+the outfielder behind it rather than to the infielder it just went past. If the
+ball would beat them to the spot it keeps trickling until they get there instead
+of lying in the outfield waiting to be collected. And a hit that goes past
+somebody now goes past them: on a ground ball or a low liner scored a hit, the
+infielder nearest its line breaks on it, lays out, and comes up with a handful
+of dirt.
 
 ### On a phone
 

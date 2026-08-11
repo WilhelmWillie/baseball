@@ -464,16 +464,23 @@ const THIGH = 1.32;
 const SHIN = 1.16;
 const TOE_AHEAD = 0.1;
 
+/**
+ * How far the hips have to drop for a leg held at these angles to keep its sole
+ * on the ground. Any pose that bends a knee owes the ground this much, and the
+ * ones that guessed at it instead had their feet buried in the dirt.
+ */
+function legDrop(hip: number, knee: number): number {
+  const shin = hip + knee;
+  const reach =
+    THIGH * Math.cos(hip) + SHIN * Math.cos(shin) + TOE_AHEAD * Math.sin(shin);
+  return THIGH + SHIN - reach;
+}
+
 /** The pose channels a settle drives, at depth `g` (0 = stood up, 1 = deep). */
 function squat(g: number) {
   const hip = -SQUAT_HIP * g;
-  const shin = hip + SQUAT_KNEE * g;
-  const reach = THIGH * Math.cos(hip) + SHIN * Math.cos(shin) + TOE_AHEAD * Math.sin(shin);
-  return {
-    crouch: THIGH + SHIN - reach,
-    leg: hip,
-    knee: SQUAT_KNEE * g,
-  };
+  const knee = SQUAT_KNEE * g;
+  return { crouch: legDrop(hip, knee), leg: hip, knee };
 }
 
 function idleLife(clock: number) {
@@ -653,36 +660,90 @@ function poseValues(
         bob: Math.abs(lift) * 0.14,
       };
     }
-    case "windup":
+    case "windup": {
+      // Two beats. First the gather: sink onto the back leg with the hands
+      // together at the belt. Then the leg kick, the front knee driving up as
+      // the shoulders close off toward second base.
+      const gather = clamp01(t / 0.4);
+      const kick = clamp01((t - 0.35) / 0.65);
+      const backHip = -0.34 * gather;
+      const backKnee = 0.38 * gather;
       return {
         ...REST,
-        crouch: 0.22 + t * 0.08,
-        lean: -0.1,
-        twist: -0.55 * t,
-        legL: -1.45 * t,
-        kneeL: 1.7 * t,
-        kneeR: 0.3,
-        armL: -2.0 * t,
-        armR: -1.4 * t,
-        elbowL: -1.5 * t,
-        elbowR: -1.2 * t,
-        headTilt: -0.1,
+        // The back foot is the one on the rubber, so it sets the hip height.
+        crouch: legDrop(backHip, backKnee),
+        lean: -0.06 * gather + 0.1 * kick,
+        twist: -0.72 * kick,
+        legR: backHip,
+        kneeR: backKnee,
+        // Front leg: thigh up toward the chest, shin hanging under the knee.
+        legL: -1.62 * kick,
+        kneeL: 1.55 * kick,
+        // Hands meet at the belt and ride up to the chest with the kick.
+        armL: -0.55 - 0.55 * kick,
+        armR: -0.5 - 0.5 * kick,
+        elbowL: -1.45 - 0.35 * kick,
+        elbowR: -1.5 - 0.3 * kick,
+        elbowIn: 0.75 + 0.35 * kick,
+        armSpread: 0.16,
+        headTilt: -0.06,
+        // Looking in at the plate over the front shoulder as the body turns.
+        headYaw: 0.72 * kick,
       };
+    }
     case "throw": {
-      const u = Math.min(1, t * 1.6);
+      // Three beats sharing one timeline: the stride out, the arm coming over
+      // - the ball leaves midway through it - and the follow-through. `t` runs
+      // 0..1 across the whole motion, and the director releases the ball at
+      // THROW_RELEASE, so these thresholds and that constant have to agree.
+      const stride = clamp01(t / 0.34);
+      const whip = clamp01((t - 0.14) / 0.3);
+      const follow = clamp01((t - 0.36) / 0.64);
+
+      // The front leg swings out ahead and plants; the back one trails off the
+      // rubber and comes through behind.
+      const frontHip = -1.62 + 0.9 * stride + 0.04 * follow;
+      const frontKnee = 1.55 - 1.33 * stride + 0.1 * follow;
+      const backHip = -0.34 + 0.89 * stride - 0.75 * follow;
+      const backKnee = 0.38 + 1.0 * follow;
+
+      // Which foot owns the ground changes mid-motion, and the hips have to
+      // follow whichever one it is: the back foot until the stride lands, the
+      // front foot from then on. Driving the height off the front leg the whole
+      // way would drop the pitcher through the mound before they had strided,
+      // and off the back leg would leave the stride hanging in mid-air. The
+      // handover is the "drop and drive" - the hips sink half a unit as the
+      // front foot takes the weight, because a leg reaching forward simply does
+      // not reach as far down as one standing under you.
+      const plant = clamp01((t - 0.12) / 0.22);
+      const crouch =
+        legDrop(backHip, backKnee) * (1 - plant) + legDrop(frontHip, frontKnee) * plant;
+
       return {
         ...REST,
-        crouch: 0.28,
-        lean: 0.5 * u,
-        twist: -0.55 + u * 0.85,
-        legL: 0.85 * u,
-        legR: -0.45 * u,
-        kneeL: 0.5,
-        kneeR: 0.45,
-        armR: -2.5 + u * 3.0,
-        elbowR: -1.9 + u * 1.9,
-        armL: 0.9 * u,
-        elbowL: -0.6,
+        crouch,
+        lean: 0.12 * stride + 0.44 * follow,
+        // Closed, through square at release, then rotated well past it.
+        twist: -0.72 + 1.05 * whip + 0.5 * follow,
+        legL: frontHip,
+        kneeL: frontKnee,
+        legR: backHip,
+        kneeR: backKnee,
+        // Throwing arm: up and back off the shoulder, over the top, then down
+        // and across the body. It is extended toward the plate at release and
+        // spends the rest of the pose decelerating.
+        armR: -0.5 - 2.3 * clamp01(t / 0.14) + 2.0 * whip + 1.4 * follow,
+        elbowR: -1.8 + 1.9 * whip - 0.55 * follow,
+        // Glove arm reaches out front, then is pulled into the ribs - the tug
+        // that the shoulders rotate around.
+        armL: -1.05 - 0.75 * stride + 1.35 * follow,
+        elbowL: -1.75 + 1.05 * follow,
+        elbowIn: 1.1 - 0.9 * whip,
+        armSpread: 0.16 + 0.34 * follow,
+        // The head cancels the lean rather than going with it: the pitcher
+        // watches the pitch all the way in, however far the body folds over.
+        headTilt: 0.1 + 0.5 * follow,
+        headYaw: 0.72 - 0.72 * whip,
       };
     }
     case "swing": {

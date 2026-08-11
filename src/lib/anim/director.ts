@@ -5,6 +5,7 @@ import {
   FIELDING_SPOTS,
   MOUND_HEIGHT,
   POSITION_KEYS,
+  RUBBER_DEPTH,
   batterSpot,
   fp,
   onDeckSpot,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/field/geometry";
 import type { SoundName } from "@/lib/audio/sfx";
 import { Fx } from "./particles";
+import { pitchArc } from "./pitches";
 import { foulBallFor, runnerProgress } from "@/lib/game/events";
 import type {
   BattedBall,
@@ -110,10 +112,39 @@ export interface CallOut {
   at: number;
 }
 
-const RELEASE_HEIGHT = 5.9;
-const RELEASE_DEPTH = 54.5;
+/**
+ * The throwing motion, in seconds, and how far into it the ball leaves the
+ * hand. Release sits early: the arm whips over quickly and then spends most of
+ * the pose decelerating through the follow-through.
+ */
+const THROW_TIME = 0.62;
+const THROW_RELEASE = 0.32;
+
+/**
+ * The pitch used to be laid out in real feet - released at 5.9 and crossing the
+ * plate around 2.5 - while the players are cartoon scale, a little over twice
+ * life size. The ball therefore left the pitcher's knee and crossed at the
+ * hitter's shins. These map a real height, in feet, onto the figures instead:
+ * `PLATE_RISE` and `PLATE_BASE` are fitted so the knees and the letters of the
+ * batting stance land on 1.6 and 3.4 feet, the real strike zone.
+ */
+const PLATE_RISE = 2.59;
+const PLATE_BASE = -0.39;
+
+function zoneHeight(feet: number): number {
+  return Math.max(0.5, PLATE_BASE + feet * PLATE_RISE);
+}
+
+/**
+ * Where the ball leaves the hand, measured off the throwing pose rather than
+ * guessed: at `THROW_RELEASE` the pitcher's hand is here, a little in front of
+ * the rubber and up at the top of the arm slot.
+ */
+const RELEASE_HEIGHT = 11.0;
+const RELEASE_DEPTH = RUBBER_DEPTH - 2 - 4.7;
+const RELEASE_LATERAL = 2.3;
 const PLATE_DEPTH = 1.35;
-const CONTACT = fp(0, 2.6, 3.1);
+const CONTACT = fp(0, 2.6, 6.4);
 
 /**
  * Seconds a runner takes to cover one base. A real sprint home-to-first is
@@ -704,31 +735,39 @@ export class Director {
 
   private releasePoint(): Vector3 {
     const hand = this.snapshot?.defense.pitcher?.pitchHand ?? "R";
-    return fp(hand === "R" ? -1.7 : 1.7, RELEASE_DEPTH, RELEASE_HEIGHT);
+    // Arm side: a right-hander's hand comes over the third-base side of the
+    // rubber, which is negative lateral here.
+    return fp(hand === "R" ? -RELEASE_LATERAL : RELEASE_LATERAL, RELEASE_DEPTH, RELEASE_HEIGHT);
   }
 
   /**
    * Windup, flight to the plate, and the reaction. Returns the time at which
    * the ball reaches the plate so callers can chain contact onto it.
+   *
+   * The windup, the arm coming over, and the ball leaving the hand are three
+   * separate instants. They used to be two: the ball appeared at the release
+   * point on the same frame the throwing motion began, which put it in the air
+   * while the arm was still cocked behind the pitcher's head.
    */
   private pitchFlight(pitch: PitchEvent): {
     windupEnd: number;
+    releaseAt: number;
     plateTime: number;
     update: (t: number) => void;
   } {
     const cue = new Cue();
     const windupEnd = 0.62;
-    const plateTime = windupEnd + 0.46;
+    // The arm needs a moment to come over before the ball can leave it.
+    const releaseAt = windupEnd + THROW_TIME * THROW_RELEASE;
     const release = this.releasePoint();
-    const plate = fp(pitch.plate.x, PLATE_DEPTH, Math.max(0.4, pitch.plate.z));
-    // A control point off the straight line gives the pitch some late shape.
-    const control = release
-      .clone()
-      .lerp(plate, 0.55)
-      .add(new Vector3(pitch.plate.x * 0.5, 1.1, 0));
+    const plate = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z));
+    const hand = this.snapshot?.defense.pitcher?.pitchHand ?? "R";
+    const arc = pitchArc(release, plate, pitch.pitchType, pitch.speed, hand);
+    const plateTime = releaseAt + arc.flightTime;
 
     return {
       windupEnd,
+      releaseAt,
       plateTime,
       update: (t: number) => {
         const pitcher = this.pitcher();
@@ -736,29 +775,35 @@ export class Director {
           if (t < windupEnd) {
             pitcher.pose = "windup";
             pitcher.poseT = clamp01(t / windupEnd);
-          } else if (t < plateTime + 0.5) {
+          } else if (t < plateTime + 0.6) {
             pitcher.pose = "throw";
-            pitcher.poseT = clamp01((t - windupEnd) / 0.5);
+            pitcher.poseT = clamp01((t - windupEnd) / THROW_TIME);
           }
         }
 
-        if (t < windupEnd) {
+        if (t < releaseAt) {
           this.ball.visible = false;
           return;
         }
-        cue.at("release", t, windupEnd, () => {
+        cue.at("release", t, releaseAt, () => {
           this.onSound?.("pitch");
           // The stride foot lands in front of the rubber and kicks up the mound.
           this.fx.puff(fp(0, RELEASE_DEPTH - 5, 0.6), 9, { spread: 3.4, lift: 2.6, size: 0.85 });
         });
         if (t <= plateTime) {
-          const u = clamp01((t - windupEnd) / (plateTime - windupEnd));
+          const u = clamp01((t - releaseAt) / arc.flightTime);
           const inv = 1 - u;
           this.ball.position
             .copy(release)
             .multiplyScalar(inv * inv)
-            .addScaledVector(control, 2 * inv * u)
+            .addScaledVector(arc.control, 2 * inv * u)
             .addScaledVector(plate, u * u);
+          if (arc.wobble) {
+            // A knuckleball has no break to speak of, just no idea where it is
+            // going. Faded in so it never disturbs the release point.
+            this.ball.position.x += Math.sin(u * 11.3) * arc.wobble * u * inv * 2;
+            this.ball.position.y += Math.sin(u * 8.7 + 1.9) * arc.wobble * u * inv * 1.4;
+          }
           this.ball.visible = true;
           this.ball.scale = 1.9;
           this.pushTrail();
@@ -797,7 +842,8 @@ export class Director {
     const swings =
       pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
     const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
-    const catcherSpot = fp(0, -5.5, 2.6);
+    // The catcher's mitt, which sits at the bottom of the zone.
+    const catcherSpot = fp(0, -5.5, zoneHeight(1.4));
     const tail = foul ? 1.5 : 0.75;
     const duration = flight.plateTime + tail;
 
@@ -822,7 +868,7 @@ export class Director {
       update: (t) => {
         flight.update(t);
         if (this.cameraMode === "mound") {
-          cue.at("cutback", t, flight.windupEnd, () =>
+          cue.at("cutback", t, flight.releaseAt, () =>
             this.setShot("broadcast", { cut: true, force: true }),
           );
         }
@@ -840,9 +886,9 @@ export class Director {
           if (foul) {
             // Foul: kick the ball up and back out of play.
             const target = fp(foul.lateral, foul.depth, 0);
-            const p = fp(pitch.plate.x, PLATE_DEPTH, pitch.plate.z)
+            const p = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z))
               .lerp(target, easeOut(u));
-            p.y = Math.max(0.4, pitch.plate.z + 46 * u * (1 - u) * 2.2 - u * u * 2);
+            p.y = Math.max(0.5, zoneHeight(pitch.plate.z) + 46 * u * (1 - u) * 2.2 - u * u * 2);
             this.ball.position.copy(p);
             this.ball.visible = true;
             this.pushTrail();

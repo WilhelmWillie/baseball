@@ -35,47 +35,47 @@ export function History({
 
   return (
     <div
-      className="w-full font-mono sm:w-[300px]"
+      className="w-full sm:w-[300px]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <button
         type="button"
         onClick={() => setPinned((p) => !p)}
-        className={`w-full border-2 px-3 py-2 text-left text-[11px] leading-snug backdrop-blur-[2px] transition-colors ${
+        className={`w-full border-2 px-3.5 py-2.5 text-left text-[11px] leading-snug backdrop-blur-[2px] transition-colors lip-float ${
           open
-            ? "border-amber-300/70 bg-slate-950/90 text-white"
-            : "border-black/60 bg-slate-950/75 text-white/75 hover:border-white/40"
+            ? "rounded-t-2xl border-grass/50 bg-card text-bark"
+            : "rounded-2xl border-grass-deep/12 bg-card/95 text-bark hover:border-grass/50"
         }`}
       >
-        <div className="mb-1 flex items-center justify-between text-[9px] tracking-[0.2em] text-white/40">
-          <span>{open ? "GAME LOG" : "LAST PLAY"}</span>
-          {/* Hovering is not a thing on a phone, so the hint has to differ. */}
-          <span className="hidden sm:inline">
-            {pinned ? "CLICK TO CLOSE" : open ? "CLICK TO PIN" : "HOVER FOR LOG"}
+        <div className="mb-1 flex items-center justify-between text-[10px] font-bold text-bark-soft">
+          <span className="font-display text-xs text-grass-deep">
+            {open ? "Game log" : "Last play"}
           </span>
-          <span className="sm:hidden">{open ? "TAP TO CLOSE" : "TAP FOR LOG"}</span>
+          {/* Hovering is not a thing on a phone, so the hint has to differ. */}
+          <span className="hidden font-normal sm:inline">
+            {pinned ? "click to close" : open ? "click to pin" : "hover for the log"}
+          </span>
+          <span className="font-normal sm:hidden">{open ? "tap to close" : "tap for the log"}</span>
         </div>
         {!open && (latest?.description ?? snapshot.lastPlay ?? "—")}
         {open && (
-          <span className="text-[10px] text-white/45">
-            {history.length} {history.length === 1 ? "play" : "plays"}
+          <span className="text-[10px] text-bark-soft">
+            {history.length} {history.length === 1 ? "play" : "plays"} so far
           </span>
         )}
       </button>
 
       {open && (
-        <div className="max-h-[52vh] overflow-y-auto border-2 border-t-0 border-amber-300/70 bg-slate-950/92 backdrop-blur-[2px]">
+        <div className="max-h-[52vh] overflow-y-auto rounded-b-2xl border-2 border-t-0 border-grass/50 bg-card/97 backdrop-blur-[2px] lip-float">
           {groups.length === 0 && (
-            <div className="px-3 py-4 text-[11px] text-white/45">
-              Nothing has happened yet.
-            </div>
+            <div className="px-3.5 py-4 text-[11px] text-bark-soft">Nothing has happened yet.</div>
           )}
           {groups.map((group) => (
             <div key={group.half}>
-              <div className="sticky top-0 flex items-center justify-between bg-slate-900/95 px-3 py-1 text-[9px] tracking-[0.2em] text-amber-300">
-                <span>{group.half.toUpperCase()}</span>
-                <span className="text-white/35">
+              <div className="sticky top-0 flex items-center justify-between bg-grass-mist px-3.5 py-1.5 text-[10px] font-bold text-grass-deep">
+                <span>{group.half}</span>
+                <span className="text-bark-soft">
                   {snapshot.teams.away.abbrev} {group.entries[0].score.away}–
                   {group.entries[0].score.home} {snapshot.teams.home.abbrev}
                 </span>
@@ -83,16 +83,16 @@ export function History({
               {group.entries.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`border-b border-white/5 px-3 py-1.5 text-[11px] leading-snug ${
-                    entry.isScoring ? "bg-amber-300/10 text-amber-100" : "text-white/75"
+                  className={`border-b border-bark/8 px-3.5 py-2 text-[11px] leading-snug ${
+                    entry.isScoring ? "bg-grass-mist/60 text-bark" : "text-bark-soft"
                   }`}
                 >
                   <span
-                    className={`mr-1.5 text-[9px] tracking-wider ${
-                      entry.isScoring ? "text-amber-300" : "text-white/35"
+                    className={`mr-1.5 text-[10px] font-bold ${
+                      entry.isScoring ? "text-grass" : "text-bark-soft/70"
                     }`}
                   >
-                    {entry.event.toUpperCase()}
+                    {entry.event}
                   </span>
                   {entry.description}
                 </div>

@@ -8,6 +8,7 @@ import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { useGameStore } from "@/store/gameStore";
 import { captureSnapshot, shareOrDownload } from "@/lib/snapshot";
 import { sfx } from "@/lib/audio/sfx";
+import { Ball } from "@/components/brand/Ball";
 import { Scorebug } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
 import { History } from "./hud/History";
@@ -16,8 +17,9 @@ import { GameOver } from "./hud/GameOver";
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full items-center justify-center bg-slate-900 font-mono text-sm text-white/60">
-      BUILDING BALLPARK…
+    <div className="flex h-full flex-col items-center justify-center gap-3 bg-grass-mist text-sm font-semibold text-grass-deep">
+      <Ball className="h-10 w-10 animate-[bob_1.6s_ease-in-out_infinite]" />
+      Chalking the lines…
     </div>
   ),
 });
@@ -38,10 +40,10 @@ function ControlButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`border-2 px-2.5 py-2 font-mono text-[11px] tracking-widest transition-colors sm:px-3 sm:py-1.5 ${
+      className={`rounded-full border-2 px-3 py-2 text-xs font-bold transition-colors sm:py-1.5 ${
         active
-          ? "border-amber-300 bg-amber-300 text-slate-950"
-          : "border-black/60 bg-slate-950/80 text-white/80 hover:border-white/60 hover:text-white"
+          ? "border-grass bg-grass text-card"
+          : "border-grass-deep/12 bg-card/95 text-bark hover:border-grass/60 hover:text-grass-deep"
       }`}
     >
       {children}
@@ -86,13 +88,13 @@ export function Viewer({
       const how = await shareOrDownload(blob, filename);
       setFlash(
         how === "shared"
-          ? "SNAPSHOT SHARED"
+          ? "Snapshot shared!"
           : how === "copied"
-            ? "COPIED TO CLIPBOARD + SAVED"
-            : "SNAPSHOT SAVED",
+            ? "Copied and saved!"
+            : "Snapshot saved!",
       );
     } catch (err) {
-      setFlash(err instanceof Error ? err.message.toUpperCase() : "SNAPSHOT FAILED");
+      setFlash(err instanceof Error ? err.message : "Snapshot failed");
     }
   }, [snapshot]);
 
@@ -115,7 +117,7 @@ export function Viewer({
   }, []);
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-slate-900">
+    <div className="relative h-dvh w-full overflow-hidden bg-grass-mist">
       <Scene onRenderer={onRenderer} />
 
       {/* Scoreboard and play log: a full-width band across the top of a phone,
@@ -127,8 +129,8 @@ export function Viewer({
             <History history={history} snapshot={snapshot} />
           </>
         ) : (
-          <div className="border-2 border-black/60 bg-slate-950/80 px-4 py-3 font-mono text-xs text-white/70">
-            {connection === "error" ? "FEED UNAVAILABLE" : "CONNECTING TO FEED…"}
+          <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
+            {connection === "error" ? "Can't reach the feed" : "Tuning in…"}
           </div>
         )}
       </div>
@@ -139,12 +141,12 @@ export function Viewer({
         <div className="flex gap-1.5 sm:gap-2">
           <Link
             href="/"
-            className="border-2 border-black/60 bg-slate-950/80 px-2.5 py-2 font-mono text-[11px] tracking-widest text-white/80 hover:border-white/60 hover:text-white sm:px-3 sm:py-1.5"
+            className="rounded-full border-2 border-grass-deep/12 bg-card/95 px-3 py-2 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep sm:py-1.5"
           >
-            ←<span className="hidden sm:inline"> GAMES</span>
+            ←<span className="hidden sm:inline"> Games</span>
           </Link>
           <ControlButton onClick={onSnapshot} title="Save a shareable image">
-            📸<span className="hidden sm:inline"> SNAPSHOT</span>
+            📸<span className="hidden sm:inline"> Snapshot</span>
           </ControlButton>
         </div>
         <div className="flex gap-1.5 sm:gap-2">
@@ -159,23 +161,23 @@ export function Viewer({
             title="Bat, mitt and crowd audio"
           >
             {soundOn ? "🔊" : "🔇"}
-            <span className="hidden sm:inline">{soundOn ? " SOUND" : " MUTED"}</span>
+            <span className="hidden sm:inline">{soundOn ? " Sound" : " Muted"}</span>
           </ControlButton>
           <ControlButton onClick={() => setShowRoster(!showRoster)} active={showRoster}>
-            LINEUP
+            Lineup
           </ControlButton>
         </div>
-        <div className="hidden items-center gap-2 font-mono text-[10px] tracking-widest text-white/50 sm:flex">
+        <div className="hidden items-center gap-2 rounded-full bg-card/85 px-2.5 py-1 text-[11px] font-semibold text-bark-soft sm:flex">
           <span
-            className={`h-2 w-2 ${
+            className={`h-2 w-2 rounded-full ${
               connection === "live"
-                ? "animate-pulse bg-emerald-400"
+                ? "animate-[blink_1.4s_ease-in-out_infinite] bg-grass"
                 : connection === "error"
-                  ? "bg-red-500"
-                  : "bg-amber-300"
+                  ? "bg-clay"
+                  : "bg-clay-soft"
             }`}
           />
-          {isDemo ? "DEMO FEED" : connection.toUpperCase()}
+          {isDemo ? "Simulated game" : connection === "live" ? "Live" : connection}
         </div>
       </div>
 
@@ -186,9 +188,9 @@ export function Viewer({
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (
-        <div className="absolute bottom-16 left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto border-2 border-black/60 bg-slate-950/85 p-3 font-mono text-[11px] text-white/80 sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
-          <div className="mb-2 tracking-widest text-amber-300">
-            {snapshot.teams[snapshot.fieldingSide].abbrev} DEFENSE
+        <div className="absolute bottom-16 left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-3.5 text-xs text-bark lip-float sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
+          <div className="mb-2 font-display text-sm font-extrabold text-grass-deep">
+            {snapshot.teams[snapshot.fieldingSide].abbrev} in the field
           </div>
           {(
             [
@@ -204,27 +206,29 @@ export function Viewer({
             ] as const
           ).map(([label, player]) => (
             <div key={label} className="flex justify-between gap-2 py-0.5">
-              <span className="w-8 text-white/40">{label}</span>
+              <span className="w-8 font-bold text-bark-soft">{label}</span>
               <span className="flex-1 truncate">{player?.name ?? "—"}</span>
-              <span className="text-white/35">{player?.number ?? ""}</span>
+              <span className="text-bark-soft">{player?.number ?? ""}</span>
             </div>
           ))}
-          <div className="mt-3 mb-1 tracking-widest text-amber-300">BENCH</div>
+          <div className="mb-1 mt-3 font-display text-sm font-extrabold text-grass-deep">
+            On the bench
+          </div>
           {snapshot.bench[snapshot.fieldingSide].length === 0 && (
-            <div className="text-white/40">—</div>
+            <div className="text-bark-soft">—</div>
           )}
           {snapshot.bench[snapshot.fieldingSide].map((player) => (
             <div key={player.id} className="flex justify-between gap-2 py-0.5">
               <span className="flex-1 truncate">{player.name}</span>
-              <span className="text-white/35">{player.position ?? ""}</span>
+              <span className="text-bark-soft">{player.position ?? ""}</span>
             </div>
           ))}
         </div>
       )}
 
       {/* Bottom-right: status */}
-      <div className="absolute bottom-2 right-2 z-10 hidden max-w-[46vw] text-right font-mono text-[10px] leading-relaxed tracking-widest text-white/45 sm:bottom-4 sm:right-4 sm:block">
-        {snapshot ? `${snapshot.venue.toUpperCase()} · ${snapshot.status.detailed.toUpperCase()}` : ""}
+      <div className="absolute bottom-2 right-2 z-10 hidden max-w-[46vw] rounded-full bg-card/80 px-3 py-1 text-right text-[11px] font-semibold text-bark-soft sm:bottom-4 sm:right-4 sm:block">
+        {snapshot ? `${snapshot.venue} · ${snapshot.status.detailed}` : ""}
       </div>
 
       {snapshot?.status.isFinal && (
@@ -234,13 +238,13 @@ export function Viewer({
       )}
 
       {flash && (
-        <div className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 border-2 border-amber-300 bg-slate-950/90 px-4 py-2 font-mono text-[11px] tracking-widest text-amber-200 sm:bottom-20">
+        <div className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-full border-2 border-grass bg-card px-4 py-2 text-xs font-bold text-grass-deep lip-float sm:bottom-20">
           {flash}
         </div>
       )}
 
       {error && connection === "error" && (
-        <div className="absolute inset-x-0 bottom-0 z-20 bg-red-950/90 px-4 py-2 text-center font-mono text-[11px] tracking-wide text-red-200">
+        <div className="absolute inset-x-0 bottom-0 z-20 bg-clay px-4 py-2 text-center text-xs font-semibold text-card">
           {error}
         </div>
       )}

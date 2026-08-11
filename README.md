@@ -1,8 +1,10 @@
-# MLB 3D
+# Pocket Ballpark
 
-Pick a live MLB game and watch it unfold in a low-poly 3D ballpark. Pitches,
-batted balls and baserunners are driven by the real MLB Stats API — the app
-doesn't simulate baseball, it interprets MLB's event stream and animates it.
+**Watch baseball come to life.** Pick a game. Grab a seat. Watch every pitch,
+hit, and baserunner unfold in a charming low-poly ballpark.
+
+Everything on the field is driven by the real MLB Stats API — the app doesn't
+simulate baseball, it interprets MLB's event stream and animates it.
 
 ```
 MLB Stats API → adapter → normalized events → animation queue → three.js
@@ -144,8 +146,9 @@ space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
 Everything vertical — outfield wall, the raked seating bowl, bleachers running
-down both foul lines behind a low padded wall, the crowd, light towers and a
-city skyline on three hazy rings beyond the park — is generated in
+down both foul lines behind a low padded wall, the crowd, light towers, the
+wooden scoreboard over the batter's eye, and the town of gabled houses and
+oversized trees on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
 the tower lights can burn unlit by the sun after dark. Two rules keep a bowl of
@@ -156,6 +159,12 @@ than the gap between rows, because boxes that interpenetrate look solid while
 boxes whose faces land on exactly the same plane flicker. Foul ground
 tapers sharply past the bases, so the seats come right up against the lines
 rather than leaving acres of empty dirt.
+
+The park is painted as a toy rather than a broadcast: grass a shade sweeter
+than real turf, dirt the colour of a sandpit, cream stonework in place of grey
+concrete and mint seats, so the 3D scene and the interface around it are
+working from one palette. `sky.ts` lights it flatter and softer than a real
+afternoon would be for the same reason.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera
@@ -239,10 +248,14 @@ background and switches to a warm, near-shadowless tower rig.
 
 After dark the field is lit from the four towers you can actually see rather
 than from one light overhead: `TowerLights.tsx` hangs a spotlight on each,
-aimed across the field rather than at the middle so the beams cross and cover
-it evenly. Two of the four cast real shadows, which is what gives every player
-the two or three faint shadows fanning out in different directions that say
-"night game" more than darkness does.
+aimed across the field rather than at the middle so the beams cross. The banks
+are split the way real ones are — the two towers down the lines throw wide into
+the opposite outfield gap, the pair inside them light the infield — because
+four cones pointed at the mound leave the gaps and the warning track sitting in
+the dark. The two infield banks cast the real shadows, since that is where the
+players are, and that is what gives every one of them the two or three faint
+shadows fanning out in different directions that say "night game" more than
+darkness does.
 
 Wind is parsed from MLB's phrasing ("8 mph, Out To CF") into a world-space
 velocity, and everything light enough — confetti, dust, rain — drifts downwind.
@@ -345,7 +358,7 @@ dropped, and the log's hint says "tap" rather than "hover".
 
 - Defensive shifts aren't modelled; fielders stand in standard positions.
 - There are no dugouts or bench figures in the 3D scene; the bench is listed in
-  the LINEUP panel instead.
+  the Lineup panel instead.
 - The simulated game runs a scripted 20 at-bats, so it ends after two innings.
 - Every park uses the same generic dimensions rather than the real venue's.
 - Fielders converge on the ball and throw, but relays and rundowns are a single

@@ -5,7 +5,9 @@ import type { GameSnapshot } from "@/lib/game/types";
 function Diamond({ snapshot }: { snapshot: GameSnapshot }) {
   const on = (base: "first" | "second" | "third") => Boolean(snapshot.runners[base]);
   const cell = (active: boolean) =>
-    `h-3 w-3 rotate-45 border-2 ${active ? "border-amber-300 bg-amber-300" : "border-white/35 bg-transparent"}`;
+    `h-3 w-3 rotate-45 rounded-[3px] border-2 transition-colors ${
+      active ? "border-grass bg-grass" : "border-bark/25 bg-transparent"
+    }`;
   return (
     <div className="relative h-10 w-10 shrink-0">
       <div className={`absolute left-1/2 top-0 -translate-x-1/2 ${cell(on("second"))}`} />
@@ -21,7 +23,7 @@ function Outs({ count }: { count: number }) {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className={`h-2.5 w-2.5 ${i < count ? "bg-red-400" : "bg-white/25"}`}
+          className={`h-2.5 w-2.5 rounded-full ${i < count ? "bg-clay" : "bg-bark/15"}`}
         />
       ))}
     </div>
@@ -42,16 +44,24 @@ function TeamRow({
   return (
     <div className="flex items-center gap-2">
       <span
-        className="inline-block h-4 w-4 border border-black/40"
+        className="inline-block h-5 w-5 rounded-full ring-2 ring-card"
         style={{ backgroundColor: color }}
       />
-      <span className={`w-11 text-sm tracking-widest ${batting ? "text-white" : "text-white/65"}`}>
+      <span
+        className={`w-11 font-display text-base font-extrabold leading-none ${
+          batting ? "text-bark" : "text-bark-soft"
+        }`}
+      >
         {abbrev}
       </span>
-      <span className={`w-7 text-right text-lg leading-none ${batting ? "text-white" : "text-white/70"}`}>
+      <span
+        className={`w-7 text-right font-display text-xl font-extrabold leading-none ${
+          batting ? "text-grass-deep" : "text-bark-soft"
+        }`}
+      >
         {runs}
       </span>
-      {batting && <span className="text-[10px] text-amber-300">●</span>}
+      <span className={`text-[10px] ${batting ? "text-grass" : "text-transparent"}`}>●</span>
     </div>
   );
 }
@@ -83,8 +93,8 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
   const arrow = snapshot.isTopInning ? "▲" : "▼";
 
   return (
-    <div className="select-none font-mono">
-      <div className="pointer-events-none w-full border-2 border-black/60 bg-slate-950/80 p-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)] backdrop-blur-[2px] sm:w-[300px] sm:p-3">
+    <div className="select-none">
+      <div className="pointer-events-none w-full rounded-2xl border-2 border-grass-deep/12 bg-card/95 p-3 backdrop-blur-[2px] lip-float sm:w-[300px]">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5">
             <TeamRow
@@ -101,13 +111,13 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
             />
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            <div className="text-xs tracking-widest text-amber-300">
+            <div className="rounded-full bg-grass-mist px-2 py-0.5 text-[11px] font-bold text-grass-deep">
               {arrow} {snapshot.inningOrdinal}
             </div>
             <div className="flex items-center gap-2">
               <Diamond snapshot={snapshot} />
               <div className="flex flex-col items-end gap-1">
-                <span className="text-sm text-white">
+                <span className="font-display text-base font-extrabold leading-none text-bark">
                   {count.balls}-{count.strikes}
                 </span>
                 <Outs count={count.outs} />
@@ -116,14 +126,14 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
         </div>
 
-        <div className="mt-2 space-y-1 border-t border-white/15 pt-1.5 text-[10px] leading-snug sm:mt-3 sm:space-y-1.5 sm:pt-2 sm:text-[11px]">
+        <div className="mt-2.5 space-y-1.5 border-t-2 border-dashed border-grass-deep/12 pt-2 text-[11px] leading-snug">
           <div>
             <div className="flex justify-between gap-2">
-              <span className="text-white/45">AB</span>
-              <span className="truncate text-white">{batter?.name ?? "—"}</span>
+              <span className="font-bold text-bark-soft">At bat</span>
+              <span className="truncate font-semibold text-bark">{batter?.name ?? "—"}</span>
             </div>
             {(batterLine || snapshot.batterStats?.avg) && (
-              <div className="flex justify-between gap-2 text-[10px] text-white/50">
+              <div className="flex justify-between gap-2 text-[10px] text-bark-soft">
                 <span>{snapshot.batterStats?.avg ?? ""}</span>
                 <span className="truncate">{batterLine}</span>
               </div>
@@ -131,11 +141,13 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
           </div>
           <div>
             <div className="flex justify-between gap-2">
-              <span className="text-white/45">P</span>
-              <span className="truncate text-white/80">{defense.pitcher?.name ?? "—"}</span>
+              <span className="font-bold text-bark-soft">Pitching</span>
+              <span className="truncate font-semibold text-bark">
+                {defense.pitcher?.name ?? "—"}
+              </span>
             </div>
             {pitcherLine && (
-              <div className="flex justify-between gap-2 text-[10px] text-white/50">
+              <div className="flex justify-between gap-2 text-[10px] text-bark-soft">
                 <span>{snapshot.pitcherStats?.era ? `${snapshot.pitcherStats.era} ERA` : ""}</span>
                 <span className="truncate">{pitcherLine}</span>
               </div>
@@ -145,8 +157,8 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
 
         {/* What the park is like - and what lit the scene. Dropped on a phone,
             where the screen is better spent on the game than on the weather. */}
-        <div className="mt-2 hidden items-center gap-2 border-t border-white/10 pt-2 text-[10px] tracking-wide text-white/45 sm:flex">
-          <span className="text-white/70">{conditions.condition}</span>
+        <div className="mt-2 hidden items-center gap-2 border-t-2 border-dashed border-grass-deep/12 pt-2 text-[10px] text-bark-soft sm:flex">
+          <span className="font-bold text-bark">{conditions.condition}</span>
           {conditions.temp && <span>{conditions.temp}°</span>}
           {conditions.windLabel && <span className="truncate">{conditions.windLabel}</span>}
         </div>

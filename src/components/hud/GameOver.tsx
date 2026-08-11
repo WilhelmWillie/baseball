@@ -13,40 +13,44 @@ function LineScore({ snapshot }: { snapshot: GameSnapshot }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-collapse text-[11px]">
+      {/* Left-hugging: the inning columns read as a line score, not as a row
+          of numbers stranded at the far edge of a wide card. */}
+      <table className="min-w-max border-collapse text-[11px]">
         <thead>
-          <tr className="text-white/40">
+          <tr className="text-bark-soft">
             <th className="px-2 py-1 text-left font-normal"></th>
             {innings.map((inning) => (
               <th key={inning.num} className="w-7 px-1 py-1 text-center font-normal">
                 {inning.num}
               </th>
             ))}
-            <th className="w-8 px-2 py-1 text-center font-normal text-white/70">R</th>
-            <th className="w-8 px-2 py-1 text-center font-normal text-white/70">H</th>
-            <th className="w-8 px-2 py-1 text-center font-normal text-white/70">E</th>
+            {["R", "H", "E"].map((h) => (
+              <th key={h} className="w-8 px-2 py-1 text-center font-bold text-bark">
+                {h}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map(([side, abbrev]) => (
-            <tr key={side} className="border-t border-white/10">
+            <tr key={side} className="border-t-2 border-dashed border-grass-deep/12">
               <td className="flex items-center gap-2 px-2 py-1.5">
                 <span
-                  className="inline-block h-3 w-3 border border-black/50"
+                  className="inline-block h-4 w-4 rounded-full ring-2 ring-card"
                   style={{ backgroundColor: snapshot.teams[side].palette.primary }}
                 />
-                <span className="tracking-widest">{abbrev}</span>
+                <span className="font-display font-extrabold text-bark">{abbrev}</span>
               </td>
               {innings.map((inning) => (
-                <td key={inning.num} className="px-1 py-1.5 text-center text-white/70">
+                <td key={inning.num} className="px-1 py-1.5 text-center text-bark-soft">
                   {inning[side] ?? "-"}
                 </td>
               ))}
-              <td className="px-2 py-1.5 text-center text-base text-white">
+              <td className="px-2 py-1.5 text-center font-display text-base font-extrabold text-grass-deep">
                 {snapshot.score[side]}
               </td>
-              <td className="px-2 py-1.5 text-center text-white/70">{snapshot.hits[side]}</td>
-              <td className="px-2 py-1.5 text-center text-white/70">{snapshot.errors[side]}</td>
+              <td className="px-2 py-1.5 text-center text-bark">{snapshot.hits[side]}</td>
+              <td className="px-2 py-1.5 text-center text-bark">{snapshot.errors[side]}</td>
             </tr>
           ))}
         </tbody>
@@ -63,17 +67,19 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <span
-          className="inline-block h-4 w-4 border border-black/50"
+          className="inline-block h-5 w-5 rounded-full ring-2 ring-card"
           style={{ backgroundColor: team.palette.primary }}
         />
-        <span className="tracking-widest text-white">{team.name.toUpperCase()}</span>
-        <span className="text-white/40">{snapshot.score[side]}</span>
+        <span className="font-display text-base font-extrabold text-bark">{team.name}</span>
+        <span className="font-display text-base font-extrabold text-grass-deep">
+          {snapshot.score[side]}
+        </span>
       </div>
 
       <table className="w-full border-collapse text-[11px]">
         <thead>
-          <tr className="text-white/35">
-            <th className="py-1 text-left font-normal">BATTING</th>
+          <tr className="text-bark-soft">
+            <th className="py-1 text-left font-bold text-grass-deep">Batting</th>
             {["AB", "R", "H", "RBI", "BB", "K", "AVG"].map((h) => (
               <th key={h} className="w-9 py-1 text-right font-normal">
                 {h}
@@ -84,24 +90,24 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
         <tbody>
           {box.batters.length === 0 && (
             <tr>
-              <td colSpan={8} className="py-2 text-white/35">
+              <td colSpan={8} className="py-2 text-bark-soft">
                 No batting lines published.
               </td>
             </tr>
           )}
           {box.batters.map((line) => (
-            <tr key={line.id} className="border-t border-white/5">
-              <td className="max-w-[160px] truncate py-1 pr-2 text-white/80">
+            <tr key={line.id} className="border-t border-bark/8">
+              <td className="max-w-[160px] truncate py-1 pr-2 text-bark">
                 {line.name}
-                <span className="ml-1.5 text-white/30">{line.position}</span>
+                <span className="ml-1.5 text-bark-soft">{line.position}</span>
               </td>
-              <td className="py-1 text-right text-white/70">{line.ab}</td>
-              <td className="py-1 text-right text-white/70">{line.r}</td>
-              <td className="py-1 text-right text-white">{line.h}</td>
-              <td className="py-1 text-right text-white/70">{line.rbi}</td>
-              <td className="py-1 text-right text-white/70">{line.bb}</td>
-              <td className="py-1 text-right text-white/70">{line.k}</td>
-              <td className="py-1 text-right text-white/45">{line.avg}</td>
+              <td className="py-1 text-right text-bark-soft">{line.ab}</td>
+              <td className="py-1 text-right text-bark-soft">{line.r}</td>
+              <td className="py-1 text-right font-bold text-bark">{line.h}</td>
+              <td className="py-1 text-right text-bark-soft">{line.rbi}</td>
+              <td className="py-1 text-right text-bark-soft">{line.bb}</td>
+              <td className="py-1 text-right text-bark-soft">{line.k}</td>
+              <td className="py-1 text-right text-bark-soft">{line.avg}</td>
             </tr>
           ))}
         </tbody>
@@ -109,8 +115,8 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
 
       <table className="w-full border-collapse text-[11px]">
         <thead>
-          <tr className="text-white/35">
-            <th className="py-1 text-left font-normal">PITCHING</th>
+          <tr className="text-bark-soft">
+            <th className="py-1 text-left font-bold text-grass-deep">Pitching</th>
             {["IP", "H", "R", "ER", "BB", "K", "ERA"].map((h) => (
               <th key={h} className="w-9 py-1 text-right font-normal">
                 {h}
@@ -120,20 +126,20 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
         </thead>
         <tbody>
           {box.pitchers.map((line) => (
-            <tr key={line.id} className="border-t border-white/5">
-              <td className="max-w-[160px] truncate py-1 pr-2 text-white/80">
+            <tr key={line.id} className="border-t border-bark/8">
+              <td className="max-w-[160px] truncate py-1 pr-2 text-bark">
                 {line.name}
                 {line.decision && (
-                  <span className="ml-1.5 text-amber-300">({line.decision})</span>
+                  <span className="ml-1.5 font-bold text-clay">({line.decision})</span>
                 )}
               </td>
-              <td className="py-1 text-right text-white/70">{line.ip}</td>
-              <td className="py-1 text-right text-white/70">{line.h}</td>
-              <td className="py-1 text-right text-white/70">{line.r}</td>
-              <td className="py-1 text-right text-white/70">{line.er}</td>
-              <td className="py-1 text-right text-white/70">{line.bb}</td>
-              <td className="py-1 text-right text-white">{line.k}</td>
-              <td className="py-1 text-right text-white/45">{line.era}</td>
+              <td className="py-1 text-right text-bark-soft">{line.ip}</td>
+              <td className="py-1 text-right text-bark-soft">{line.h}</td>
+              <td className="py-1 text-right text-bark-soft">{line.r}</td>
+              <td className="py-1 text-right text-bark-soft">{line.er}</td>
+              <td className="py-1 text-right text-bark-soft">{line.bb}</td>
+              <td className="py-1 text-right font-bold text-bark">{line.k}</td>
+              <td className="py-1 text-right text-bark-soft">{line.era}</td>
             </tr>
           ))}
         </tbody>
@@ -152,9 +158,9 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
       <button
         type="button"
         onClick={() => setDismissed(false)}
-        className="pointer-events-auto border-2 border-amber-300 bg-slate-950/90 px-3 py-1.5 font-mono text-[11px] tracking-widest text-amber-200"
+        className="pointer-events-auto rounded-full border-2 border-grass bg-card px-4 py-2 text-xs font-bold text-grass-deep lip-float"
       >
-        FINAL — SHOW BOX SCORE
+        Final — see the box score
       </button>
     );
   }
@@ -164,22 +170,24 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
   const winner = homeWon ? snapshot.teams.home : snapshot.teams.away;
 
   return (
-    <div className="pointer-events-auto flex h-full w-full items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-      <div className="max-h-[92dvh] w-full max-w-3xl overflow-y-auto overscroll-contain border-2 border-amber-300/70 bg-slate-950/95 font-mono shadow-[8px_8px_0_rgba(0,0,0,0.5)]">
-        <div className="border-b border-white/10 px-6 py-5">
+    <div className="pointer-events-auto flex h-full w-full items-center justify-center bg-grass-deep/45 p-4 backdrop-blur-sm">
+      <div className="max-h-[92dvh] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-3xl border-2 border-grass-deep/15 bg-card lip">
+        <div className="border-b-2 border-dashed border-grass-deep/15 px-6 py-5">
           <div className="flex items-baseline justify-between gap-4">
             <div>
-              <div className="text-[10px] tracking-[0.35em] text-amber-300">FINAL</div>
-              <div className="mt-1 text-sm text-white/50">
+              <div className="font-display text-2xl font-extrabold text-grass-deep">
+                That&apos;s the ballgame
+              </div>
+              <div className="mt-1 text-sm text-bark-soft">
                 {snapshot.venue} · {snapshot.lineScore.length} innings
               </div>
             </div>
             <button
               type="button"
               onClick={() => setDismissed(true)}
-              className="border border-white/20 px-2 py-1 text-[10px] tracking-widest text-white/50 hover:border-white/50 hover:text-white"
+              className="rounded-full border-2 border-grass-deep/15 px-3 py-1 text-xs font-bold text-bark-soft transition-colors hover:border-grass/60 hover:text-grass-deep"
             >
-              CLOSE
+              Close
             </button>
           </div>
 
@@ -187,32 +195,32 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
             {(["away", "home"] as const).map((side) => (
               <div key={side} className="flex items-center gap-3">
                 <span
-                  className="inline-block h-8 w-8 border-2 border-black/50"
+                  className="inline-block h-9 w-9 rounded-full ring-2 ring-card"
                   style={{ backgroundColor: snapshot.teams[side].palette.primary }}
                 />
                 <div>
-                  <div className="text-xs tracking-widest text-white/70">
+                  <div className="font-display text-sm font-extrabold text-bark-soft">
                     {snapshot.teams[side].abbrev}
                   </div>
                   <div
-                    className={`text-3xl leading-none ${
-                      (side === "home") === homeWon && !tied ? "text-white" : "text-white/45"
+                    className={`font-display text-4xl font-extrabold leading-none ${
+                      (side === "home") === homeWon && !tied ? "text-grass-deep" : "text-bark-soft"
                     }`}
                   >
                     {snapshot.score[side]}
                   </div>
                 </div>
-                {side === "away" && <span className="px-2 text-white/25">@</span>}
+                {side === "away" && <span className="px-2 text-bark-soft/60">@</span>}
               </div>
             ))}
           </div>
 
-          <div className="mt-3 text-[11px] tracking-wide text-white/60">
+          <div className="mt-3 text-sm font-semibold text-bark">
             {tied ? "Game ended level." : `${winner.name} win.`}
           </div>
         </div>
 
-        <div className="border-b border-white/10 px-6 py-4">
+        <div className="border-b-2 border-dashed border-grass-deep/15 px-6 py-4">
           <LineScore snapshot={snapshot} />
         </div>
 
@@ -223,25 +231,25 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
                 key={side}
                 type="button"
                 onClick={() => setTab(side)}
-                className={`border-2 px-3 py-1 text-[10px] tracking-widest transition-colors ${
+                className={`rounded-full border-2 px-3.5 py-1.5 text-xs font-bold transition-colors ${
                   tab === side
-                    ? "border-amber-300 bg-amber-300 text-slate-950"
-                    : "border-white/20 text-white/60 hover:border-white/50"
+                    ? "border-grass bg-grass text-card"
+                    : "border-grass-deep/15 text-bark-soft hover:border-grass/60"
                 }`}
               >
-                {snapshot.teams[side].abbrev} BOX
+                {snapshot.teams[side].abbrev}
               </button>
             ))}
           </div>
           <BoxScore snapshot={snapshot} side={tab} />
         </div>
 
-        <div className="border-t border-white/10 px-6 py-4">
+        <div className="border-t-2 border-dashed border-grass-deep/15 px-6 py-4">
           <Link
             href="/"
-            className="inline-block border-2 border-white/25 px-4 py-2 text-[11px] tracking-widest text-white/75 hover:border-amber-300 hover:text-amber-200"
+            className="inline-block rounded-full border-2 border-grass-deep/15 px-4 py-2 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep"
           >
-            ← BACK TO GAMES
+            ← Back to the games
           </Link>
         </div>
       </div>

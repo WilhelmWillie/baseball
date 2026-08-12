@@ -155,6 +155,18 @@ const IDLE_CUTAWAY_HOLD = 4.5;
  */
 const IDLE_CUTAWAY_GAP = 26;
 
+/**
+ * The change of sides. The whole club beams out, the park sits empty for a
+ * beat, and whoever is up next beams back in once the feed says who that is -
+ * three separate things, but only the first one is a timed animation. The
+ * other two happen whenever `applySnapshot` next runs, which is out of this
+ * clock's hands.
+ */
+const INNING_BEAM_OUT = 0.7;
+const INNING_HOLD = 2.0;
+/** How long a freshly beamed-in actor takes to solidify. */
+const MATERIALIZE_TIME = 0.6;
+
 export interface CallOut {
   text: string;
   detail?: string;
@@ -213,9 +225,14 @@ function contactPoint(batSide: "R" | "L"): Vector3 {
 const RUN_PER_BASE = 2.6;
 const TROT_PER_BASE = 3.4;
 
-/** How long a swing takes, and how far ahead of contact it begins. */
-const SWING_TIME = 0.55;
-const SWING_LEAD = 0.2;
+/**
+ * How long a swing takes, and how far ahead of contact it begins. Lengthened
+ * from the original 0.55s/0.2s lead so there is room for a visible coil before
+ * the bat fires - a swing that only starts a fifth of a second out reads as a
+ * flinch rather than a hitter starting his load.
+ */
+const SWING_TIME = 0.62;
+const SWING_LEAD = 0.27;
 
 /** A walk is not a race. */
 const WALK_PER_BASE = 4.2;
@@ -401,6 +418,12 @@ export class Director {
   private onIdleCutaway = false;
   /** Wall clock at which the last cutaway ended, for the gap between them. */
   private lastCutawayAt = 0;
+  /**
+   * True from the moment the side beams out until the next roster lands. The
+   * park is empty for however long that takes, so the idle camera is told to
+   * hold rather than go wandering off to a shot of nobody.
+   */
+  private awaitingReturn = false;
 
   constructor() {
     this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
@@ -489,9 +512,32 @@ export class Director {
     this.onSound?.("beam");
   }
 
-  /** Replace the world with authoritative state. Only called when idle. */
+  /**
+   * The same effect across a whole roster at once - the change of sides,
+   * rather than one retired runner. One "beam" cue stands for the lot; eleven
+   * of them going off in the same tenth of a second would not read as eleven,
+   * it would just read as loud.
+   */
+  private beamRoster(actors: Actor[]) {
+    for (const actor of actors) {
+      const color = this.snapshot?.teams[actor.side]?.palette.primary ?? "#8ce0ff";
+      this.fx.beam(actor.position.clone(), color);
+    }
+    if (actors.length > 0) this.onSound?.("beam");
+  }
+
+  /**
+   * Replace the world with authoritative state. Only called when idle.
+   *
+   * When this lands the roster back after a change of sides, the new defense
+   * does not simply appear: it beams in the same way a retired runner beams
+   * out, just in reverse, and `update`/`restIdle` carries the actual fade -
+   * this only lights the fuse.
+   */
   applySnapshot(snapshot: GameSnapshot) {
     this.snapshot = snapshot;
+    const materializing = this.awaitingReturn;
+    this.awaitingReturn = false;
     const seen = new Set<string>();
     const batSide = snapshot.batter?.batSide ?? "R";
 
@@ -556,6 +602,19 @@ export class Director {
       }
     }
     if (changed) this.rosterVersion++;
+
+    if (materializing) {
+      // The park was empty a moment ago. Every actor `upsert` just placed
+      // solid and visible gets pulled back to fully dissolved so there is
+      // something for the transporter effect to resolve out of - the actual
+      // fade back to solid runs one frame at a time in `restIdle`.
+      const arriving = [...this.actors.values()];
+      for (const actor of arriving) actor.dissolve = 1;
+      this.beamRoster(arriving);
+      const half = snapshot.isTopInning ? "Top" : "Bottom";
+      this.setCallout("PLAY BALL", "neutral", `${half} ${snapshot.inningOrdinal}`);
+      this.setShot("center", { cut: true, force: true });
+    }
   }
 
   private upsert(
@@ -682,6 +741,12 @@ export class Director {
     for (const actor of this.actors.values()) {
       if (!actor.visible) continue;
       actor.position.lerp(actor.home, k);
+      // A freshly beamed-in actor solidifies over a beat rather than snapping
+      // straight to solid - the only place `dissolve` ever climbs back down,
+      // since every other user of it counts down to a departure instead.
+      if (actor.dissolve > 0) {
+        actor.dissolve = Math.max(0, actor.dissolve - dt / MATERIALIZE_TIME);
+      }
       if (
         actor.pose === "run" ||
         actor.pose === "walk" ||
@@ -724,6 +789,11 @@ export class Director {
    */
   private idleCamera() {
     if (this.idleTime < IDLE_SETTLE) return;
+
+    // The field is empty and nobody is warming up: hold on whatever shot the
+    // change of sides cut to instead of wandering off to a base with no
+    // runner on it or a mound with no pitcher.
+    if (this.awaitingReturn) return;
 
     if (this.onIdleCutaway) {
       if (this.idleTime < this.idleCutEnd) return;
@@ -1546,17 +1616,44 @@ export class Director {
     };
   }
 
+  /**
+   * The change of sides. Whoever is still on the field beams out together, the
+   * park holds empty for a beat, and it stays that way - the other half of the
+   * choreography, the new club beaming back in, only happens once the feed
+   * says who they are. That lands through `applySnapshot`, outside this
+   * animation's clock entirely, so all this one owns is the leaving and the
+   * wait: see `awaitingReturn`.
+   */
   private compileInningChange(event: NormalizedEvent & { type: "inning_change" }): Anim {
+    // Whoever is actually on screen right now - the side that just made the
+    // third out, plus any runners left stranded when it happened.
+    const departing = [...this.actors.values()].filter((actor) => actor.visible);
+    const duration = INNING_BEAM_OUT + INNING_HOLD;
+
     return {
       label: `inning:${event.id}`,
-      duration: 1.8,
+      duration,
       onStart: () => {
-        this.setCallout(event.description.toUpperCase(), "neutral", "Teams change sides");
+        this.setCallout(event.description.toUpperCase(), "neutral", "Intermission");
         this.setShot("wide", { cut: true, force: true });
+        this.awaitingReturn = true;
+        if (departing.length > 0) this.beamRoster(departing);
       },
-      update: () => {},
+      update: (t) => {
+        if (t >= INNING_BEAM_OUT) return;
+        const u = clamp01(t / INNING_BEAM_OUT);
+        for (const actor of departing) {
+          actor.dissolve = u;
+          if (u >= 1) actor.visible = false;
+        }
+      },
       onEnd: () => {
-        this.setShot("center", { cut: true, force: true });
+        for (const actor of departing) {
+          actor.dissolve = 1;
+          actor.visible = false;
+        }
+        // The wide shot of an empty park is the whole point of the hold -
+        // nothing to cut back to yet, so the camera is left right where it is.
       },
     };
   }

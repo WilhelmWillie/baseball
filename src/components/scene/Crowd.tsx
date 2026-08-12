@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import {
   BufferAttribute,
   BufferGeometry,
+  CapsuleGeometry,
   Color,
   InstancedMesh,
   MeshBasicMaterial,
@@ -13,7 +14,6 @@ import {
   SphereGeometry,
 } from "three";
 import { FAN_HEIGHT, buildCrowd, type CrowdPalette, type Fan } from "@/lib/field/park";
-import { roundedBox } from "./geometry";
 
 /**
  * The people in the seats.
@@ -33,9 +33,9 @@ import { roundedBox } from "./geometry";
 
 /** Proportions of one fan, as fractions of `FAN_HEIGHT`. */
 const BODY_H = 0.66;
-const BODY_W = 0.5;
-const BODY_D = 0.46;
-const HEAD_D = 0.38;
+const BODY_W = 0.44;
+const BODY_D = 0.4;
+const HEAD_D = 0.35;
 
 /**
  * How far a fan drifts up and down, in feet at scale 1, and how many cycles a
@@ -72,8 +72,8 @@ interface Parts {
 }
 
 /**
- * Idle steps a second. Four matrix buffers for a couple of thousand people is
- * half a megabyte going up to the card every frame, and none of it needs to:
+ * Idle steps a second. Four matrix buffers for a bowl full of people is a few
+ * hundred kilobytes going up to the card every frame, and none of it needs to:
  * the bob below is under half a hertz and a couple of inches deep, so it is
  * perfectly smooth at a third of the display's rate and costs a third as much.
  */
@@ -173,16 +173,22 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
 
   const parts = useMemo<Parts>(() => {
     const radius = FAN_HEIGHT * HEAD_D * 0.5;
-    const bodyGeometry = roundedBox(
-      FAN_HEIGHT * BODY_W,
-      FAN_HEIGHT * BODY_H,
-      FAN_HEIGHT * BODY_D,
-      FAN_HEIGHT * 0.14,
-      1,
+    // A capsule rather than a chamfered box. At the old size the difference was
+    // a pixel of highlight; at this one the flat front and the four vertical
+    // corners of a box are the whole silhouette, and a stand of them reads as
+    // stacked luggage. Squashed front to back so a torso is wider than it is
+    // deep, the way one is.
+    const bodyRadius = (FAN_HEIGHT * BODY_W) / 2;
+    const bodyGeometry = new CapsuleGeometry(
+      bodyRadius,
+      Math.max(0.01, FAN_HEIGHT * BODY_H - bodyRadius * 2),
+      3,
+      12,
     );
+    bodyGeometry.scale(1, 1, BODY_D / BODY_W);
     // A sphere is the wrong shape for a head and the right shape for a cheap
-    // one: eight segments around is enough to read as round at the size these
-    // are ever seen, and there are a couple of thousand of them.
+    // one: seven segments around is enough to read as round at the size these
+    // are ever seen, and there are a thousand-odd of them.
     const headGeometry = new SphereGeometry(radius, 7, 5);
     headGeometry.scale(1, 1.06, 0.94);
     // Hair is what turns a beige sphere into a person at this size. A cap

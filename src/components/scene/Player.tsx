@@ -1395,7 +1395,12 @@ export function Player({
       // person seats put the lens on one, and his own name is not the shot.
       plate.visible = distance > 13;
       const lens = Math.min(1, Math.tan((camera.fov * Math.PI) / 360) / BASE_LENS);
-      const size = 4.6 * lens * Math.max(0.15, Math.min(1.25, distance / 95));
+      // Past the far clamp the correction stops and the plate starts shrinking
+      // with distance like anything else. That ceiling has to sit beyond the
+      // furthest subject any shot is actually framed on, or the name over the
+      // hitter goes illegible on the one camera that watches him all game: the
+      // centre-field shot has the plate a hundred and fifty-five feet out.
+      const size = 4.6 * lens * Math.max(0.15, Math.min(1.75, distance / 95));
       plate.scale.set(labelAspect(label) * size, size, 1);
     }
 

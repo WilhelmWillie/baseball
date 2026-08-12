@@ -209,7 +209,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | --- | --- |
 | `Field.tsx` | The playing surface from `surfaces.ts`, plus mow stripes |
 | `Park.tsx` | All of `park.ts` in one `InstancedMesh`, plus a tiny second one for lamp faces |
-| `Crowd.tsx` | The spectators — body, head and hair as three `InstancedMesh`es, with an idle bob |
+| `Crowd.tsx` | The spectators — body, head, hair and eyes as four `InstancedMesh`es, with an idle bob |
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat |
 | `Ball.tsx` | The ball and its comet trail |

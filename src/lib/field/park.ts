@@ -122,25 +122,30 @@ export interface Fan {
 }
 
 /** Roughly how much of a row one fan takes up, shoulder to shoulder. */
-const CROWD_PITCH = 4.6;
+const CROWD_PITCH = 7.4;
 
 /**
- * Height of a seated fan at scale 1, measured from the seat rather than from
- * the ground: a real person is about three feet from seat to crown, and these
- * are drawn at the same 2.4x the players are, so that a fan in the front row and
- * a fielder standing in front of them are recognisably the same species.
+ * Height of a seated fan at scale 1, measured from the seat rather than the
+ * ground. Matched to the *players*, not to a real seated person: the figures on
+ * the field stand about fifteen feet tall here - `zoneHeight` maps a real foot
+ * onto 2.59 of them - and a crowd drawn to a plausible seated three-and-a-bit
+ * feet of that reads as a different species watching from a scale model. These
+ * are people the same size as the ones playing.
  */
-export const FAN_HEIGHT = 7.6;
+export const FAN_HEIGHT = 14.5;
 
 /**
- * Only every nth row is sold. At this size a fan is three rows tall, and the
- * bowl only steps up two feet a row, so seating all of them buries everyone
- * behind the first: heads on shoulders on heads, with no daylight anywhere.
- * Skipping rows doubles the rise between the people you can actually see and
- * halves the crowd, and nothing shows through the gap because the row in front
- * is taller than the step behind it.
+ * Only every nth row is sold. At this size a fan is seven rows tall and the
+ * bowl steps up two feet a row, so seating all of them buries everyone behind
+ * the first: heads on shoulders on heads with no daylight anywhere. Skipping
+ * rows is what buys the rise back, and nothing shows through the gap because the
+ * row in front is much taller than the steps behind it.
+ *
+ * This is the cost of the size, and it is the right trade: a stand of a few
+ * hundred people you can see is a crowd, and a stand of four thousand you
+ * cannot is a texture.
  */
-const ROW_STRIDE = 2;
+const ROW_STRIDE = 3;
 
 /**
  * Row blocks are cut deeper than the gap between rows on purpose. Boxes that
@@ -313,7 +318,7 @@ function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
           yaw,
           slice: i,
           salt: row,
-          empty: 0.16,
+          empty: 0.08,
           max: 2,
         });
       }
@@ -394,7 +399,7 @@ function foulLineSeats(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
           yaw,
           slice: i,
           salt: 40 + row,
-          empty: 0.2,
+          empty: 0.12,
           max: 1,
         });
       }

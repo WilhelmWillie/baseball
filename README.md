@@ -167,25 +167,30 @@ acres of empty dirt.
 
 **The crowd** comes out of the same pass — it is laid out on the bowl's rows, so
 building it separately would mean writing that geometry down twice — but it is
-drawn by `Crowd.tsx` as little people rather than as part of the park. Around two
-thousand of them, a body, a head, a cap of hair and a pair of eyes each, in four
-instanced meshes. They are drawn at the players' cartoon scale rather than at the
-park's real feet, so a fan in the front row and a fielder standing in front of
-them are recognisably the same species — a fan a genuine five feet tall is three
-pixels of colour from centre field, and three thousand of *those* are television
-static, not a crowd.
+drawn by `Crowd.tsx` as little people rather than as part of the park. Around
+twelve hundred of them, a capsule body, a head, a cap of hair and a pair of eyes
+each, in four instanced meshes. They are drawn to the *players*' size, not to a
+plausible seated person's: the figures on the field stand about fifteen feet tall
+here, and a crowd scaled honestly against that reads as a different species
+watching from a scale model. A fan in the front row and a fielder standing in
+front of them are the same size.
 
-Sizing them up is most of what set the rest of the layout. A fan is five feet
-wide, and the bowl is sliced by angle, so a row behind the plate spans about two
-feet and one out in the corner spans eight: where the slice is narrower than a
-person, only every nth one is seated and the rest go by; where it is wider, two
-fit and are spread across it. And only every other *row* is sold, because at
-this size a fan is three rows tall while the bowl steps up two feet a row — seat
-all of them and everyone behind the front row is buried, heads on shoulders on
-heads with no daylight anywhere. Nothing shows through the skipped row, since the
-row in front is taller than the step behind it.
+That size is most of what set the rest of the layout, and it costs density in
+both directions. Across a row: a fan is six feet wide and the bowl is sliced by
+angle, so a row behind the plate spans about two feet and one out in the corner
+spans eight — where the slice is narrower than a person only every nth one is
+seated and the rest go by; where it is wider, two fit and are spread across it.
+Up the bowl: a fan is seven rows tall while the bowl steps up two feet a row, so
+only every third row is sold. Seat all of them and everyone behind the front row
+is buried, heads on shoulders on heads with no daylight anywhere. Nothing shows
+through the skipped rows, because the row in front is much taller than the steps
+behind it. A few hundred people you can see is a crowd; four thousand you cannot
+is a texture.
 
-Two details do more work than they sound like they should. Hair: a stand of
+Three details do more work than they sound like they should. Bodies are capsules
+rather than chamfered boxes — at the old size that was a pixel of highlight, at
+this one the flat front and four vertical corners of a box are the whole
+silhouette and a stand of them reads as stacked luggage. Hair: a stand of
 plain skin-toned spheres reads as beads on a string, and the dark tops are what
 turn them into heads — one in five wears a cap in the home club's colours
 instead. And the cap has to stop well above the eyes; taken any further round it

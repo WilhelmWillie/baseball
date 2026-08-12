@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import { RUBBER_DEPTH, fp } from "@/lib/field/geometry";
+import { fp } from "@/lib/field/geometry";
 
 /**
  * The camera modes a viewer can pick between.
@@ -10,7 +10,7 @@ import { RUBBER_DEPTH, fp } from "@/lib/field/geometry";
  * all game long and never cuts. A seat pans with the ball the way a head turns
  * - the chair itself does not move.
  */
-export type CameraView = "broadcast" | "home_plate" | "umpire" | "sky";
+export type CameraView = "broadcast" | "home_plate";
 
 export const DEFAULT_CAMERA_VIEW: CameraView = "broadcast";
 
@@ -23,9 +23,7 @@ export interface CameraViewOption {
 
 export const CAMERA_VIEWS: CameraViewOption[] = [
   { id: "broadcast", label: "Broadcast", hint: "Cuts with the play" },
-  { id: "home_plate", label: "Home Plate", hint: "Over the whole diamond" },
-  { id: "umpire", label: "Umpire", hint: "Behind the plate" },
-  { id: "sky", label: "Sky", hint: "Straight down from above" },
+  { id: "home_plate", label: "Press Box", hint: "Close on the whole diamond" },
 ];
 
 /** A camera placement. Positions and targets are in three.js world space. */
@@ -60,49 +58,19 @@ const SEATS: Record<Exclude<CameraView, "broadcast">, Shot & { pan: number }> = 
    * that matters is in frame at once, which is exactly what a directed feed
    * cannot give you: nothing here is ever cut away from.
    *
+   * Pulled in closer than a true press-box seat would sit, so the diamond
+   * reads at a size worth looking at rather than as a distant miniature - it
+   * is still far enough back to keep the whole infield in frame.
+   *
    * Composed on the broadcast lens and deliberately *not* `fixed`, so a
    * portrait phone still gets the framing pulled in toward the infield the way
    * the directed shots do.
    */
   home_plate: {
-    position: fp(0, -78, 55),
-    target: fp(0, 100, 4),
+    position: fp(0, -55, 42),
+    target: fp(0, 100, 5),
     lerp: 1.6,
     pan: 0.22,
-  },
-  /**
-   * The umpire's own eyes: in the slot off the catcher's inside shoulder,
-   * looking straight out at the pitcher, with the pitch arriving at the lens.
-   *
-   * Higher than a person would stand, deliberately. The figures are drawn at
-   * 2.4x life size and a crouched catcher's head clears twelve feet, so an
-   * umpire at his real eye height would see nothing but the back of it. From
-   * here the helmet rides the bottom of the frame instead, which is what the
-   * job actually looks like.
-   */
-  umpire: {
-    position: fp(1.2, -20, 17),
-    target: fp(0, RUBBER_DEPTH - 3, 8),
-    lerp: 2.4,
-    fov: 46,
-    fixed: true,
-    pan: 0.3,
-  },
-  /**
-   * Straight down on the park from a few hundred feet up, near enough overhead
-   * that the diamond reads as a diamond rather than a foreshortened wedge. Not
-   * *exactly* overhead: a camera looking down the world's up axis has no way to
-   * decide which way is up in frame, so it sits back over the plate and tips in
-   * by about ten degrees, which also keeps the batter inside the bottom of the
-   * shot rather than under the lens.
-   */
-  sky: {
-    position: fp(0, 46, 360),
-    target: fp(0, 104, 0),
-    lerp: 1.8,
-    fov: 44,
-    fixed: true,
-    pan: 0.34,
   },
 };
 

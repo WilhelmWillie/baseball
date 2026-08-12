@@ -111,7 +111,13 @@ export function Backstop() {
     });
     const net = new Mesh(geometry, material);
     net.position.set(0, (TOP + BOTTOM) / 2, 0);
-    net.renderOrder = 2;
+    // Behind every other transparent thing in the scene. This is a backdrop:
+    // confetti, rain and dust are all in front of it, and so are the name
+    // plates - which draw with `depthTest` off precisely so nothing can cover
+    // them, and which a scrim drawn later covers anyway, because render order
+    // beats depth among transparent objects. Left at the default the net washed
+    // out every name on the field.
+    net.renderOrder = -1;
     return net;
   }, []);
 

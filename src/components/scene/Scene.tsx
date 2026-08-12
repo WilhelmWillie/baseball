@@ -161,11 +161,13 @@ const WIDEST = 78;
  * And as wide as any *one* shot is allowed to be pulled, as a multiple of the
  * lens it was composed on. The correction above is absolute, which is fine for
  * the 50-degree broadcast lens but ruinous for a long one: holding the width of
- * a 27-degree centre-field shot on a phone held upright would mean opening up
+ * a 20-degree centre-field shot on a phone held upright would mean opening up
  * to nearly 80 degrees, and the hitter it was framed on would be four pixels
- * tall. Past this the shot keeps its subject and loses the width instead.
+ * tall. Past this the shot keeps its subject and loses the width instead - but
+ * not so early that the centre-field shot loses the pitcher off the left edge,
+ * which is what set this number.
  */
-const WIDEST_GAIN = 1.55;
+const WIDEST_GAIN = 1.9;
 
 /** Roughly the middle of the diamond, in world space. */
 const INFIELD = new Vector3(0, 6, -63);

@@ -1655,21 +1655,21 @@ export class Director {
         // the left swings the sightline to the plate over the shortstop and
         // then across the third baseman, and their offset from that line does
         // not shrink with distance the way the lens does - so no amount of
-        // backing off helps, and past about twelve degrees the third baseman
-        // stands in the right of frame at a hundred and sixty feet, the size of
-        // the hitter and twice as distracting. Eleven is the most angle this
-        // infield will give up. The height is then set by the shortstop, who
-        // sits almost on the axis and can only be excluded downwards.
+        // backing off helps. Standing in *shallow* centre does, though: from
+        // just behind second base the middle infielders are level with the
+        // camera and the corner ones are out at the edges of a much wider
+        // frame, so thirteen degrees is affordable here where eleven was the
+        // limit from two hundred and thirty feet.
         //
-        // A long lens, necessarily. The figures are drawn at 2.4x life size but
-        // the sixty feet between them are not, so a camera far enough back to
-        // sit in centre field has to be zoomed a long way in before a hitter
-        // reads as a hitter.
+        // Being closer also lets it come down. A camera far enough back to need
+        // a long lens has to be high, or the pitcher covers the hitter; from in
+        // here the two are separated across the frame instead, and the shot can
+        // sit low enough to look along the ground rather than down at it.
         return {
-          position: fp(-46, 230, 60),
+          position: fp(-35, 155, 32),
           target: fp(-2, 31.5, 6),
           lerp: 1.8,
-          fov: 15,
+          fov: 20,
           // Already aimed at the hitter. Dragging it toward the middle of the
           // infield on a phone would point it at the grass in front of the
           // mound and stand everybody up along the top edge of the frame.

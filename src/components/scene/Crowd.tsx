@@ -3,12 +3,14 @@
 import { useEffect, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
+  BufferAttribute,
+  BufferGeometry,
   Color,
   InstancedMesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   Object3D,
   SphereGeometry,
-  type BufferGeometry,
 } from "three";
 import { FAN_HEIGHT, buildCrowd, type CrowdPalette, type Fan } from "@/lib/field/park";
 import { roundedBox } from "./geometry";
@@ -19,12 +21,14 @@ import { roundedBox } from "./geometry";
  * They used to be a single coloured box each, drawn in with the rest of the
  * park, and at a real person's size against a park built in real feet they came
  * out about three pixels tall: a bowl of confetti rather than a crowd. These are
- * bigger, they have a head and shoulders, and they move.
+ * drawn at the players' cartoon scale instead - a fan in the front row and a
+ * fielder standing in front of them are the same species - and they have faces,
+ * and they move.
  *
- * Three instanced meshes - a body, a head and a cap of hair. Everything about a
- * given fan - the seat, the facing, the size, the shirt, the skin, where in the
- * idle cycle they start - is baked once in `buildCrowd`; all this file does per
- * frame is breathe.
+ * Four instanced meshes - a body, a head, a cap of hair and a pair of eyes.
+ * Everything about a given fan - the seat, the facing, the size, the shirt, the
+ * skin, where in the idle cycle they start - is baked once in `buildCrowd`; all
+ * this file does per frame is breathe.
  */
 
 /** Proportions of one fan, as fractions of `FAN_HEIGHT`. */
@@ -46,6 +50,9 @@ const HEAD_RATE = 0.61;
 const SWAY = 0.12;
 const SWAY_RATE = 0.23;
 
+/** Eyes. Dark enough to read at six pixels, not so dark they look like holes. */
+const EYE = "#2b2426";
+
 /**
  * TODO: react to the play. The director already knows when something has
  * happened and how big it was - `crowdVoice` computes exactly that for the
@@ -59,15 +66,16 @@ interface Parts {
   bodies: InstancedMesh;
   heads: InstancedMesh;
   hair: InstancedMesh;
+  eyes: InstancedMesh;
   /** Clock at which the next idle step is due. */
   nextAt: number;
 }
 
 /**
- * Idle steps a second. Three matrix buffers for four thousand people is most of
- * a megabyte going up to the card every frame, and none of it needs to: the bob
- * below is under half a hertz and a couple of inches deep, so it is perfectly
- * smooth at a third of the display's rate and costs a third as much.
+ * Idle steps a second. Four matrix buffers for a couple of thousand people is
+ * half a megabyte going up to the card every frame, and none of it needs to:
+ * the bob below is under half a hertz and a couple of inches deep, so it is
+ * perfectly smooth at a third of the display's rate and costs a third as much.
  */
 const STEP_RATE = 24;
 
@@ -82,9 +90,9 @@ interface Rest {
  * One frame of idle. Everything a fan is - where the seat is, which way it
  * faces, how big they are - was written into the instance matrix once and is
  * never touched again; all this does is move the translation, which is elements
- * 12, 13 and 14 of each sixteen. That is the whole reason the crowd can be a
- * couple of thousand people and still cost nothing: two thousand sines and four
- * thousand float writes, not two thousand matrix rebuilds.
+ * 12, 13 and 14 of each sixteen. That is the whole reason a crowd this size
+ * costs nothing: a few thousand sines and float writes, not a few thousand
+ * matrix rebuilds.
  */
 function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
   if (t < parts.nextAt) return;
@@ -92,6 +100,7 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
   const bodyM = parts.bodies.instanceMatrix.array as Float32Array;
   const headM = parts.heads.instanceMatrix.array as Float32Array;
   const hairM = parts.hair.instanceMatrix.array as Float32Array;
+  const eyeM = parts.eyes.instanceMatrix.array as Float32Array;
   for (let i = 0; i < fans.length; i++) {
     const fan = fans[i];
     const turn = fan.phase * Math.PI * 2;
@@ -109,10 +118,54 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
     headM[m + 13] = headY;
     hairM[m + 12] = headX;
     hairM[m + 13] = headY + rest.hairLift[i];
+    // The eyes share the head's transform exactly: same seat, same facing, same
+    // scale, so they are baked into the head's local frame and simply ride it.
+    eyeM[m + 12] = headX;
+    eyeM[m + 13] = headY;
   }
   parts.bodies.instanceMatrix.needsUpdate = true;
   parts.heads.instanceMatrix.needsUpdate = true;
   parts.hair.instanceMatrix.needsUpdate = true;
+  parts.eyes.instanceMatrix.needsUpdate = true;
+}
+
+/**
+ * A pair of eyes as one geometry, so they cost one instanced mesh between them
+ * rather than one each.
+ *
+ * They sit on the front of the head, which is the +Z face: the seat's yaw is
+ * `-theta` for a seat at spray angle theta, and a rotation of that about Y sends
+ * local +Z to (-sin theta, 0, cos theta) - exactly the direction from the seat
+ * back toward the middle of the field. Everyone is therefore looking at the
+ * game without anything having to aim them.
+ */
+function eyePair(headRadius: number): BufferGeometry {
+  const eye = new SphereGeometry(headRadius * 0.21, 6, 5);
+  eye.scale(0.9, 1.15, 0.5);
+  const left = eye.clone().translate(-headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
+  const right = eye.translate(headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
+  return joinGeometries(left, right);
+}
+
+/**
+ * Concatenate two non-indexed geometries. three ships a utility for this in its
+ * examples, but pulling that path in for one call to weld two spheres together
+ * is not worth it.
+ */
+function joinGeometries(a: BufferGeometry, b: BufferGeometry): BufferGeometry {
+  const flat = [a.toNonIndexed(), b.toNonIndexed()];
+  const out = new BufferGeometry();
+  for (const name of ["position", "normal"]) {
+    const parts = flat.map((g) => g.getAttribute(name).array as Float32Array);
+    const merged = new Float32Array(parts[0].length + parts[1].length);
+    merged.set(parts[0], 0);
+    merged.set(parts[1], parts[0].length);
+    out.setAttribute(name, new BufferAttribute(merged, 3));
+  }
+  a.dispose();
+  b.dispose();
+  for (const g of flat) g.dispose();
+  return out;
 }
 
 export function Crowd({ palette }: { palette: CrowdPalette }) {
@@ -132,23 +185,26 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
     // are ever seen, and there are a couple of thousand of them.
     const headGeometry = new SphereGeometry(radius, 7, 5);
     headGeometry.scale(1, 1.06, 0.94);
-    // Hair is what turns a beige sphere into a person at six pixels tall. A cap
-    // rather than a full second head: the top half of a slightly larger sphere,
-    // squashed down and sat on top, so the face stays skin.
-    const hairGeometry = new SphereGeometry(radius * 1.05, 7, 3, 0, Math.PI * 2, 0, Math.PI * 0.62);
-    hairGeometry.scale(1, 0.92, 1);
+    // Hair is what turns a beige sphere into a person at this size. A cap
+    // rather than a full second head: the top of a slightly larger sphere, sat
+    // over the skull. It has to stop well above the eyes - taken any further
+    // round it stops reading as hair and starts reading as a motorcycle helmet.
+    const hairGeometry = new SphereGeometry(radius * 1.05, 7, 3, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    hairGeometry.scale(1, 0.95, 1);
 
     return {
       bodies: makeMesh(bodyGeometry, fans, (fan) => fan.shirt),
       heads: makeMesh(headGeometry, fans, (fan) => fan.skin),
       hair: makeMesh(hairGeometry, fans, (fan) => fan.hair),
+      // Unlit, so a fan in the shade of the upper deck still has eyes.
+      eyes: makeMesh(eyePair(radius), fans, () => EYE, true),
       nextAt: 0,
     };
   }, [fans]);
 
   useEffect(() => {
     return () => {
-      for (const mesh of [parts.bodies, parts.heads, parts.hair]) {
+      for (const mesh of [parts.bodies, parts.heads, parts.hair, parts.eyes]) {
         mesh.geometry.dispose();
         (mesh.material as MeshLambertMaterial).dispose();
         mesh.dispose();
@@ -184,6 +240,7 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
       <primitive object={parts.bodies} />
       <primitive object={parts.heads} />
       <primitive object={parts.hair} />
+      <primitive object={parts.eyes} />
     </>
   );
 }
@@ -192,10 +249,13 @@ function makeMesh(
   geometry: BufferGeometry,
   fans: Fan[],
   pick: (fan: Fan) => string,
+  unlit = false,
 ): InstancedMesh {
   const mesh = new InstancedMesh(
     geometry,
-    new MeshLambertMaterial({ flatShading: true }),
+    unlit
+      ? new MeshBasicMaterial({ toneMapped: false })
+      : new MeshLambertMaterial({ flatShading: true }),
     fans.length,
   );
   const dummy = new Object3D();

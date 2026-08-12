@@ -122,10 +122,25 @@ export interface Fan {
 }
 
 /** Roughly how much of a row one fan takes up, shoulder to shoulder. */
-const CROWD_PITCH = 3.0;
+const CROWD_PITCH = 4.6;
 
-/** Height of a seated fan at scale 1, head included. */
-export const FAN_HEIGHT = 5.2;
+/**
+ * Height of a seated fan at scale 1, measured from the seat rather than from
+ * the ground: a real person is about three feet from seat to crown, and these
+ * are drawn at the same 2.4x the players are, so that a fan in the front row and
+ * a fielder standing in front of them are recognisably the same species.
+ */
+export const FAN_HEIGHT = 7.6;
+
+/**
+ * Only every nth row is sold. At this size a fan is three rows tall, and the
+ * bowl only steps up two feet a row, so seating all of them buries everyone
+ * behind the first: heads on shoulders on heads, with no daylight anywhere.
+ * Skipping rows doubles the rise between the people you can actually see and
+ * halves the crowd, and nothing shows through the gap because the row in front
+ * is taller than the step behind it.
+ */
+const ROW_STRIDE = 2;
 
 /**
  * Row blocks are cut deeper than the gap between rows on purpose. Boxes that
@@ -209,21 +224,25 @@ function seatRow(
     tangentX: number;
     tangentZ: number;
     yaw: number;
+    /** Which angular slice of the bowl this row belongs to. */
+    slice: number;
     salt: number;
     /** Fraction of seats that go unsold, 0..1. */
     empty: number;
     max: number;
   },
 ) {
-  const { x, z, y, radius, slices, tangentX, tangentZ, yaw, salt, empty, max } = opts;
+  const { x, z, y, radius, slices, tangentX, tangentZ, yaw, slice, salt, empty, max } = opts;
+  // The bowl is sliced by angle, so a row behind the plate spans a couple of
+  // feet and one out in the corner spans eight, while a fan is the same five
+  // feet wide everywhere. Neither a fixed pitch nor a fixed count works: where
+  // the slice is narrower than a person, seat only every nth slice and let the
+  // ones between go by; where it is wider, fit two and spread them across it.
+  const arc = (Math.PI * 2 * radius) / slices;
+  const stride = Math.max(1, Math.round(CROWD_PITCH / arc));
+  if (slice % stride !== 0) return;
   const n = noise(x, z, salt);
   if (n < empty) return;
-  // Fill the slice rather than laying people out on a fixed pitch. The bowl is
-  // sliced by angle, so a row behind the plate spans a couple of feet and a row
-  // out in the corner spans eight; a fixed pitch either leaves the near rows
-  // literally empty - `floor(2.3 / 3.5)` is zero - or packs the far ones into a
-  // clump in the middle with daylight either side.
-  const arc = (Math.PI * 2 * radius) / slices;
   const seats = Math.max(1, Math.min(max, Math.round(arc / CROWD_PITCH)));
   const pitch = arc / seats;
   for (let s = 0; s < seats; s++) {
@@ -282,19 +301,22 @@ function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
       // Spectators sit in discrete seats. How many fit is a function of the
       // arc this slice actually spans - a fixed count crammed into a narrow
       // slice near the plate is what used to make the crowd intersect itself.
-      seatRow(fans, palette, {
-        x,
-        z,
-        y: height + 0.6,
-        radius: r,
-        slices,
-        tangentX,
-        tangentZ,
-        yaw,
-        salt: row,
-        empty: 0.28,
-        max: 2,
-      });
+      if (row % ROW_STRIDE === 0) {
+        seatRow(fans, palette, {
+          x,
+          z,
+          y: height + 0.6,
+          radius: r,
+          slices,
+          tangentX,
+          tangentZ,
+          yaw,
+          slice: i,
+          salt: row,
+          empty: 0.16,
+          max: 2,
+        });
+      }
     }
 
     // Facade above the top row, to close off the sky line.
@@ -360,19 +382,22 @@ function foulLineSeats(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
         r: yaw,
       });
 
-      seatRow(fans, palette, {
-        x,
-        z,
-        y: height + 0.5,
-        radius: r,
-        slices,
-        tangentX,
-        tangentZ,
-        yaw,
-        salt: 40 + row,
-        empty: 0.34,
-        max: 1,
-      });
+      if (row % ROW_STRIDE === 0) {
+        seatRow(fans, palette, {
+          x,
+          z,
+          y: height + 0.5,
+          radius: r,
+          slices,
+          tangentX,
+          tangentZ,
+          yaw,
+          slice: i,
+          salt: 40 + row,
+          empty: 0.2,
+          max: 1,
+        });
+      }
     }
   }
 }

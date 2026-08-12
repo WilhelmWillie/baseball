@@ -167,26 +167,43 @@ acres of empty dirt.
 
 **The crowd** comes out of the same pass — it is laid out on the bowl's rows, so
 building it separately would mean writing that geometry down twice — but it is
-drawn by `Crowd.tsx` as little people rather than as part of the park. Four
-thousand of them, a body, a head and a cap of hair each, in three instanced
-meshes. Three things make them read at the size they are ever actually seen:
-they are drawn to the players' cartoon scale rather than to the park's real feet,
-because a fan a genuine five feet tall is three pixels of colour from centre
-field and three thousand of *those* are television static, not a crowd; how many
-sit in a row is derived from the arc that row spans, since the bowl is sliced by
-angle and a fixed pitch either leaves the rows behind the plate literally empty
-or clumps the far ones in the middle; and they have hair, which is doing more
-work than it sounds like — a stand of plain skin-toned spheres reads as beads on
-a string, and the dark tops are what turn them into heads. One in five wears a
-cap in the home club's colours instead.
+drawn by `Crowd.tsx` as little people rather than as part of the park. Around two
+thousand of them, a body, a head, a cap of hair and a pair of eyes each, in four
+instanced meshes. They are drawn at the players' cartoon scale rather than at the
+park's real feet, so a fan in the front row and a fielder standing in front of
+them are recognisably the same species — a fan a genuine five feet tall is three
+pixels of colour from centre field, and three thousand of *those* are television
+static, not a crowd.
+
+Sizing them up is most of what set the rest of the layout. A fan is five feet
+wide, and the bowl is sliced by angle, so a row behind the plate spans about two
+feet and one out in the corner spans eight: where the slice is narrower than a
+person, only every nth one is seated and the rest go by; where it is wider, two
+fit and are spread across it. And only every other *row* is sold, because at
+this size a fan is three rows tall while the bowl steps up two feet a row — seat
+all of them and everyone behind the front row is buried, heads on shoulders on
+heads with no daylight anywhere. Nothing shows through the skipped row, since the
+row in front is taller than the step behind it.
+
+Two details do more work than they sound like they should. Hair: a stand of
+plain skin-toned spheres reads as beads on a string, and the dark tops are what
+turn them into heads — one in five wears a cap in the home club's colours
+instead. And the cap has to stop well above the eyes; taken any further round it
+stops reading as hair and starts reading as a motorcycle helmet. Eyes: two small
+dark ovals on the +Z face of the head. Nothing aims them, and nothing needs to —
+a seat at spray angle theta is yawed by -theta, which sends its local +Z exactly
+back toward the middle of the field, so everybody is already looking at the
+game.
 
 They also move. Not much — a bob under half a hertz and a couple of inches deep,
 each fan starting somewhere different in the cycle so the bowl never pulses as
 one. The per-frame cost of that is deliberately tiny: everything a fan *is* —
 the seat, the facing, the size — is written into its instance matrix once, and
 the idle pass only ever touches the three floats of the translation, at a
-quarter of the display's rate rather than every frame. Reacting to the play is
-a TODO; the note in `Crowd.tsx` says what it would take.
+quarter of the display's rate rather than every frame. The eyes get that for
+free: they are baked into the head's own frame, so they ride its transform
+without a line of their own. Reacting to the play is a TODO; the note in
+`Crowd.tsx` says what it would take.
 
 **The netting** behind the plate (`Backstop.tsx`) is there for contrast rather
 than realism. Everything the centre-field camera sees behind the hitter is
@@ -335,12 +352,15 @@ angular gap it opens between them and the on-screen height of the figures both
 fall off with distance, so their ratio depends only on how far round it has come
 and not at all on how far back. Coming round to the left, though, swings the
 sightline over the shortstop and then across the third baseman, whose offsets
-from that line do *not* shrink with distance — so backing off does not help, and
-past about twelve degrees the third baseman stands in the right of frame at a
-hundred and sixty feet, the size of the hitter and twice as distracting. Eleven
-degrees is what this infield will give up. It also has to sit high, and that is
-the figure scale again: the shortstop is nearly on the axis and can only be
-excluded downwards.
+from that line do *not* shrink with distance — so backing off does not help.
+
+Standing in *shallow* centre does. From a hundred and fifty feet out, just
+behind second base, the middle infielders are level with the lens and the corner
+ones are off the edges of a much wider frame, which buys back the angle that a
+deep camera has to give up. Being that close also lets the shot come down: a
+camera far enough back to need a long lens has to be high, or the pitcher covers
+the hitter, and from in here the two are separated across the frame instead. It
+sits about thirty feet up and looks along the ground rather than down at it.
 
 Between pitches the feed has the same problem a real one does — twenty-odd
 seconds of nobody doing anything. If the game stays quiet for seven of them it

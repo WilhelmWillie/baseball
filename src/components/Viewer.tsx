@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { useGameStore } from "@/store/gameStore";
 import { CAMERA_VIEWS, storedCameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
 import { Ball } from "@/components/brand/Ball";
-import { Scorebug } from "./hud/Scorebug";
+import { Scorebug, type ScoreMode } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
 import { History } from "./hud/History";
 import { GameOver } from "./hud/GameOver";
@@ -77,6 +77,33 @@ export function Viewer({
   const [showRoster, setShowRoster] = useState(false);
   const [showCameras, setShowCameras] = useState(false);
 
+  // How much of the scoreboard shows. A portrait phone starts minimized - the
+  // screen is better spent on the game than on the panel - but the moment the
+  // viewer chooses for themselves, that choice sticks and orientation stops
+  // overriding it. `lastShown` is where the "show" chip brings it back to.
+  const [scoreMode, setScoreMode] = useState<ScoreMode>("full");
+  const scoreTouched = useRef(false);
+  const lastShown = useRef<"full" | "mini">("full");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait)");
+    const apply = () => {
+      if (scoreTouched.current) return;
+      const next = mq.matches ? "mini" : "full";
+      lastShown.current = next;
+      setScoreMode(next);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const chooseScoreMode = (mode: ScoreMode) => {
+    scoreTouched.current = true;
+    if (mode !== "hidden") lastShown.current = mode;
+    setScoreMode(mode);
+  };
+
   const activeView = CAMERA_VIEWS.find((v) => v.id === cameraView) ?? CAMERA_VIEWS[0];
 
   // Restored after mount rather than read while the store is created: the
@@ -106,10 +133,22 @@ export function Viewer({
           a floating panel once there is room beside it. */}
       <div className="absolute inset-x-2 top-2 z-10 flex flex-col gap-1.5 sm:inset-x-auto sm:left-4 sm:top-4 sm:gap-2">
         {snapshot ? (
-          <>
-            <Scorebug snapshot={snapshot} />
-            <History history={history} snapshot={snapshot} />
-          </>
+          scoreMode === "hidden" ? (
+            <button
+              type="button"
+              onClick={() => chooseScoreMode(lastShown.current)}
+              title="Show scoreboard"
+              className="pointer-events-auto flex items-center gap-1.5 self-start rounded-full border-2 border-grass-deep/12 bg-card/95 px-3 py-1.5 text-[11px] font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep lip-float"
+            >
+              <span className="h-2 w-2 rounded-full bg-grass" />
+              Scoreboard
+            </button>
+          ) : (
+            <>
+              <Scorebug snapshot={snapshot} mode={scoreMode} onMode={chooseScoreMode} />
+              {scoreMode === "full" && <History history={history} snapshot={snapshot} />}
+            </>
+          )
         ) : (
           <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
             {connection === "error" ? "Can't reach the feed" : "Tuning in…"}

@@ -9,10 +9,13 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 /**
- * The card is regenerated whenever a crawler asks for it, but scrapers cache
- * what they get, so treat the score as a snapshot rather than a live number.
+ * Everything on this card holds still for the life of the game - who is
+ * playing, where, and when. Nothing that moves while the game is played goes
+ * on it: a scraper fetches the image once and serves that copy for as long as
+ * the link circulates, so a score or an inning would be wrong within minutes
+ * of the post. That is also why it can be cached hard.
  */
-export const revalidate = 60;
+export const revalidate = 3600;
 
 async function loadGame(gamePk: string): Promise<GameSummary | null> {
   if (gamePk === "demo" || Number(gamePk) === DEMO_GAME_PK) return demoSummary(0);
@@ -27,15 +30,13 @@ async function loadGame(gamePk: string): Promise<GameSummary | null> {
   }
 }
 
-function statusLine(game: GameSummary): string {
-  if (game.isDemo) return "A game we made up, always ready";
-  if (game.state === "live") {
-    return `${game.isTopInning ? "Top" : "Bottom"} ${game.inningOrdinal ?? ""} · ${game.outs ?? 0} out`.trim();
-  }
-  if (game.state === "final") return "Final";
-  if (!game.startTime) return "Scheduled";
+/** First pitch, in the ballpark's own words. Fixed once the game is scheduled. */
+function firstPitch(game: GameSummary): string | null {
+  if (game.isDemo) return "Always ready";
+  if (!game.startTime) return null;
   return new Date(game.startTime).toLocaleString("en-US", {
     timeZone: "America/New_York",
+    weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -44,36 +45,35 @@ function statusLine(game: GameSummary): string {
   });
 }
 
-function TeamRow({ team, score }: { team: GameSummary["home"]; score: number | null }) {
+function Team({ team }: { team: GameSummary["home"] }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 26 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        width: 340,
+      }}
+    >
       <img
         src={teamDiscSrc(team.palette.primary, team.palette.secondary)}
-        width={76}
-        height={76}
+        width={96}
+        height={96}
         alt=""
       />
       <span
         style={{
-          width: 150,
+          marginTop: 14,
           fontFamily: "Baloo",
           fontSize: 62,
+          lineHeight: 1,
           letterSpacing: "-0.02em",
           color: BRAND.bark,
         }}
       >
         {team.abbrev}
       </span>
-      <span style={{ flex: 1, fontSize: 34, color: BRAND.barkSoft }}>{team.name}</span>
-      <span
-        style={{
-          fontFamily: "Baloo",
-          fontSize: 62,
-          color: score == null ? BRAND.barkSoft : BRAND.grassDeep,
-        }}
-      >
-        {score ?? "–"}
-      </span>
+      <span style={{ marginTop: 6, fontSize: 29, color: BRAND.barkSoft }}>{team.name}</span>
     </div>
   );
 }
@@ -81,6 +81,8 @@ function TeamRow({ team, score }: { team: GameSummary["home"]; score: number | n
 export default async function Image({ params }: { params: Promise<{ gamePk: string }> }) {
   const { gamePk } = await params;
   const game = await loadGame(gamePk);
+  const when = game ? firstPitch(game) : null;
+  const footnote = [game?.venue, when].filter(Boolean).join(" · ");
 
   return new ImageResponse(
     (
@@ -92,7 +94,7 @@ export default async function Image({ params }: { params: Promise<{ gamePk: stri
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          padding: "58px 72px",
+          padding: "46px 72px",
           fontFamily: "Nunito",
           color: BRAND.bark,
         }}
@@ -118,33 +120,44 @@ export default async function Image({ params }: { params: Promise<{ gamePk: stri
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 26,
-              padding: "36px 48px",
+              alignItems: "center",
+              padding: "34px 48px 28px",
               borderRadius: 40,
               border: `3px solid rgba(31, 90, 57, 0.14)`,
               backgroundColor: BRAND.card,
               boxShadow: `0 6px 0 0 ${BRAND.paperDeep}, 0 18px 34px -14px rgba(74, 53, 36, 0.45)`,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 26 }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <Team team={game.away} />
               <span
                 style={{
-                  display: "flex",
-                  padding: "8px 20px",
-                  borderRadius: 999,
-                  backgroundColor:
-                    game.state === "live" ? BRAND.grass : BRAND.paperDeep,
-                  color: game.state === "live" ? BRAND.card : BRAND.barkSoft,
-                  fontWeight: 600,
+                  fontFamily: "Baloo",
+                  fontSize: 46,
+                  color: BRAND.claySoft,
                 }}
               >
-                {statusLine(game)}
+                @
               </span>
-              <span style={{ color: BRAND.barkSoft }}>{game.venue}</span>
+              <Team team={game.home} />
             </div>
 
-            <TeamRow team={game.away} score={game.away.score} />
-            <TeamRow team={game.home} score={game.home.score} />
+            {footnote ? (
+              <div
+                style={{
+                  display: "flex",
+                  marginTop: 26,
+                  paddingTop: 20,
+                  width: "100%",
+                  justifyContent: "center",
+                  borderTop: `2px dashed rgba(31, 90, 57, 0.16)`,
+                  fontSize: 26,
+                  color: BRAND.barkSoft,
+                }}
+              >
+                {footnote}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div

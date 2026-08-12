@@ -282,16 +282,36 @@ function seatRow(
   }
 }
 
+/**
+ * How much taller the bowl stands behind home plate, 0..1. Flat out in the
+ * outfield bleachers, easing up from the foul poles to a peak dead behind the
+ * plate - a real park's upper deck is stacked over the infield, not out past
+ * the wall.
+ */
+function backstopRise(theta: number): number {
+  const abs = Math.abs(theta);
+  const start = Math.PI / 4; // foul poles
+  if (abs <= start) return 0;
+  const t = (abs - start) / (Math.PI - start);
+  return t * t * (3 - 2 * t); // smoothstep
+}
+
+/** Extra rows stacked on top of the base bowl height, at full rise. */
+const BACKSTOP_EXTRA_ROWS = 10;
+/** Extra facade height at the very top of the bowl, at full rise. */
+const BACKSTOP_EXTRA_FACADE = 26;
+
 /** A raked seating bowl: many shallow steps rather than a few tall blocks. */
 function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
   const slices = 210;
-  const rows = 16;
   for (let i = 0; i < slices; i++) {
     const theta = (i / slices) * Math.PI * 2 - Math.PI;
     const base = fieldRadius(theta);
     const yaw = yawAt(theta);
     const tangentX = Math.cos(theta);
     const tangentZ = Math.sin(theta);
+    const rise = backstopRise(theta);
+    const rows = 16 + Math.round(rise * BACKSTOP_EXTRA_ROWS);
 
     for (let row = 0; row < rows; row++) {
       const r = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + row * ROW_SPACING;
@@ -334,12 +354,15 @@ function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
       }
     }
 
-    // Facade above the top row, to close off the sky line.
+    // Facade above the top row, to close off the sky line. Rises with the
+    // bowl so it still reads as a cap on the stands rather than a fixed
+    // fence floating above a taller top row behind the plate.
     const rTop = base + (Math.abs(theta) < Math.PI / 4 ? 7 : 20) + rows * ROW_SPACING;
     const widthTop = ((Math.PI * 2 * rTop) / slices) * 1.08;
+    const facadeHeight = 40 + Math.round(rise * BACKSTOP_EXTRA_FACADE);
     blocks.push({
-      p: [Math.sin(theta) * rTop, 20, -Math.cos(theta) * rTop],
-      s: [widthTop, 40, 3],
+      p: [Math.sin(theta) * rTop, facadeHeight / 2, -Math.cos(theta) * rTop],
+      s: [widthTop, facadeHeight, 3],
       c: shade(COLORS.concreteDark, (noise(theta * 40, 0, 9) - 0.5) * 0.06),
       r: yaw,
     });

@@ -2,6 +2,84 @@
 
 import type { GameSnapshot } from "@/lib/game/types";
 
+/**
+ * How much of the scoreboard is showing. `full` is the panel with the last
+ * play; `mini` keeps only the score, inning, outs and bases; `hidden` takes it
+ * off the screen entirely (the parent puts up a small chip to bring it back).
+ */
+export type ScoreMode = "full" | "mini" | "hidden";
+
+function Chevron({ up }: { up?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`h-3.5 w-3.5 ${up ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function Close() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+/**
+ * The minimize/expand and hide buttons that ride in the scoreboard's corner.
+ * The panel itself is `pointer-events-none` so the game shows through it, so
+ * these opt back in.
+ */
+function ScoreControls({
+  mode,
+  onMode,
+}: {
+  mode: "full" | "mini";
+  onMode: (mode: ScoreMode) => void;
+}) {
+  const button =
+    "flex h-6 w-6 items-center justify-center rounded-full border-2 border-grass-deep/12 bg-card text-bark-soft transition-colors hover:border-grass/60 hover:text-grass-deep";
+  return (
+    <div className="pointer-events-auto flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onMode(mode === "full" ? "mini" : "full")}
+        title={mode === "full" ? "Minimize scoreboard" : "Expand scoreboard"}
+        aria-label={mode === "full" ? "Minimize scoreboard" : "Expand scoreboard"}
+        className={button}
+      >
+        <Chevron up={mode === "full"} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onMode("hidden")}
+        title="Hide scoreboard"
+        aria-label="Hide scoreboard"
+        className={button}
+      >
+        <Close />
+      </button>
+    </div>
+  );
+}
+
 function Diamond({ snapshot }: { snapshot: GameSnapshot }) {
   const on = (base: "first" | "second" | "third") => Boolean(snapshot.runners[base]);
   const cell = (active: boolean) =>
@@ -66,6 +144,42 @@ function TeamRow({
   );
 }
 
+/** The tight team line used in the minimized bar: dot, abbrev, runs. */
+function MiniTeam({
+  abbrev,
+  color,
+  runs,
+  batting,
+}: {
+  abbrev: string;
+  color: string;
+  runs: number;
+  batting: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className="inline-block h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-card"
+        style={{ backgroundColor: color }}
+      />
+      <span
+        className={`w-8 font-display text-sm font-extrabold leading-none ${
+          batting ? "text-bark" : "text-bark-soft"
+        }`}
+      >
+        {abbrev}
+      </span>
+      <span
+        className={`w-5 text-right font-display text-base font-extrabold leading-none ${
+          batting ? "text-grass-deep" : "text-bark-soft"
+        }`}
+      >
+        {runs}
+      </span>
+    </div>
+  );
+}
+
 /** "1-3" today, plus anything worth calling out from it. */
 function batterSummary(line: GameSnapshot["batterStats"]): string | null {
   if (!line) return null;
@@ -86,11 +200,53 @@ function pitcherSummary(line: GameSnapshot["pitcherStats"]): string | null {
   return parts.join(" · ");
 }
 
-export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
+export function Scorebug({
+  snapshot,
+  mode = "full",
+  onMode,
+}: {
+  snapshot: GameSnapshot;
+  mode?: "full" | "mini";
+  /** Change how much of the scoreboard is showing. */
+  onMode?: (mode: ScoreMode) => void;
+}) {
   const { teams, score, count, batter, defense, conditions } = snapshot;
   const batterLine = batterSummary(snapshot.batterStats);
   const pitcherLine = pitcherSummary(snapshot.pitcherStats);
   const arrow = snapshot.isTopInning ? "▲" : "▼";
+  const controls = onMode ? <ScoreControls mode={mode} onMode={onMode} /> : null;
+
+  // Just the score, inning, outs and bases - a single band that gets out of the
+  // way of the game, which is what a tall phone in the middle of a play wants.
+  if (mode === "mini") {
+    return (
+      <div className="select-none">
+        <div className="pointer-events-none flex w-full items-center gap-2.5 rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-3 py-2 backdrop-blur-[2px] lip-float sm:w-auto">
+          <div className="flex flex-col gap-1">
+            <MiniTeam
+              abbrev={teams.away.abbrev}
+              color={teams.away.palette.primary}
+              runs={score.away}
+              batting={snapshot.battingSide === "away"}
+            />
+            <MiniTeam
+              abbrev={teams.home.abbrev}
+              color={teams.home.palette.primary}
+              runs={score.home}
+              batting={snapshot.battingSide === "home"}
+            />
+          </div>
+          <div className="h-8 w-px shrink-0 bg-grass-deep/12" />
+          <div className="rounded-full bg-grass-mist px-2 py-0.5 text-[11px] font-bold text-grass-deep">
+            {arrow} {snapshot.inningOrdinal}
+          </div>
+          <Diamond snapshot={snapshot} />
+          <Outs count={count.outs} />
+          {controls && <div className="ml-auto pl-1 sm:ml-1">{controls}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="select-none">
@@ -111,8 +267,11 @@ export function Scorebug({ snapshot }: { snapshot: GameSnapshot }) {
             />
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            <div className="rounded-full bg-grass-mist px-2 py-0.5 text-[11px] font-bold text-grass-deep">
-              {arrow} {snapshot.inningOrdinal}
+            <div className="flex items-center gap-1.5">
+              <div className="rounded-full bg-grass-mist px-2 py-0.5 text-[11px] font-bold text-grass-deep">
+                {arrow} {snapshot.inningOrdinal}
+              </div>
+              {controls}
             </div>
             <div className="flex items-center gap-2">
               <Diamond snapshot={snapshot} />

@@ -58,6 +58,11 @@ function CameraRig({ director }: { director: Director }) {
       if (!desired.fixed) desired.target.lerp(INFIELD, portrait * 0.6);
       desired.position.lerp(desired.target, portrait * 0.14);
     }
+    // And on top of that, drop the whole frame down so the plate action -
+    // pitcher, batter, catcher - sits low on the screen rather than marooned in
+    // the middle of a tall one. This is a lens shift, not a tilt: the shot's
+    // composition is untouched, the rendered slice of it simply moves.
+    applyPortraitShift(state.camera as PerspectiveCamera, state.size, portrait);
     // Changing seats is a cut like any other.
     const cut = director.cameraCut !== lastCut.current || view !== lastView.current;
     lastView.current = view;
@@ -147,6 +152,30 @@ function applyFraming(camera: PerspectiveCamera, aspect: number, base: number) {
   camera.fov = next;
   camera.updateProjectionMatrix();
 }
+
+/**
+ * Shift the rendered frustum down in portrait so the subject sits toward the
+ * bottom of a tall frame. `setViewOffset` renders an off-centre slice of the
+ * same frustum - an asymmetric lens shift - so nothing zooms and no perspective
+ * is added; the picture just slides. A negative vertical offset raises the top
+ * of the frustum, which drops what was centred toward the foot of the frame.
+ */
+function applyPortraitShift(camera: PerspectiveCamera, size: { width: number; height: number }, portrait: number) {
+  if (!camera.isPerspectiveCamera) return;
+  if (portrait > 0.001 && size.width > 0 && size.height > 0) {
+    const dy = -portrait * PORTRAIT_DROP * size.height;
+    camera.setViewOffset(size.width, size.height, 0, dy, size.width, size.height);
+  } else if (camera.view?.enabled) {
+    camera.clearViewOffset();
+  }
+}
+
+/**
+ * How far down the frame slides at full portrait, as a fraction of its height.
+ * Enough to seat the plate action along the bottom third without pushing a
+ * rising fly ball off the top.
+ */
+const PORTRAIT_DROP = 0.16;
 
 /** The framing the shot list was composed against: a 16:9 desktop window. */
 const BASE_FOV = 50;

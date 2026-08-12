@@ -11,6 +11,7 @@ import {
 } from "three";
 import {
   BASE_POSITIONS,
+  BATTER_BOX,
   MOUND_DEPTH,
   MOUND_HEIGHT,
   MOUND_RADIUS,
@@ -18,6 +19,12 @@ import {
   wallDistance,
 } from "@/lib/field/geometry";
 import { COLORS } from "@/lib/field/park";
+
+/** The chalk rectangle, derived so it can never drift off the hitter's feet. */
+const BOX_W = BATTER_BOX.outer - BATTER_BOX.inner;
+const BOX_MID = (BATTER_BOX.outer + BATTER_BOX.inner) / 2;
+const BOX_LEN = BATTER_BOX.length;
+const CHALK_W = 0.34;
 import {
   fieldShape,
   foulShapes,
@@ -148,19 +155,19 @@ export function Field() {
         );
       })}
 
-      {/* Batter's boxes. */}
+      {/* Batter's boxes, drawn off the same constant the hitter stands on. */}
       {[-1, 1].map((side) =>
         (
           [
-            [0, 4.5, 6, 0.34],
-            [0, -4.5, 6, 0.34],
-            [-3, 0, 0.34, 9],
-            [3, 0, 0.34, 9],
+            [0, BOX_LEN / 2, BOX_W, CHALK_W],
+            [0, -BOX_LEN / 2, BOX_W, CHALK_W],
+            [-BOX_W / 2, 0, CHALK_W, BOX_LEN],
+            [BOX_W / 2, 0, CHALK_W, BOX_LEN],
           ] as const
         ).map(([dx, dz, sx, sz], i) => (
           <mesh
             key={`${side}-${i}`}
-            position={[side * 6 + dx, LAYER.chalk, -(2.4 + dz)]}
+            position={[side * BOX_MID + dx, LAYER.chalk, -(BATTER_BOX.depth + dz)]}
           >
             <boxGeometry args={[sx, 0.04, sz]} />
             <meshBasicMaterial color={COLORS.chalk} />

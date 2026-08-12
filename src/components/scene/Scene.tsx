@@ -8,6 +8,8 @@ import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
 import { Park } from "./Park";
+import { Crowd } from "./Crowd";
+import { Backstop } from "./Backstop";
 import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
@@ -140,7 +142,7 @@ function applyFraming(camera: PerspectiveCamera, aspect: number, base: number) {
   if (!camera.isPerspectiveCamera) return;
   const horizontal = 2 * Math.atan(Math.tan((base * Math.PI) / 360) * BASE_ASPECT);
   const fov = (2 * Math.atan(Math.tan(horizontal / 2) / Math.max(0.45, aspect)) * 180) / Math.PI;
-  const next = Math.min(WIDEST, Math.max(base, fov));
+  const next = Math.min(WIDEST, base * WIDEST_GAIN, Math.max(base, fov));
   if (Math.abs(camera.fov - next) < 0.01) return;
   camera.fov = next;
   camera.updateProjectionMatrix();
@@ -155,6 +157,17 @@ const BASE_ASPECT = 16 / 9;
  * up some of its width instead.
  */
 const WIDEST = 78;
+/**
+ * And as wide as any *one* shot is allowed to be pulled, as a multiple of the
+ * lens it was composed on. The correction above is absolute, which is fine for
+ * the 50-degree broadcast lens but ruinous for a long one: holding the width of
+ * a 20-degree centre-field shot on a phone held upright would mean opening up
+ * to nearly 80 degrees, and the hitter it was framed on would be four pixels
+ * tall. Past this the shot keeps its subject and loses the width instead - but
+ * not so early that the centre-field shot loses the pitcher off the left edge,
+ * which is what set this number.
+ */
+const WIDEST_GAIN = 1.9;
 
 /** Roughly the middle of the diamond, in world space. */
 const INFIELD = new Vector3(0, 6, -63);
@@ -235,6 +248,8 @@ export function Scene() {
       <Field />
       <GroundOcclusion />
       <Park lampsLit={look.lampsLit} crowd={crowd} />
+      <Crowd palette={crowd} />
+      <Backstop />
       <ContactShadows director={director} />
       <Actors director={director} />
       <Ball director={director} />

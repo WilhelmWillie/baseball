@@ -74,13 +74,15 @@ reported it. Browsers block audio until the page is interacted with, so the firs
 click anywhere starts it. The 🔊 button mutes.
 
 **Camera modes** — the 🎥 button picks where you watch from. **Broadcast** is
-the default and is the directed feed: it cuts between angles as the game gives
-it something to say. The other three are seats that never cut — **Umpire**
-through the umpire's own eyes, in the slot behind the catcher with the pitch
-arriving at the lens; **Pitcher** from the mound, your cap in the bottom of the
-frame and the hitter sixty feet away; and **Bleachers** a dozen rows up in
-center field, where everything is small and far away and you can see the whole
-park. Your choice is remembered.
+the default and is the directed feed: it sits out in center field behind the
+pitcher, looking in at the hitter the way every televised pitch is framed, and
+cuts between angles as the game gives it something to say. Between pitches, if
+the game stays quiet long enough, it takes a few seconds somewhere else — the
+dugout, the runner at first, a wide of the park — and comes back. The other
+three are seats that never cut: **Home Plate** high behind the plate with the
+whole diamond ahead of you, **Umpire** through the umpire's own eyes in the slot
+behind the catcher with the pitch arriving at the lens, and **Sky** near enough
+straight down on the park from a few hundred feet up. Your choice is remembered.
 
 **Simulated game** (`/watch/demo`) — a scripted game emitted in the exact shape
 of MLB's GUMBO feed, so it exercises the same adapter and animation path a real
@@ -151,25 +153,98 @@ space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
 Everything vertical — outfield wall, the raked seating bowl, bleachers running
-down both foul lines behind a low padded wall, the crowd, light towers, the
-wooden scoreboard over the batter's eye, and the town of gabled houses and
-oversized trees on three hazy rings beyond the park — is generated in
+down both foul lines behind a low padded wall, light towers, the wooden
+scoreboard over the batter's eye, and the town of gabled houses and oversized
+trees on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
-the tower lights can burn unlit by the sun after dark. Two rules keep a bowl of
-several thousand boxes from tearing itself apart: how many spectators a row
-holds is derived from the arc that row actually spans, rather than being a fixed
-count crammed into whatever width is available; and row blocks are cut deeper
+the tower lights can burn unlit by the sun after dark. Row blocks are cut deeper
 than the gap between rows, because boxes that interpenetrate look solid while
-boxes whose faces land on exactly the same plane flicker. Foul ground
-tapers sharply past the bases, so the seats come right up against the lines
-rather than leaving acres of empty dirt.
+boxes whose faces land on exactly the same plane flicker, and a bowl of several
+thousand of them flickers everywhere at once. Foul ground tapers sharply past
+the bases, so the seats come right up against the lines rather than leaving
+acres of empty dirt.
+
+**The crowd** comes out of the same pass — it is laid out on the bowl's rows, so
+building it separately would mean writing that geometry down twice — but it is
+drawn by `Crowd.tsx` as little people rather than as part of the park. Around
+twelve hundred of them, a capsule body, a head, a cap of hair and a pair of eyes
+each, in four instanced meshes. They are drawn to the *players*' size, not to a
+plausible seated person's: the figures on the field stand about fifteen feet tall
+here, and a crowd scaled honestly against that reads as a different species
+watching from a scale model. A fan in the front row and a fielder standing in
+front of them are the same size.
+
+That size is most of what set the rest of the layout, and it costs density in
+both directions. Across a row: a fan is six feet wide and the bowl is sliced by
+angle, so a row behind the plate spans about two feet and one out in the corner
+spans eight — where the slice is narrower than a person only every nth one is
+seated and the rest go by; where it is wider, two fit and are spread across it.
+Up the bowl: a fan is seven rows tall while the bowl steps up two feet a row, so
+only every third row is sold. Seat all of them and everyone behind the front row
+is buried, heads on shoulders on heads with no daylight anywhere. Nothing shows
+through the skipped rows, because the row in front is much taller than the steps
+behind it. A few hundred people you can see is a crowd; four thousand you cannot
+is a texture.
+
+The crowd is split half and half on hair down past the ears versus cropped. On
+a figure this size and this simple there is nothing else available to carry it -
+there is no room for a face, and a body is a capsule - so the hairline is the
+whole of the difference. It is a second instanced mesh over its own half of the
+bowl rather than a variant of the first, since a geometry is a geometry.
+
+Three more details do more work than they sound like they should. Bodies are capsules
+rather than chamfered boxes — at the old size that was a pixel of highlight, at
+this one the flat front and four vertical corners of a box are the whole
+silhouette and a stand of them reads as stacked luggage. Hair: a stand of
+plain skin-toned spheres reads as beads on a string, and the dark tops are what
+turn them into heads — one in five wears a cap in the home club's colours
+instead. And the cap has to stop well above the eyes; taken any further round it
+stops reading as hair and starts reading as a motorcycle helmet. Eyes: two small
+dark ovals on the +Z face of the head. Nothing aims them, and nothing needs to —
+a seat at spray angle theta is yawed by -theta, which sends its local +Z exactly
+back toward the middle of the field, so everybody is already looking at the
+game.
+
+They also move. Not much — a bob under half a hertz and a couple of inches deep,
+each fan starting somewhere different in the cycle so the bowl never pulses as
+one. The per-frame cost of that is deliberately tiny: everything a fan *is* —
+the seat, the facing, the size — is written into its instance matrix once, and
+the idle pass only ever touches the three floats of the translation, at a
+quarter of the display's rate rather than every frame. The eyes get that for
+free: they are baked into the head's own frame, so they ride its transform
+without a line of their own. Reacting to the play is a TODO; the note in
+`Crowd.tsx` says what it would take.
+
+**The netting** behind the plate (`Backstop.tsx`) is there for contrast rather
+than realism. Everything the centre-field camera sees behind the hitter is
+seating bowl — a few thousand small bright things, all of them moving — and a
+batter and catcher standing against that read as more of the same. A dark scrim
+across the backstop knocks the background down a couple of stops and the two
+figures separate immediately. It hangs where a real net hangs, which means the
+cameras *behind* it would be shooting through it; they are not, because it is
+only drawn for a camera standing on the field side of it. Its ends and top edge
+fade out rather than stopping dead — a straight seam with bright crowd on one
+side and dark crowd on the other is far more conspicuous than the darkening it
+was hiding.
 
 The park is painted as a toy rather than a broadcast: grass a shade sweeter
 than real turf, dirt the colour of a sandpit, cream stonework in place of grey
 concrete and mint seats, so the 3D scene and the interface around it are
 working from one palette. `sky.ts` lights it flatter and softer than a real
 afternoon would be for the same reason.
+
+The hitter stands further off the plate than a tape measure would put him, and
+the chalk is drawn wider to match - both off the same constant, so they cannot
+drift apart. This is the figure scale again: at a real two and a half feet off
+the plate the catcher crouches inside the hitter's own shoulder, and from a
+camera in centre field, looking almost straight down the line the two are
+stacked along, they merge into one figure. Moving the catcher instead would take
+him off the plate he is there to guard, so the hitter is the one who moves, and
+the contact point moves out with him so the ball still meets the bat. In the
+stance his head comes round most of a right angle off his shoulders to watch the
+pitcher, which is what a hitter does and is also what puts his face toward the
+centre-field camera rather than the back of his helmet.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera
@@ -282,22 +357,51 @@ shadow-casting sun.
 ### Cameras
 
 Broadcasts do not glide between angles — they cut - and they change lenses to
-say something about the moment. The director owns a shot list: **broadcast**
-behind the plate, **slot** over the catcher on any two-strike pitch, **mound** on
-a long lens every fourth pitch (cut back at release so the pitch stays
-trackable), **ball** tracking a batted ball, **low** at field level down the
-third-base line off a home run or a triple, **wide** as the ball leaves the park,
-and **follow** travelling with the runner on the trot. Each shot holds for a
-minimum time so nothing strobes when several things happen at once, and hard
-contact knocks the lens for about half a second.
+say something about the moment. The director owns a shot list, and the one it
+keeps coming back to is **center**: out past the mound, up over the batter's
+eye, behind the pitcher and looking in at the hitter, which is how every pitch
+on television has ever been framed. Around it sit **slot** over the catcher on
+any two-strike pitch, **mound** on a long lens every fourth pitch (cut back at
+release so the pitch stays trackable), **ball** tracking a batted ball, **low**
+at field level down the third-base line off a home run or a triple, **wide** as
+the ball leaves the park, and **follow** travelling with the runner on the trot.
+Each shot holds for a minimum time so nothing strobes when several things happen
+at once, and hard contact knocks the lens for about half a second.
+
+Where that camera stands is the one piece of this that is arithmetic rather than
+taste. It has to come round off the pitcher-to-plate line, or the hitter sits
+directly behind the pitcher and the two stack into a single silhouette; the
+angular gap it opens between them and the on-screen height of the figures both
+fall off with distance, so their ratio depends only on how far round it has come
+and not at all on how far back. Coming round to the left, though, swings the
+sightline over the shortstop and then across the third baseman, whose offsets
+from that line do *not* shrink with distance — so backing off does not help.
+
+Standing in *shallow* centre does. From a hundred and fifty feet out, just
+behind second base, the middle infielders are level with the lens and the corner
+ones are off the edges of a much wider frame, which buys back the angle that a
+deep camera has to give up. Being that close also lets the shot come down: a
+camera far enough back to need a long lens has to be high, or the pitcher covers
+the hitter, and from in here the two are separated across the frame instead. It
+sits about thirty feet up and looks along the ground rather than down at it.
+
+Between pitches the feed has the same problem a real one does — twenty-odd
+seconds of nobody doing anything. If the game stays quiet for seven of them it
+takes a **line**, **base**, **bowl**, **slot**, **mound** or **wide** for about
+four seconds and then cuts home; the shot of the runner at first is skipped when
+there is no runner on it. The gap before the next cutaway is counted in real
+seconds rather than in idle time, which is what stops it happening every single
+pitch. Anything the feed sends interrupts a cutaway immediately: the play's own
+shot always wins.
 
 That directed feed is one of four camera modes, and the default. The other three
-are seats rather than shots: one vantage, one lens, held all game. Two of them
-are somebody's eyes. Both sit a little higher than the person whose view they
-are — the figures are drawn at 2.4x life size, so a head is enormous, and an
-umpire at his real eye height would spend the game looking at the back of the
-catcher's helmet rather than over it. The pitcher's seat clears his own cap for
-the same reason, which leaves the cap itself along the bottom of the frame.
+are seats rather than shots: one vantage, one lens, held all game. The umpire's
+sits a little higher than the person whose view it is — the figures are drawn at
+2.4x life size, so a head is enormous, and an umpire at his real eye height
+would spend the game looking at the back of the catcher's helmet rather than
+over it. The sky seat is tipped about ten degrees off vertical rather than
+pointed straight down, because a camera looking along the world's up axis has no
+way to decide which way is up in frame.
 
 A seat does not cut and it does not chase, but its gaze swings part-way after a
 ball hit away from what it is aimed at, the way a head turns; a pitch lands
@@ -306,11 +410,11 @@ There is still no orbit control — a fixed set of framings composed against the
 park reads better than one dragged around by hand.
 
 Name plates scale down as the camera closes in - sprites otherwise grow with
-proximity, and on a tight shot a plate would fill the frame. The bleacher seat
-watches through a much longer lens than the broadcast one, which magnifies a
-sprite the same way proximity does, so the plates are scaled off the lens as
-well, and a plate whose player the lens is sitting on is dropped outright: from
-the mound, the pitcher does not need to be told his own name.
+proximity, and on a tight shot a plate would fill the frame. The long lenses -
+the center-field camera, the seats - magnify a sprite the same way proximity
+does, so the plates are scaled off the lens as well, and a plate whose player the
+lens is sitting on is dropped outright: from the umpire's seat, the catcher does
+not need to be told his own name.
 
 ### Grounding
 
@@ -407,11 +511,17 @@ a bar along the bottom, where a thumb reaches them.
 slice of the world horizontally — on a portrait phone the diamond falls out of
 frame at either side. The rig holds the horizontal field of view roughly
 constant instead, widening the vertical one as the aspect narrows — off
-whichever lens the current shot was composed on. That leaves a lot of empty
-grass above and below, so it also pulls its framing in toward the infield in
-proportion to how portrait the screen is. A chosen seat keeps its own aim
-through that — re-pointing it at the infield would not be that seat any more —
-and only moves up a little.
+whichever lens the current shot was composed on. Only so far, though: holding
+the width of a long lens would mean opening it up past seventy degrees, and the
+subject it was framed on would be a few pixels tall, so past about half again
+its own lens a shot gives up the width instead.
+
+That still leaves a lot of empty grass above and below, so the rig also pulls
+its framing in toward the infield in proportion to how portrait the screen is.
+Shots already aimed at a subject — a chosen seat, the center-field camera, the
+tight ones — keep their own aim through that, since re-pointing them at the
+middle of the diamond would not be that shot any more, and only move up a
+little.
 
 The controls drop to their icons, the camera picker opens above the bar instead
 of below it, the weather line and the connection badge are dropped, and the

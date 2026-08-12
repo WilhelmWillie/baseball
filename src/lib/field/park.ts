@@ -98,12 +98,61 @@ function shade(hex: string, amount: number): string {
  * radius.
  */
 /**
- * Spectators, and how much elbow room they get. `CROWD_PITCH` is wider than
- * `CROWD_SIZE`, so seats in the same row cannot touch; capping the count at
- * what the slice's arc will hold stops them crossing into the next slice.
+ * A spectator. Not a box any more - `components/scene/Crowd.tsx` draws these
+ * as little figures with a head and shoulders, which is why the model carries
+ * a skin tone and a phase as well as a shirt.
+ *
+ * The park is built in feet like everything else, but the *people* in it are
+ * drawn to the same cartoon scale the players are: a fan a real five feet tall
+ * would be three pixels of colour from a camera in centre field, and three
+ * thousand of those read as television static rather than as a crowd.
  */
-const CROWD_SIZE = 1.35;
-const CROWD_PITCH = 1.72;
+export interface Fan {
+  /** Base of the figure, in world space. */
+  p: [number, number, number];
+  /** Facing, radians about Y. Everyone looks in at the field. */
+  yaw: number;
+  shirt: string;
+  skin: string;
+  hair: string;
+  /**
+   * Drawn with hair down past the ears rather than a cropped cap. It is the
+   * only thing that reads as a woman on a figure this size and this simple -
+   * there is no room for a face, and a body is a capsule - and the crowd is
+   * split half and half on it.
+   */
+  longHair: boolean;
+  /** Overall size multiplier, so a crowd is not one person repeated. */
+  scale: number;
+  /** Where in its idle cycle this one starts, 0..1. */
+  phase: number;
+}
+
+/** Roughly how much of a row one fan takes up, shoulder to shoulder. */
+const CROWD_PITCH = 7.4;
+
+/**
+ * Height of a seated fan at scale 1, measured from the seat rather than the
+ * ground. Matched to the *players*, not to a real seated person: the figures on
+ * the field stand about fifteen feet tall here - `zoneHeight` maps a real foot
+ * onto 2.59 of them - and a crowd drawn to a plausible seated three-and-a-bit
+ * feet of that reads as a different species watching from a scale model. These
+ * are people the same size as the ones playing.
+ */
+export const FAN_HEIGHT = 14.5;
+
+/**
+ * Only every nth row is sold. At this size a fan is seven rows tall and the
+ * bowl steps up two feet a row, so seating all of them buries everyone behind
+ * the first: heads on shoulders on heads with no daylight anywhere. Skipping
+ * rows is what buys the rise back, and nothing shows through the gap because the
+ * row in front is much taller than the steps behind it.
+ *
+ * This is the cost of the size, and it is the right trade: a stand of a few
+ * hundred people you can see is a crowd, and a stand of four thousand you
+ * cannot is a texture.
+ */
+const ROW_STRIDE = 3;
 
 /**
  * Row blocks are cut deeper than the gap between rows on purpose. Boxes that
@@ -114,10 +163,6 @@ const ROW_SPACING = 5.2;
 const ROW_DEPTH = 5.6;
 const FOUL_ROW_SPACING = 3.4;
 const FOUL_ROW_DEPTH = 3.8;
-
-function seatsAcross(radius: number, slices: number, pitch: number): number {
-  return Math.floor(((Math.PI * 2 * radius) / slices) / pitch);
-}
 
 function yawAt(theta: number): number {
   return -theta;
@@ -165,8 +210,80 @@ function outfieldWall(blocks: Block[]) {
   }
 }
 
+const SKIN_TONES = ["#f2c9a0", "#e0a878", "#c68a5e", "#9a6540", "#6f4526", "#f7ddc0"];
+/**
+ * Hair, and the odd cap in one of the two clubs' colours. This is doing more
+ * work than it looks like it should: a stand full of plain skin-toned spheres
+ * reads as beads on a string, and it is the dark tops that turn them into
+ * heads.
+ */
+const HAIR_TONES = ["#2b1d16", "#171313", "#4a2f1d", "#7a4d24", "#c8a35a", "#8e8e93", "#e8e6e1"];
+
+/**
+ * Seat a row. `n` is the same stable noise the row itself is shaded from, so a
+ * given seat holds the same person on every rebuild; an empty seat here and
+ * there is what keeps the bowl from reading as printed wallpaper.
+ */
+function seatRow(
+  fans: Fan[],
+  palette: CrowdPalette,
+  opts: {
+    x: number;
+    z: number;
+    y: number;
+    radius: number;
+    slices: number;
+    tangentX: number;
+    tangentZ: number;
+    yaw: number;
+    /** Which angular slice of the bowl this row belongs to. */
+    slice: number;
+    salt: number;
+    /** Fraction of seats that go unsold, 0..1. */
+    empty: number;
+    max: number;
+  },
+) {
+  const { x, z, y, radius, slices, tangentX, tangentZ, yaw, slice, salt, empty, max } = opts;
+  // The bowl is sliced by angle, so a row behind the plate spans a couple of
+  // feet and one out in the corner spans eight, while a fan is the same five
+  // feet wide everywhere. Neither a fixed pitch nor a fixed count works: where
+  // the slice is narrower than a person, seat only every nth slice and let the
+  // ones between go by; where it is wider, fit two and spread them across it.
+  const arc = (Math.PI * 2 * radius) / slices;
+  const stride = Math.max(1, Math.round(CROWD_PITCH / arc));
+  if (slice % stride !== 0) return;
+  const n = noise(x, z, salt);
+  if (n < empty) return;
+  const seats = Math.max(1, Math.min(max, Math.round(arc / CROWD_PITCH)));
+  const pitch = arc / seats;
+  for (let s = 0; s < seats; s++) {
+    const offset = (s - (seats - 1) / 2) * pitch;
+    const roll = noise(x + s * 3.1, z, salt + s);
+    const hat = noise(x, z + s * 2.7, salt + 31);
+    const longHair = noise(x + s * 1.7, z + s, salt + 47) < 0.5;
+    // A club cap goes over cropped hair only - it is the same dome geometry,
+    // just painted, and there is nowhere to put it on the long-haired half.
+    const capped = !longHair && hat < 0.34;
+    fans.push({
+      p: [x + tangentX * offset, y, z + tangentZ * offset],
+      yaw,
+      shirt: crowdShirt(roll, palette),
+      skin: SKIN_TONES[Math.floor(roll * 97) % SKIN_TONES.length],
+      // The capped ones sprinkle club colour through the bowl at head height as
+      // well as at shirt height.
+      hair: capped
+        ? palette.home[hat < 0.24 ? 0 : 1]
+        : HAIR_TONES[Math.floor(hat * 89) % HAIR_TONES.length],
+      longHair,
+      scale: 0.88 + noise(x, z + s * 5.3, salt + 11) * 0.26,
+      phase: noise(x + s, z, salt + 23),
+    });
+  }
+}
+
 /** A raked seating bowl: many shallow steps rather than a few tall blocks. */
-function stands(blocks: Block[], palette: CrowdPalette) {
+function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
   const slices = 210;
   const rows = 16;
   for (let i = 0; i < slices; i++) {
@@ -199,19 +316,21 @@ function stands(blocks: Block[], palette: CrowdPalette) {
       // Spectators sit in discrete seats. How many fit is a function of the
       // arc this slice actually spans - a fixed count crammed into a narrow
       // slice near the plate is what used to make the crowd intersect itself.
-      const n = noise(x, z, row);
-      const seats = Math.min(seatsAcross(r, slices, CROWD_PITCH), 1 + Math.floor(n * 3));
-      if (n > 0.3 && seats > 0) {
-        for (let s = 0; s < seats; s++) {
-          const offset = (s - (seats - 1) / 2) * CROWD_PITCH;
-          const c = crowdShirt(noise(x + s * 3.1, z, row + s), palette);
-          blocks.push({
-            p: [x + tangentX * offset, height + 1.5, z + tangentZ * offset],
-            s: [CROWD_SIZE, 1.8, CROWD_SIZE],
-            c,
-            r: yaw,
-          });
-        }
+      if (row % ROW_STRIDE === 0) {
+        seatRow(fans, palette, {
+          x,
+          z,
+          y: height + 0.6,
+          radius: r,
+          slices,
+          tangentX,
+          tangentZ,
+          yaw,
+          slice: i,
+          salt: row,
+          empty: 0.08,
+          max: 2,
+        });
       }
     }
 
@@ -232,7 +351,7 @@ function stands(blocks: Block[], palette: CrowdPalette) {
  * surface with a few rows of bleachers stepping up behind it, so the foul
  * corners are populated instead of trailing off into empty grass.
  */
-function foulLineSeats(blocks: Block[], palette: CrowdPalette) {
+function foulLineSeats(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
   const slices = 150;
   const quarter = Math.PI / 4;
 
@@ -278,19 +397,21 @@ function foulLineSeats(blocks: Block[], palette: CrowdPalette) {
         r: yaw,
       });
 
-      const n = noise(x, z, 40 + row);
-      const seats = Math.min(seatsAcross(r, slices, CROWD_PITCH), 1 + Math.floor(n * 2));
-      if (n > 0.36 && seats > 0) {
-        for (let sIdx = 0; sIdx < seats; sIdx++) {
-          const offset = (sIdx - (seats - 1) / 2) * CROWD_PITCH;
-          const c = crowdShirt(noise(x + sIdx * 3.7, z, row + sIdx), palette);
-          blocks.push({
-            p: [x + tangentX * offset, height + 1.4, z + tangentZ * offset],
-            s: [CROWD_SIZE, 1.7, CROWD_SIZE],
-            c,
-            r: yaw,
-          });
-        }
+      if (row % ROW_STRIDE === 0) {
+        seatRow(fans, palette, {
+          x,
+          z,
+          y: height + 0.5,
+          radius: r,
+          slices,
+          tangentX,
+          tangentZ,
+          yaw,
+          slice: i,
+          salt: 40 + row,
+          empty: 0.12,
+          max: 1,
+        });
       }
     }
   }
@@ -506,7 +627,7 @@ function parkland(blocks: Block[]) {
   }
 }
 
-let cached: { key: string; blocks: Block[] } | null = null;
+let cached: { key: string; blocks: Block[]; fans: Fan[] } | null = null;
 
 export const DEFAULT_CROWD: CrowdPalette = {
   home: ["#3f6fb5", "#e0c452"],
@@ -514,20 +635,33 @@ export const DEFAULT_CROWD: CrowdPalette = {
 };
 
 /**
- * The whole park, cached by crowd palette - it is a few thousand boxes, and
- * only the shirts change from one game to the next.
+ * The whole park, cached by crowd palette - it is a few thousand boxes and a
+ * couple of thousand people, and only the shirts change from one game to the
+ * next. The structure and the crowd come out of one pass because they are laid
+ * out against the same rows; splitting them would mean writing the bowl's
+ * geometry down twice.
  */
-export function buildPark(palette: CrowdPalette = DEFAULT_CROWD): Block[] {
+function build(palette: CrowdPalette): { blocks: Block[]; fans: Fan[] } {
   const key = `${palette.home.join()}|${palette.away.join()}`;
-  if (cached && cached.key === key) return cached.blocks;
+  if (cached && cached.key === key) return cached;
   const blocks: Block[] = [];
+  const fans: Fan[] = [];
   outfieldWall(blocks);
-  foulLineSeats(blocks, palette);
-  stands(blocks, palette);
+  foulLineSeats(blocks, fans, palette);
+  stands(blocks, fans, palette);
   lightTowers(blocks);
   scoreboard(blocks);
   skyline(blocks);
   parkland(blocks);
-  cached = { key, blocks };
-  return blocks;
+  cached = { key, blocks, fans };
+  return cached;
+}
+
+export function buildPark(palette: CrowdPalette = DEFAULT_CROWD): Block[] {
+  return build(palette).blocks;
+}
+
+/** Everyone in the seats. See `components/scene/Crowd.tsx` for the drawing. */
+export function buildCrowd(palette: CrowdPalette = DEFAULT_CROWD): Fan[] {
+  return build(palette).fans;
 }

@@ -5,11 +5,12 @@ import { RUBBER_DEPTH, fp } from "@/lib/field/geometry";
  * The camera modes a viewer can pick between.
  *
  * `broadcast` is the default and hands the framing back to the director's shot
- * list, which cuts between angles as the game gives it something to say. The
- * rest are *seats*: one vantage that holds all game long and never cuts. A seat
- * pans with the ball the way a head turns - the chair itself does not move.
+ * list, which opens on the centre-field camera and cuts between angles as the
+ * game gives it something to say. The rest are *seats*: one vantage that holds
+ * all game long and never cuts. A seat pans with the ball the way a head turns
+ * - the chair itself does not move.
  */
-export type CameraView = "broadcast" | "umpire" | "pitcher" | "bleachers";
+export type CameraView = "broadcast" | "home_plate" | "umpire" | "sky";
 
 export const DEFAULT_CAMERA_VIEW: CameraView = "broadcast";
 
@@ -22,9 +23,9 @@ export interface CameraViewOption {
 
 export const CAMERA_VIEWS: CameraViewOption[] = [
   { id: "broadcast", label: "Broadcast", hint: "Cuts with the play" },
+  { id: "home_plate", label: "Home Plate", hint: "Over the whole diamond" },
   { id: "umpire", label: "Umpire", hint: "Behind the plate" },
-  { id: "pitcher", label: "Pitcher", hint: "From the mound" },
-  { id: "bleachers", label: "Bleachers", hint: "Center field seats" },
+  { id: "sky", label: "Sky", hint: "Straight down from above" },
 ];
 
 /** A camera placement. Positions and targets are in three.js world space. */
@@ -35,12 +36,14 @@ export interface Shot {
   lerp: number;
   /**
    * Vertical field of view at 16:9, before the portrait correction. Omitted on
-   * the director's own shots, which are all composed on the broadcast lens.
+   * shots composed on the broadcast lens.
    */
   fov?: number;
   /**
-   * A seat the viewer chose. The rig leaves the framing exactly as composed
-   * here rather than pulling it toward the infield on a narrow screen.
+   * This shot's aim is already the composition. The rig leaves it exactly as
+   * given rather than pulling it toward the infield on a narrow screen - which
+   * is the right correction for a shot framed on the whole diamond and the
+   * wrong one for a seat, or for anything already pointed at a subject.
    */
   fixed?: boolean;
 }
@@ -51,6 +54,22 @@ export interface Shot {
  * lateral/depth/height axes as the rest of the field math.
  */
 const SEATS: Record<Exclude<CameraView, "broadcast">, Shot & { pan: number }> = {
+  /**
+   * High behind home plate with the whole diamond laid out ahead - the shot the
+   * broadcast used to open on before it moved out to centre field. Everything
+   * that matters is in frame at once, which is exactly what a directed feed
+   * cannot give you: nothing here is ever cut away from.
+   *
+   * Composed on the broadcast lens and deliberately *not* `fixed`, so a
+   * portrait phone still gets the framing pulled in toward the infield the way
+   * the directed shots do.
+   */
+  home_plate: {
+    position: fp(0, -78, 55),
+    target: fp(0, 100, 4),
+    lerp: 1.6,
+    pan: 0.22,
+  },
   /**
    * The umpire's own eyes: in the slot off the catcher's inside shoulder,
    * looking straight out at the pitcher, with the pitch arriving at the lens.
@@ -70,31 +89,20 @@ const SEATS: Record<Exclude<CameraView, "broadcast">, Shot & { pan: number }> = 
     pan: 0.3,
   },
   /**
-   * The pitcher's own eyes - clearing his cap for the same reason the umpire
-   * clears the catcher's helmet, so the shot is the hitter sixty feet away and
-   * the infield spread out ahead rather than the back of his own head. His cap
-   * sits along the bottom of the frame, and the ball leaves past it.
+   * Straight down on the park from a few hundred feet up, near enough overhead
+   * that the diamond reads as a diamond rather than a foreshortened wedge. Not
+   * *exactly* overhead: a camera looking down the world's up axis has no way to
+   * decide which way is up in frame, so it sits back over the plate and tips in
+   * by about ten degrees, which also keeps the batter inside the bottom of the
+   * shot rather than under the lens.
    */
-  pitcher: {
-    position: fp(0, RUBBER_DEPTH + 5.5, 21),
-    target: fp(0, 1, 6.5),
-    lerp: 2.4,
-    fov: 48,
+  sky: {
+    position: fp(0, 46, 360),
+    target: fp(0, 104, 0),
+    lerp: 1.8,
+    fov: 44,
     fixed: true,
-    pan: 0.3,
-  },
-  /**
-   * A dozen rows up in the center field bleachers, over the batter's eye and
-   * under the scoreboard. Everything is small and far away, which is the point:
-   * this is the seat, not a camera position.
-   */
-  bleachers: {
-    position: fp(0, 448, 30),
-    target: fp(0, 60, 10),
-    lerp: 2.2,
-    fov: 18,
-    fixed: true,
-    pan: 0.16,
+    pan: 0.34,
   },
 };
 
@@ -114,7 +122,7 @@ export function seatCamera(view: Exclude<CameraView, "broadcast">, ball: Vector3
     target: seat.target.clone(),
     lerp: seat.lerp,
     fov: seat.fov,
-    fixed: true,
+    fixed: seat.fixed,
   };
   if (ball) {
     const strayed = seat.target.distanceTo(ball);

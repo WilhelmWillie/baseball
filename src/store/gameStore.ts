@@ -110,6 +110,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   ingest(feed) {
     const { director, snapshot, cursor } = get();
     const next = buildSnapshot(feed);
+    // Let the director know as early as the feed does that the game is over, so
+    // the third out that ends it plays as an ending, not a change of sides -
+    // there is no side left to bring back on. Set from the feed rather than the
+    // held-back snapshot so it is known before that final out is animated.
+    director.gameOver = next.status.isFinal;
 
     if (!snapshot) {
       // First read: jump straight to the live edge, do not replay the game.

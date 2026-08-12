@@ -75,6 +75,14 @@ export interface Actor {
   visible: boolean;
   /** 0 = solid, 1 = beamed out. Retired players dematerialise. */
   dissolve: number;
+  /**
+   * Set while an actor is resolving *in* from a beam - a new batter stepping
+   * up, or a side taking the field after the change of innings. Its `dissolve`
+   * counts back down to 0 every frame in `update`, which is the one direction
+   * every other user of `dissolve` never drives it: they all count up to a
+   * departure. Kept separate so a beam-in and a beam-out never fight.
+   */
+  arriving: boolean;
   label: string | null;
 }
 
@@ -166,6 +174,12 @@ const INNING_BEAM_OUT = 0.7;
 const INNING_HOLD = 2.0;
 /** How long a freshly beamed-in actor takes to solidify. */
 const MATERIALIZE_TIME = 0.6;
+/**
+ * After a batter is retired, how long the field holds - long enough for the
+ * beam-out to finish and a beat to land on it - before the camera cuts back to
+ * the pitcher for the next hitter.
+ */
+const POST_OUT_PAUSE = 1.1;
 
 export interface CallOut {
   text: string;
@@ -424,6 +438,22 @@ export class Director {
    * hold rather than go wandering off to a shot of nobody.
    */
   private awaitingReturn = false;
+  /**
+   * Which side was on the field when the half ended, i.e. the one that just
+   * beamed out. While we wait, a snapshot that still shows *this* side fielding
+   * with the inning already over is a stale reading of the half we just left -
+   * it must not be allowed to beam the departed side straight back in. The new
+   * half's snapshot (the other side fielding) is what releases the hold.
+   */
+  private awaitingSide: TeamSide | null = null;
+  /**
+   * Set by the store the moment the feed reports the game final, so the third
+   * out that ends it plays as an ending rather than a change of sides - there
+   * is no side to bring back on. Best-effort: a feed that is slow to mark the
+   * game over falls back to an empty park under the final scoreboard, which the
+   * game-over overlay covers.
+   */
+  gameOver = false;
 
   constructor() {
     this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
@@ -531,13 +561,33 @@ export class Director {
    *
    * When this lands the roster back after a change of sides, the new defense
    * does not simply appear: it beams in the same way a retired runner beams
-   * out, just in reverse, and `update`/`restIdle` carries the actual fade -
-   * this only lights the fuse.
+   * out, just in reverse, and `update` carries the actual fade - this only
+   * lights the fuse.
    */
   applySnapshot(snapshot: GameSnapshot) {
+    // Holding the park empty between halves. While we wait for the new side, a
+    // snapshot that still shows the side that just left fielding with the
+    // inning already three-out over is a stale reading of the half we came out
+    // of - let it through and it beams the departed team straight back onto the
+    // field for an instant before the real change lands. Keep waiting instead.
+    // A reversal (the out overturned, so the count drops back under three) is
+    // not stale: the same side belongs back on, and this lets them return.
+    if (
+      this.awaitingReturn &&
+      this.awaitingSide &&
+      snapshot.fieldingSide === this.awaitingSide &&
+      snapshot.count.outs >= 3
+    ) {
+      this.snapshot = snapshot;
+      return;
+    }
+
+    const prevBatterId = this.actors.get("bat")?.playerId;
+    const hadWorld = this.actors.size > 0;
     this.snapshot = snapshot;
     const materializing = this.awaitingReturn;
     this.awaitingReturn = false;
+    this.awaitingSide = null;
     const seen = new Set<string>();
     const batSide = snapshot.batter?.batSide ?? "R";
 
@@ -605,15 +655,31 @@ export class Director {
 
     if (materializing) {
       // The park was empty a moment ago. Every actor `upsert` just placed
-      // solid and visible gets pulled back to fully dissolved so there is
-      // something for the transporter effect to resolve out of - the actual
-      // fade back to solid runs one frame at a time in `restIdle`.
+      // solid and visible gets pulled back to fully dissolved and flagged
+      // arriving, so there is something for the transporter effect to resolve
+      // out of - the fade back to solid then runs one frame at a time in
+      // `update`, whether or not the game has already thrown the next pitch.
       const arriving = [...this.actors.values()];
-      for (const actor of arriving) actor.dissolve = 1;
+      for (const actor of arriving) {
+        actor.dissolve = 1;
+        actor.arriving = true;
+      }
       this.beamRoster(arriving);
       const half = snapshot.isTopInning ? "Top" : "Bottom";
       this.setCallout("PLAY BALL", "neutral", `${half} ${snapshot.inningOrdinal}`);
       this.setShot("center", { cut: true, force: true });
+    } else if (hadWorld && snapshot.batter && prevBatterId !== snapshot.batter.id) {
+      // A new hitter is at the plate. Rather than pop the last one out and the
+      // next one in, beam the newcomer up the way the retired batter beamed
+      // away - the same effect run backwards. Only on a genuine change of
+      // hitter, never between pitches to the same one, and never on the very
+      // first snapshot when the whole world is being placed at once.
+      const bat = this.actors.get("bat");
+      if (bat) {
+        bat.dissolve = 1;
+        bat.arriving = true;
+        this.beamRoster([bat]);
+      }
     }
   }
 
@@ -637,6 +703,7 @@ export class Director {
       existing.poseT = 0;
       existing.visible = true;
       existing.dissolve = 0;
+      existing.arriving = false;
       existing.role = config.role;
       existing.positionKey = config.positionKey;
       return;
@@ -658,6 +725,7 @@ export class Director {
       poseT: 0,
       visible: true,
       dissolve: 0,
+      arriving: false,
       label: null,
     });
     this.rosterVersion++;
@@ -720,6 +788,16 @@ export class Director {
     // The knock on the lens dies away over about half a second.
     if (this.cameraShake > 0) this.cameraShake = Math.max(0, this.cameraShake - dt * 2.4);
 
+    // Beam-ins resolve every frame, busy or idle. Play often resumes the
+    // instant a side lands - a pitch starts before the field is idle again - so
+    // leaving the fade to the idle path is what left the new fielders hanging
+    // as tiny half-beamed models through the first pitch of the half.
+    for (const actor of this.actors.values()) {
+      if (!actor.arriving) continue;
+      actor.dissolve = Math.max(0, actor.dissolve - dt / MATERIALIZE_TIME);
+      if (actor.dissolve <= 0) actor.arriving = false;
+    }
+
     if (this.isIdle()) {
       this.idleTime += dt;
       this.restIdle(dt);
@@ -741,12 +819,6 @@ export class Director {
     for (const actor of this.actors.values()) {
       if (!actor.visible) continue;
       actor.position.lerp(actor.home, k);
-      // A freshly beamed-in actor solidifies over a beat rather than snapping
-      // straight to solid - the only place `dissolve` ever climbs back down,
-      // since every other user of it counts down to a departure instead.
-      if (actor.dissolve > 0) {
-        actor.dissolve = Math.max(0, actor.dissolve - dt / MATERIALIZE_TIME);
-      }
       if (
         actor.pose === "run" ||
         actor.pose === "walk" ||
@@ -997,6 +1069,7 @@ export class Director {
         const hitter = this.batter();
         if (hitter) {
           hitter.dissolve = 0;
+          hitter.arriving = false;
           hitter.visible = true;
         }
         // Two strikes is worth a tight look at the hitter; every fourth pitch
@@ -1178,7 +1251,7 @@ export class Director {
 
     // Long enough after the call for the beam-out to finish playing.
     const holdAfter = result.kind === "home_run" ? 4.2 : 2.4;
-    const duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
+    let duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
     const cue = new Cue();
     /** Where the chasing defender and the diving one started from. */
@@ -1199,6 +1272,37 @@ export class Director {
 
     /** A strikeout is an out with nobody running: the batter simply leaves. */
     const retiresBatter = result.kind === "strikeout";
+
+    // When the last man retired on this play has finished beaming off the
+    // field. Retired players (a runner thrown out, or the strikeout victim)
+    // start their beam 0.3s after they are settled and are gone 0.65s later.
+    // A play with nobody out leaves this null - there is no send-off to wait on.
+    const outEnds = tracks.filter((tr) => tr.isOut).map((tr) => tr.end + 0.95);
+    if (retiresBatter) outEnds.push(revealAt + 0.95);
+    const retireEnd = outEnds.length ? Math.max(...outEnds) : null;
+
+    // Does this play end the half-inning? The third out is the trigger for the
+    // change of sides, not the feed's linescore catching up a beat later. Not
+    // when the game itself is over - there is no side to bring back on, so that
+    // third out is left to the game-over overlay instead.
+    const endsHalf = result.outsAfter >= 3 && !this.gameOver;
+
+    // The choreography of the change of sides, hung off the end of the play: a
+    // beat after the last out, the side in the field beams away together, the
+    // park holds empty, and `applySnapshot` brings the next half on once the
+    // feed says who they are. `awaitingReturn` covers the wait; see there.
+    const settleAt = retireEnd ?? Math.max(runnerEnd, ball ? throwEnd : 0.45);
+    const fieldBeamStart = settleAt + 0.6;
+    const intermissionEnd = fieldBeamStart + INNING_BEAM_OUT + INNING_HOLD;
+    let departingField: Actor[] | null = null;
+
+    if (endsHalf) {
+      duration = Math.max(duration, intermissionEnd);
+    } else if (retireEnd !== null) {
+      // Hold on the retired hitter long enough to see him go, then cut back to
+      // the pitcher for the next one rather than snapping away at the out.
+      duration = Math.max(duration, retireEnd + POST_OUT_PAUSE + 0.6);
+    }
 
     // The crowd is the home crowd: it cheers what is good for the home club and
     // groans at everything else, whichever side made the play.
@@ -1431,9 +1535,34 @@ export class Director {
           });
         }
 
+        // --- Change of sides ---
+        // The third out empties the field. A beat after the last man is gone,
+        // whoever is still standing there beams away together and the park
+        // holds empty until the next half's roster lands through
+        // `applySnapshot`. This owns the leaving and the wait; the arrival is
+        // out of this clock's hands.
+        if (endsHalf) {
+          cue.at("changeSides", t, fieldBeamStart, () => {
+            this.awaitingReturn = true;
+            this.awaitingSide = this.snapshot?.fieldingSide ?? null;
+            this.setShot("wide", { cut: true, force: true });
+            this.setCallout("SIDE RETIRED", "neutral", "Change of sides");
+            departingField = [...this.actors.values()].filter((a) => a.visible);
+            this.beamRoster(departingField);
+          });
+          if (departingField) {
+            const u = clamp01((t - fieldBeamStart) / INNING_BEAM_OUT);
+            for (const actor of departingField) {
+              actor.dissolve = u;
+              if (u >= 1) actor.visible = false;
+            }
+          }
+        }
+
         // --- Camera ---
         // A home run is three shots: low off the bat, wide as it leaves, then
-        // back to the plate for the trot. A strikeout is one, on the pitcher.
+        // back to the plate for the trot. The change of sides owns the camera
+        // once it starts, so the returns-to-the-pitcher below stand down for it.
         if (result.kind === "home_run") {
           cue.at("hr:wide", t, ballDuration + 0.85, () =>
             this.setShot("wide", { cut: true, force: true }),
@@ -1442,14 +1571,19 @@ export class Director {
             const trot = tracks.find((track) => track.scored);
             this.setShot("follow", { cut: true, force: true, follow: trot?.actorKey });
           });
-        } else if (!ball) {
-          cue.at("react", t, 0.4, () => {
-            if (result.kind === "strikeout") this.setShot("mound", { cut: true, force: true });
-          });
-        } else if (t > throwEnd) {
-          // The throw is caught and the play is over: back to the pitch camera.
-          // A cut, not a glide - centre field is three hundred feet from
-          // wherever the ball was, and sliding there would take all day.
+        } else if (endsHalf) {
+          // Handled by the change-of-sides cut above.
+        } else if (retireEnd !== null) {
+          // An out that keeps the half alive: watch the retired man beam off,
+          // let it breathe, then cut back to the pitcher for the next hitter -
+          // the long lens on a strikeout, centre field otherwise.
+          cue.at("post-out", t, retireEnd + POST_OUT_PAUSE, () =>
+            this.setShot(retiresBatter ? "mound" : "center", { cut: true, force: true }),
+          );
+        } else if (ball && t > throwEnd) {
+          // A hit: the throw is caught and the play is over, back to the pitch
+          // camera. A cut, not a glide - centre field is three hundred feet
+          // from wherever the ball was, and sliding there would take all day.
           this.setShot("center", { cut: true });
         }
       },
@@ -1458,6 +1592,14 @@ export class Director {
         for (const track of tracks) {
           const actor = this.actors.get(track.actorKey);
           if (actor && (track.isOut || track.scored)) actor.visible = false;
+        }
+        // The whole field left on the third out - make sure none of them are
+        // left behind half-beamed if the animation was cut short.
+        if (endsHalf && departingField) {
+          for (const actor of departingField) {
+            actor.dissolve = 1;
+            actor.visible = false;
+          }
         }
         this.onPlayResolved?.(result);
       },
@@ -1617,30 +1759,42 @@ export class Director {
   }
 
   /**
-   * The change of sides. Whoever is still on the field beams out together, the
-   * park holds empty for a beat, and it stays that way - the other half of the
-   * choreography, the new club beaming back in, only happens once the feed
-   * says who they are. That lands through `applySnapshot`, outside this
-   * animation's clock entirely, so all this one owns is the leaving and the
-   * wait: see `awaitingReturn`.
+   * The change of sides, as a fallback. The third out normally drives this
+   * straight off the play result (see `compileResult`), which is prompter and
+   * survives the feed's linescore lagging a beat behind the out. By the time
+   * this linescore-derived event arrives, the new half is usually already on
+   * the field - so it stands down unless the transition somehow has not
+   * happened yet (a half that ended on something other than a batter retired,
+   * say a runner caught stealing, which never reaches `compileResult`).
    */
   private compileInningChange(event: NormalizedEvent & { type: "inning_change" }): Anim {
-    // Whoever is actually on screen right now - the side that just made the
-    // third out, plus any runners left stranded when it happened.
-    const departing = [...this.actors.values()].filter((actor) => actor.visible);
-    const duration = INNING_BEAM_OUT + INNING_HOLD;
+    // Who fields in the half we are changing *to*. Top of an inning, the home
+    // side takes the field; the bottom, the visitors do.
+    const targetFieldingSide: TeamSide = event.isTopInning ? "home" : "away";
+    const fielderSide = this.pitcher()?.side ?? this.anyFielderSide();
+    // Already handled if the third-out path is mid-change, or if the field
+    // already shows the side that fields in the new half.
+    const redundant = this.awaitingReturn || fielderSide === targetFieldingSide;
+
+    // Whoever is actually on screen right now - only used on the fallback path.
+    const departing = redundant
+      ? []
+      : [...this.actors.values()].filter((actor) => actor.visible);
+    const duration = redundant ? 0.2 : INNING_BEAM_OUT + INNING_HOLD;
 
     return {
       label: `inning:${event.id}`,
       duration,
       onStart: () => {
-        this.setCallout(event.description.toUpperCase(), "neutral", "Intermission");
+        if (redundant) return;
+        this.setCallout(event.description.toUpperCase(), "neutral", "Change of sides");
         this.setShot("wide", { cut: true, force: true });
         this.awaitingReturn = true;
+        this.awaitingSide = this.snapshot?.fieldingSide ?? fielderSide;
         if (departing.length > 0) this.beamRoster(departing);
       },
       update: (t) => {
-        if (t >= INNING_BEAM_OUT) return;
+        if (redundant || t >= INNING_BEAM_OUT) return;
         const u = clamp01(t / INNING_BEAM_OUT);
         for (const actor of departing) {
           actor.dissolve = u;
@@ -1652,10 +1806,16 @@ export class Director {
           actor.dissolve = 1;
           actor.visible = false;
         }
-        // The wide shot of an empty park is the whole point of the hold -
-        // nothing to cut back to yet, so the camera is left right where it is.
       },
     };
+  }
+
+  /** The club currently in the field, read off any fielder we can find. */
+  private anyFielderSide(): TeamSide | null {
+    for (const actor of this.actors.values()) {
+      if (actor.role === "fielder") return actor.side;
+    }
+    return null;
   }
 
   /**

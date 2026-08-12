@@ -592,16 +592,16 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       atBatIndex,
     };
 
-    plays.push({
-      play,
-      eventTimes: times,
-      completeTime,
-      after: cloneState(state),
-    });
-
     clock = completeTime + SECONDS_AFTER_PLAY;
     atBatIndex++;
 
+    // Flip sides on the third out *before* snapshotting `after`. The play's own
+    // `about.inning`/`isTopInning` were baked in above and still name the half
+    // it was played in; but the state the feed reports once this play is
+    // published needs to be the new half already. Capturing `after` before the
+    // flip is what used to leave the linescore a full at-bat behind the third
+    // out - the departed side kept "fielding" through the first hitter of the
+    // next half until that hitter's at-bat completed.
     if (state.outs >= 3) {
       state.outs = 0;
       state.bases = [null, null, null];
@@ -609,6 +609,13 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       state.isTop = !state.isTop;
       clock += 10;
     }
+
+    plays.push({
+      play,
+      eventTimes: times,
+      completeTime,
+      after: cloneState(state),
+    });
   }
 
   return { plays, totalSeconds: clock };

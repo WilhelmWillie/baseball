@@ -74,13 +74,15 @@ reported it. Browsers block audio until the page is interacted with, so the firs
 click anywhere starts it. The 🔊 button mutes.
 
 **Camera modes** — the 🎥 button picks where you watch from. **Broadcast** is
-the default and is the directed feed: it cuts between angles as the game gives
-it something to say. The other three are seats that never cut — **Umpire**
-through the umpire's own eyes, in the slot behind the catcher with the pitch
-arriving at the lens; **Pitcher** from the mound, your cap in the bottom of the
-frame and the hitter sixty feet away; and **Bleachers** a dozen rows up in
-center field, where everything is small and far away and you can see the whole
-park. Your choice is remembered.
+the default and is the directed feed: it sits out in center field behind the
+pitcher, looking in at the hitter the way every televised pitch is framed, and
+cuts between angles as the game gives it something to say. Between pitches, if
+the game stays quiet long enough, it takes a few seconds somewhere else — the
+dugout, the runner at first, a wide of the park — and comes back. The other
+three are seats that never cut: **Home Plate** high behind the plate with the
+whole diamond ahead of you, **Umpire** through the umpire's own eyes in the slot
+behind the catcher with the pitch arriving at the lens, and **Sky** near enough
+straight down on the park from a few hundred feet up. Your choice is remembered.
 
 **Simulated game** (`/watch/demo`) — a scripted game emitted in the exact shape
 of MLB's GUMBO feed, so it exercises the same adapter and animation path a real
@@ -282,22 +284,41 @@ shadow-casting sun.
 ### Cameras
 
 Broadcasts do not glide between angles — they cut - and they change lenses to
-say something about the moment. The director owns a shot list: **broadcast**
-behind the plate, **slot** over the catcher on any two-strike pitch, **mound** on
-a long lens every fourth pitch (cut back at release so the pitch stays
-trackable), **ball** tracking a batted ball, **low** at field level down the
-third-base line off a home run or a triple, **wide** as the ball leaves the park,
-and **follow** travelling with the runner on the trot. Each shot holds for a
-minimum time so nothing strobes when several things happen at once, and hard
-contact knocks the lens for about half a second.
+say something about the moment. The director owns a shot list, and the one it
+keeps coming back to is **center**: out past the mound, up over the batter's
+eye, behind the pitcher and looking in at the hitter, which is how every pitch
+on television has ever been framed. Around it sit **slot** over the catcher on
+any two-strike pitch, **mound** on a long lens every fourth pitch (cut back at
+release so the pitch stays trackable), **ball** tracking a batted ball, **low**
+at field level down the third-base line off a home run or a triple, **wide** as
+the ball leaves the park, and **follow** travelling with the runner on the trot.
+Each shot holds for a minimum time so nothing strobes when several things happen
+at once, and hard contact knocks the lens for about half a second.
+
+The center-field camera has to sit higher than a real one does, and that is the
+figure scale again: the players are drawn at 2.4x life size but the sixty feet
+between them are not, so a camera at a realistic elevation would frame a
+pitcher who blots out the hitter entirely. From up where it is, the hitter's
+feet clear the pitcher's cap and the two read as two people rather than one
+silhouette.
+
+Between pitches the feed has the same problem a real one does — twenty-odd
+seconds of nobody doing anything. If the game stays quiet for seven of them it
+takes a **line**, **base**, **bowl**, **slot**, **mound** or **wide** for about
+four seconds and then cuts home; the shot of the runner at first is skipped when
+there is no runner on it. The gap before the next cutaway is counted in real
+seconds rather than in idle time, which is what stops it happening every single
+pitch. Anything the feed sends interrupts a cutaway immediately: the play's own
+shot always wins.
 
 That directed feed is one of four camera modes, and the default. The other three
-are seats rather than shots: one vantage, one lens, held all game. Two of them
-are somebody's eyes. Both sit a little higher than the person whose view they
-are — the figures are drawn at 2.4x life size, so a head is enormous, and an
-umpire at his real eye height would spend the game looking at the back of the
-catcher's helmet rather than over it. The pitcher's seat clears his own cap for
-the same reason, which leaves the cap itself along the bottom of the frame.
+are seats rather than shots: one vantage, one lens, held all game. The umpire's
+sits a little higher than the person whose view it is — the figures are drawn at
+2.4x life size, so a head is enormous, and an umpire at his real eye height
+would spend the game looking at the back of the catcher's helmet rather than
+over it. The sky seat is tipped about ten degrees off vertical rather than
+pointed straight down, because a camera looking along the world's up axis has no
+way to decide which way is up in frame.
 
 A seat does not cut and it does not chase, but its gaze swings part-way after a
 ball hit away from what it is aimed at, the way a head turns; a pitch lands
@@ -306,11 +327,11 @@ There is still no orbit control — a fixed set of framings composed against the
 park reads better than one dragged around by hand.
 
 Name plates scale down as the camera closes in - sprites otherwise grow with
-proximity, and on a tight shot a plate would fill the frame. The bleacher seat
-watches through a much longer lens than the broadcast one, which magnifies a
-sprite the same way proximity does, so the plates are scaled off the lens as
-well, and a plate whose player the lens is sitting on is dropped outright: from
-the mound, the pitcher does not need to be told his own name.
+proximity, and on a tight shot a plate would fill the frame. The long lenses -
+the center-field camera, the seats - magnify a sprite the same way proximity
+does, so the plates are scaled off the lens as well, and a plate whose player the
+lens is sitting on is dropped outright: from the umpire's seat, the catcher does
+not need to be told his own name.
 
 ### Grounding
 
@@ -407,11 +428,17 @@ a bar along the bottom, where a thumb reaches them.
 slice of the world horizontally — on a portrait phone the diamond falls out of
 frame at either side. The rig holds the horizontal field of view roughly
 constant instead, widening the vertical one as the aspect narrows — off
-whichever lens the current shot was composed on. That leaves a lot of empty
-grass above and below, so it also pulls its framing in toward the infield in
-proportion to how portrait the screen is. A chosen seat keeps its own aim
-through that — re-pointing it at the infield would not be that seat any more —
-and only moves up a little.
+whichever lens the current shot was composed on. Only so far, though: holding
+the width of a long lens would mean opening it up past seventy degrees, and the
+subject it was framed on would be a few pixels tall, so past about half again
+its own lens a shot gives up the width instead.
+
+That still leaves a lot of empty grass above and below, so the rig also pulls
+its framing in toward the infield in proportion to how portrait the screen is.
+Shots already aimed at a subject — a chosen seat, the center-field camera, the
+tight ones — keep their own aim through that, since re-pointing them at the
+middle of the diamond would not be that shot any more, and only move up a
+little.
 
 The controls drop to their icons, the camera picker opens above the bar instead
 of below it, the weather line and the connection badge are dropped, and the

@@ -94,7 +94,13 @@ export interface BallState {
  * simply not what the rig is looking through.
  */
 export type CameraMode =
-  | "broadcast"
+  /**
+   * The centre-field camera: out past the mound, up over the batter's eye,
+   * behind the pitcher and looking in at the hitter. Every pitch a real
+   * broadcast shows is framed from here, and it is the shot this one returns
+   * to whenever it has nothing better to be doing.
+   */
+  | "center"
   | "wide"
   | "ball"
   | "base"
@@ -104,6 +110,10 @@ export type CameraMode =
   | "mound"
   /** Over the catcher, tight on the hitter. */
   | "slot"
+  /** Field level down the first-base line, looking back in at the plate. */
+  | "line"
+  /** High in the third-base stands, across the diamond. */
+  | "bowl"
   /** Travels with whichever actor `cameraFollowKey` names. */
   | "follow";
 
@@ -113,8 +123,36 @@ const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
   mound: 0.9,
   slot: 0.9,
   wide: 1.2,
+  line: 0.9,
+  bowl: 0.9,
   follow: 1,
 };
+
+/**
+ * Angles the broadcast wanders to while nothing is happening, in the order it
+ * takes them. A real feed fills the twenty-odd seconds between pitches with the
+ * dugout, the runner at first, a wide of the park - never for long, and never
+ * so often that you lose track of where the game is.
+ */
+const IDLE_SHOTS: CameraMode[] = ["mound", "line", "base", "bowl", "slot", "wide"];
+
+/** How long after a play ends before the camera settles back on the pitch. */
+const IDLE_SETTLE = 0.9;
+/**
+ * How long the game has to have been quiet before the broadcast looks away,
+ * and how long it stays away. Seven seconds is past the point where a pitch was
+ * about to be thrown, so a cutaway only ever starts in a genuine lull.
+ */
+const IDLE_CUTAWAY_AFTER = 7;
+const IDLE_CUTAWAY_HOLD = 4.5;
+/**
+ * And the wall-clock gap between one cutaway and the next. This one is not
+ * measured in idle time but in real seconds since the camera last came back,
+ * which is what keeps the rate down: a real game leaves twenty-odd seconds
+ * between pitches, and a feed that used every one of them would be cutting away
+ * once a pitch. Roughly every other lull is the right amount of restlessness.
+ */
+const IDLE_CUTAWAY_GAP = 26;
 
 export interface CallOut {
   text: string;
@@ -307,7 +345,7 @@ export class Director {
     scale: 1,
     trail: [],
   };
-  cameraMode: CameraMode = "broadcast";
+  cameraMode: CameraMode = "center";
   /** How hard the ball camera pans off the broadcast framing, 0..1. */
   cameraFollow = 0.35;
   cameraFocus = fp(0, 60, 4);
@@ -347,6 +385,13 @@ export class Director {
   private shotStart = 0;
   /** Counts pitches, so the pre-pitch shot varies without being random. */
   private pitchCount = 0;
+  /** Where in `IDLE_SHOTS` the next cutaway comes from. */
+  private idleShot = 0;
+  /** `idleTime` at which the camera comes back from the cutaway it is on. */
+  private idleCutEnd = 0;
+  private onIdleCutaway = false;
+  /** Wall clock at which the last cutaway ended, for the gap between them. */
+  private lastCutawayAt = 0;
 
   constructor() {
     this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
@@ -596,6 +641,7 @@ export class Director {
         this.currentTime = 0;
         this.currentStart = this.now();
         this.idleTime = 0;
+        this.resetIdleCamera();
         anim.onStart?.();
         anim.update(0, 0);
       }
@@ -652,14 +698,64 @@ export class Director {
         actor.poseT += dt;
       }
     }
-    // Everything settles back to the broadcast framing between plays, and it
-    // cuts there rather than drifting across the park.
-    if (this.idleTime > 0.9 && this.cameraMode !== "broadcast") {
-      this.setShot("broadcast", { cut: true });
-    }
+    this.idleCamera();
     if (this.ball.visible && this.idleTime > 1.2) {
       this.ball.visible = false;
     }
+  }
+
+  /**
+   * What the broadcast looks at while it waits. The play ends, the shot cuts
+   * home to centre field, and then - only if the game stays quiet for a good
+   * while longer - it takes a few seconds somewhere else before coming back.
+   *
+   * The pacing is the point. Cutting away every couple of seconds would read as
+   * a screensaver rather than a broadcast, and a viewer who looks up mid-cutaway
+   * should still be back on the pitch well before it is thrown.
+   */
+  private idleCamera() {
+    if (this.idleTime < IDLE_SETTLE) return;
+
+    if (this.onIdleCutaway) {
+      if (this.idleTime < this.idleCutEnd) return;
+      this.endIdleCutaway();
+      this.setShot("center", { cut: true, force: true });
+      return;
+    }
+
+    // Coming out of a play: home first, and the lull is measured from there.
+    if (this.cameraMode !== "center") {
+      this.setShot("center", { cut: true, force: true });
+      return;
+    }
+
+    if (this.idleTime < IDLE_CUTAWAY_AFTER) return;
+    if (this.now() - this.lastCutawayAt < IDLE_CUTAWAY_GAP * 1000) return;
+    // The runner at first is only a shot when there is one; with the bases
+    // empty it is a picture of a base.
+    const shots = this.snapshot?.runners.first
+      ? IDLE_SHOTS
+      : IDLE_SHOTS.filter((mode) => mode !== "base");
+    const shot = shots[this.idleShot % shots.length];
+    this.idleShot += 1;
+    this.onIdleCutaway = true;
+    this.idleCutEnd = this.idleTime + IDLE_CUTAWAY_HOLD;
+    this.setShot(shot, { cut: true, force: true });
+  }
+
+  private endIdleCutaway() {
+    this.onIdleCutaway = false;
+    this.lastCutawayAt = this.now();
+  }
+
+  /**
+   * Something is about to happen. Whatever the camera had wandered off to, the
+   * play's own shot takes over from here - and a cutaway the game interrupted
+   * still counts as one, so the next is a full gap away rather than immediately
+   * after the pitch that cut it short.
+   */
+  private resetIdleCamera() {
+    if (this.onIdleCutaway) this.endIdleCutaway();
   }
 
   private compileNext(): Anim | null {
@@ -826,15 +922,18 @@ export class Director {
         }
         // Two strikes is worth a tight look at the hitter; every fourth pitch
         // otherwise gets the long lens on the pitcher, cut back at release.
+        // Everything else is thrown from centre field, the way every pitch on
+        // television is - and it cuts there, whether it is coming back from a
+        // cutaway or from the last play.
         if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
         else if (this.pitchCount % 4 === 0) this.setShot("mound", { cut: true, force: true });
-        else this.setShot("broadcast", { force: true });
+        else this.setShot("center", { cut: true, force: true });
       },
       update: (t) => {
         flight.update(t);
         if (this.cameraMode === "mound") {
           cue.at("cutback", t, flight.releaseAt, () =>
-            this.setShot("broadcast", { cut: true, force: true }),
+            this.setShot("center", { cut: true, force: true }),
           );
         }
         if (swings || pitch.outcome === "in_play") {
@@ -1264,7 +1363,10 @@ export class Director {
             if (result.kind === "strikeout") this.setShot("mound", { cut: true, force: true });
           });
         } else if (t > throwEnd) {
-          this.setShot("broadcast");
+          // The throw is caught and the play is over: back to the pitch camera.
+          // A cut, not a glide - centre field is three hundred feet from
+          // wherever the ball was, and sliding there would take all day.
+          this.setShot("center", { cut: true });
         }
       },
       onEnd: () => {
@@ -1440,7 +1542,7 @@ export class Director {
       },
       update: () => {},
       onEnd: () => {
-        this.setShot("broadcast", { cut: true, force: true });
+        this.setShot("center", { cut: true, force: true });
       },
     };
   }
@@ -1449,6 +1551,9 @@ export class Director {
    * Desired camera placement. `view` is the seat the viewer picked: anything
    * other than "broadcast" ignores the shot list and holds that vantage, so the
    * game plays out in front of a camera that never cuts.
+   *
+   * The broadcast's home shot is `center`, and every branch below is somewhere
+   * it goes and comes back from.
    */
   desiredCamera(view: CameraView = "broadcast"): Shot {
     if (view !== "broadcast") {
@@ -1476,7 +1581,16 @@ export class Director {
         };
       }
       case "base":
-        return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
+        // The runner at first, from the seats down the line. Aimed at chest
+        // height rather than at the bag itself, which used to put the bag in
+        // the middle of frame and everybody standing near it out of the top.
+        return {
+          position: fp(100, 30, 14),
+          target: fp(62, 64, 7.6),
+          lerp: 2,
+          fov: 32,
+          fixed: true,
+        };
       case "low": {
         // Low down the third-base line, looking out with the ball. Nothing
         // sells distance like a camera at eye level under a rising fly.
@@ -1487,11 +1601,36 @@ export class Director {
         return { position: fp(-62, -18, 13), target, lerp: 2.6 };
       }
       case "mound":
-        // Long lens from behind the plate, framed on the pitcher.
-        return { position: fp(3, -34, 11), target: fp(0, 55, 5.5), lerp: 2.1 };
+        // Long lens from high behind the plate, framed on the pitcher. Up at
+        // the back of the bowl rather than down at field level: from low
+        // behind the catcher, a figure drawn at 2.4x life size twenty feet
+        // away *is* the shot, and the pitcher it was supposed to be about
+        // disappears behind his helmet.
+        return {
+          position: fp(4, -56, 30),
+          target: fp(0, 58, 7.4),
+          lerp: 2.1,
+          fov: 26,
+          fixed: true,
+        };
       case "slot":
         // Over the catcher's shoulder, tight on the hitter.
-        return { position: fp(13, -21, 12), target: fp(1, 7, 5), lerp: 2.3 };
+        return { position: fp(13, -21, 12), target: fp(-2, 8, 6.5), lerp: 2.3, fixed: true };
+      case "line":
+        // Field level by the first-base dugout, square on the hitter from his
+        // open side. The mound falls outside the frame, which is the point -
+        // this one is about the swing, not the pitch.
+        return {
+          position: fp(58, -8, 11),
+          target: fp(-6, -2, 8),
+          lerp: 2,
+          fov: 34,
+          fixed: true,
+        };
+      case "bowl":
+        // High in the third-base stands, across the diamond and out toward
+        // right field, with a few rows of crowd along the near edge of frame.
+        return { position: fp(-166, -26, 74), target: fp(-6, 36, 6), lerp: 1.4 };
       case "follow": {
         const actor = this.cameraFollowKey ? this.actors.get(this.cameraFollowKey) : undefined;
         const at = actor ? actor.position : fp(0, 40, 0);
@@ -1501,12 +1640,33 @@ export class Director {
           lerp: 3.4,
         };
       }
-      default:
+      case "center":
+      default: {
+        // The centre-field camera. Out past the mound and well up, so the
+        // sightline to the hitter clears the pitcher's cap: the pitcher sits
+        // low in frame with his back to the lens, the hitter, catcher and
+        // umpire above him, and the pitch travels away from the camera the way
+        // it does on every broadcast there has ever been.
+        //
+        // Offset a little to the first-base side rather than sitting on the
+        // pitcher-to-plate line, which is what keeps the two figures from
+        // stacking into one silhouette. Real parks put the camera wherever the
+        // seating bowl allows and it is never quite centred either.
+        //
+        // A long lens, necessarily. The figures are drawn at 2.4x life size but
+        // the field is not, so a camera far enough back to sit in centre field
+        // needs to be zoomed a long way in before a hitter reads as a hitter.
         return {
-          position: fp(0, -78, 55),
-          target: fp(0, 100, 4),
-          lerp: 1.6,
+          position: fp(-1, 176, 52),
+          target: fp(-1.5, 30, 6),
+          lerp: 1.8,
+          fov: 27,
+          // Already aimed at the hitter. Dragging it toward the middle of the
+          // infield on a phone would point it at the grass in front of the
+          // mound and stand everybody up along the top edge of the frame.
+          fixed: true,
         };
+      }
     }
   }
 }

@@ -159,10 +159,11 @@ swing duration, throw release fraction, the plate-height mapping that fits a
 real strike zone onto figures drawn at 2.4× life size).
 
 **`lib/anim/views.ts`** — the four camera modes the viewer can pick between.
-`broadcast` (the default) defers to the director's shot list; `umpire` and
-`pitcher` are first-person, and `bleachers` is a seat in center field. Each
-fixed one is a position, an aim, a lens and how far its gaze pans after a ball
-hit away from it. Also the localStorage helpers that remember the choice.
+`broadcast` (the default) defers to the director's shot list; `home_plate` looks
+out over the whole diamond from behind the plate, `umpire` is first-person, and
+`sky` is near enough straight down. Each fixed one is a position, an aim, a lens
+and how far its gaze pans after a ball hit away from it. Also the localStorage
+helpers that remember the choice.
 
 **`lib/anim/pitches.ts`** — per-pitch-type `drop` and `run`, in g, applied as
 accelerations so the shape develops over the flight the way a real pitch does.

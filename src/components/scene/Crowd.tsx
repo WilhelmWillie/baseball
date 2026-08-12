@@ -53,6 +53,10 @@ const SWAY_RATE = 0.23;
 /** Eyes. Dark enough to read at six pixels, not so dark they look like holes. */
 const EYE = "#2b2426";
 
+/** How far round the skull the crown of hair goes, and the gap left for a face. */
+const CAP_THETA = Math.PI * 0.42;
+const FACE_OPEN = 0.85;
+
 /**
  * TODO: react to the play. The director already knows when something has
  * happened and how big it was - `crowdVoice` computes exactly that for the
@@ -62,10 +66,21 @@ const EYE = "#2b2426";
  * machine.
  */
 
+/**
+ * A hair mesh and the fans it covers. Hair is the one part that comes in two
+ * shapes, so it is the one part drawn over a subset: `who[k]` is the fan sitting
+ * in slot `k` of this mesh.
+ */
+interface Hair {
+  mesh: InstancedMesh;
+  who: Int32Array;
+}
+
 interface Parts {
   bodies: InstancedMesh;
   heads: InstancedMesh;
-  hair: InstancedMesh;
+  cropped: Hair;
+  long: Hair;
   eyes: InstancedMesh;
   /** Clock at which the next idle step is due. */
   nextAt: number;
@@ -99,7 +114,6 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
   parts.nextAt = t + 1 / STEP_RATE;
   const bodyM = parts.bodies.instanceMatrix.array as Float32Array;
   const headM = parts.heads.instanceMatrix.array as Float32Array;
-  const hairM = parts.hair.instanceMatrix.array as Float32Array;
   const eyeM = parts.eyes.instanceMatrix.array as Float32Array;
   for (let i = 0; i < fans.length; i++) {
     const fan = fans[i];
@@ -116,16 +130,25 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
     bodyM[m + 13] = rest.body[r + 1] + bob;
     headM[m + 12] = headX;
     headM[m + 13] = headY;
-    hairM[m + 12] = headX;
-    hairM[m + 13] = headY + rest.hairLift[i];
     // The eyes share the head's transform exactly: same seat, same facing, same
     // scale, so they are baked into the head's local frame and simply ride it.
     eyeM[m + 12] = headX;
     eyeM[m + 13] = headY;
   }
+  // Hair comes in two shapes and so lives in two meshes over two subsets of the
+  // crowd. Rather than branch inside the loop above, each one reads the head
+  // position back out of the buffer that loop just wrote.
+  for (const hair of [parts.cropped, parts.long]) {
+    const hairM = hair.mesh.instanceMatrix.array as Float32Array;
+    for (let k = 0; k < hair.who.length; k++) {
+      const i = hair.who[k];
+      hairM[k * 16 + 12] = headM[i * 16 + 12];
+      hairM[k * 16 + 13] = headM[i * 16 + 13] + rest.hairLift[i];
+    }
+    hair.mesh.instanceMatrix.needsUpdate = true;
+  }
   parts.bodies.instanceMatrix.needsUpdate = true;
   parts.heads.instanceMatrix.needsUpdate = true;
-  parts.hair.instanceMatrix.needsUpdate = true;
   parts.eyes.instanceMatrix.needsUpdate = true;
 }
 
@@ -144,27 +167,71 @@ function eyePair(headRadius: number): BufferGeometry {
   eye.scale(0.9, 1.15, 0.5);
   const left = eye.clone().translate(-headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
   const right = eye.translate(headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
-  return joinGeometries(left, right);
+  return joinGeometries([left, right]);
 }
 
 /**
- * Concatenate two non-indexed geometries. three ships a utility for this in its
- * examples, but pulling that path in for one call to weld two spheres together
- * is not worth it.
+ * Hair cropped close: the top of a sphere a little larger than the skull, sat
+ * over it. It has to stop well above the eyes - taken any further round it stops
+ * reading as hair and starts reading as a motorcycle helmet. The same dome does
+ * duty as a club cap when it is painted in the home colours.
  */
-function joinGeometries(a: BufferGeometry, b: BufferGeometry): BufferGeometry {
-  const flat = [a.toNonIndexed(), b.toNonIndexed()];
+function croppedHair(headRadius: number): BufferGeometry {
+  const cap = new SphereGeometry(headRadius * 1.05, 7, 3, 0, Math.PI * 2, 0, CAP_THETA);
+  cap.scale(1, 0.95, 1);
+  return cap;
+}
+
+/**
+ * Hair down past the ears. The same crown as above, plus a second sphere band
+ * carrying on from where it stops - stretched taller so it falls to the
+ * shoulders, and with a window left open at the front so it frames the face
+ * rather than covering it.
+ *
+ * At six pixels of head there is no room for a face to do this, and a body is a
+ * capsule, so the hairline is the whole of the difference.
+ */
+function longHair(headRadius: number): BufferGeometry {
+  const r = headRadius * 1.05;
+  const cap = new SphereGeometry(r, 9, 3, 0, Math.PI * 2, 0, CAP_THETA);
+  cap.scale(1, 0.95, 1);
+  // The face sits on +Z, which is phi = PI/2 in three's sphere; the fall covers
+  // everything except a window either side of it.
+  const fall = new SphereGeometry(
+    r,
+    10,
+    4,
+    Math.PI / 2 + FACE_OPEN,
+    Math.PI * 2 - FACE_OPEN * 2,
+    CAP_THETA,
+    Math.PI * 0.44,
+  );
+  // Stretch it down, then drop it back so its top rim still meets the crown's.
+  const stretch = 1.5;
+  fall.scale(1, stretch, 1);
+  fall.translate(0, r * Math.cos(CAP_THETA) * (0.95 - stretch), 0);
+  return joinGeometries([cap, fall]);
+}
+
+/**
+ * Concatenate non-indexed geometries. three ships a utility for this in its
+ * examples, but pulling that path in to weld a few spheres together is not
+ * worth it.
+ */
+function joinGeometries(parts: BufferGeometry[]): BufferGeometry {
+  const flat = parts.map((g) => g.toNonIndexed());
   const out = new BufferGeometry();
   for (const name of ["position", "normal"]) {
-    const parts = flat.map((g) => g.getAttribute(name).array as Float32Array);
-    const merged = new Float32Array(parts[0].length + parts[1].length);
-    merged.set(parts[0], 0);
-    merged.set(parts[1], parts[0].length);
+    const arrays = flat.map((g) => g.getAttribute(name).array as Float32Array);
+    const merged = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
+    let at = 0;
+    for (const a of arrays) {
+      merged.set(a, at);
+      at += a.length;
+    }
     out.setAttribute(name, new BufferAttribute(merged, 3));
   }
-  a.dispose();
-  b.dispose();
-  for (const g of flat) g.dispose();
+  for (const g of [...parts, ...flat]) g.dispose();
   return out;
 }
 
@@ -191,26 +258,27 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
     // are ever seen, and there are a thousand-odd of them.
     const headGeometry = new SphereGeometry(radius, 7, 5);
     headGeometry.scale(1, 1.06, 0.94);
-    // Hair is what turns a beige sphere into a person at this size. A cap
-    // rather than a full second head: the top of a slightly larger sphere, sat
-    // over the skull. It has to stop well above the eyes - taken any further
-    // round it stops reading as hair and starts reading as a motorcycle helmet.
-    const hairGeometry = new SphereGeometry(radius * 1.05, 7, 3, 0, Math.PI * 2, 0, Math.PI * 0.42);
-    hairGeometry.scale(1, 0.95, 1);
-
+    const everyone = fans.map((_, i) => i);
     return {
-      bodies: makeMesh(bodyGeometry, fans, (fan) => fan.shirt),
-      heads: makeMesh(headGeometry, fans, (fan) => fan.skin),
-      hair: makeMesh(hairGeometry, fans, (fan) => fan.hair),
+      bodies: makeMesh(bodyGeometry, fans, everyone, (fan) => fan.shirt),
+      heads: makeMesh(headGeometry, fans, everyone, (fan) => fan.skin),
+      cropped: makeHair(croppedHair(radius), fans, false),
+      long: makeHair(longHair(radius), fans, true),
       // Unlit, so a fan in the shade of the upper deck still has eyes.
-      eyes: makeMesh(eyePair(radius), fans, () => EYE, true),
+      eyes: makeMesh(eyePair(radius), fans, everyone, () => EYE, true),
       nextAt: 0,
     };
   }, [fans]);
 
   useEffect(() => {
     return () => {
-      for (const mesh of [parts.bodies, parts.heads, parts.hair, parts.eyes]) {
+      for (const mesh of [
+        parts.bodies,
+        parts.heads,
+        parts.cropped.mesh,
+        parts.long.mesh,
+        parts.eyes,
+      ]) {
         mesh.geometry.dispose();
         (mesh.material as MeshLambertMaterial).dispose();
         mesh.dispose();
@@ -245,15 +313,27 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
     <>
       <primitive object={parts.bodies} />
       <primitive object={parts.heads} />
-      <primitive object={parts.hair} />
+      <primitive object={parts.cropped.mesh} />
+      <primitive object={parts.long.mesh} />
       <primitive object={parts.eyes} />
     </>
   );
 }
 
+/** One hair mesh over the half of the crowd wearing it. */
+function makeHair(geometry: BufferGeometry, fans: Fan[], long: boolean): Hair {
+  const who: number[] = [];
+  for (let i = 0; i < fans.length; i++) if (fans[i].longHair === long) who.push(i);
+  return {
+    mesh: makeMesh(geometry, fans, who, (fan) => fan.hair),
+    who: Int32Array.from(who),
+  };
+}
+
 function makeMesh(
   geometry: BufferGeometry,
   fans: Fan[],
+  who: number[],
   pick: (fan: Fan) => string,
   unlit = false,
 ): InstancedMesh {
@@ -262,18 +342,18 @@ function makeMesh(
     unlit
       ? new MeshBasicMaterial({ toneMapped: false })
       : new MeshLambertMaterial({ flatShading: true }),
-    fans.length,
+    who.length,
   );
   const dummy = new Object3D();
   const color = new Color();
-  for (let i = 0; i < fans.length; i++) {
-    const fan = fans[i];
+  for (let k = 0; k < who.length; k++) {
+    const fan = fans[who[k]];
     dummy.position.set(fan.p[0], fan.p[1], fan.p[2]);
     dummy.rotation.set(0, fan.yaw, 0);
     dummy.scale.setScalar(fan.scale);
     dummy.updateMatrix();
-    mesh.setMatrixAt(i, dummy.matrix);
-    mesh.setColorAt(i, color.set(pick(fan)));
+    mesh.setMatrixAt(k, dummy.matrix);
+    mesh.setColorAt(k, color.set(pick(fan)));
   }
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

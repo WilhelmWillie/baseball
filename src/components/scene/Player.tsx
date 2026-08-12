@@ -61,7 +61,18 @@ const HIP_HEIGHT = 2.92;
  * leaves the forearms sprouting from the sternum. Letting the forearm swing in
  * at the elbow keeps the upper arms hanging outside the body where they belong.
  */
-const BAT_STANCE = { arm: -0.75, elbow: -1.95, spread: 0.05, elbowIn: 1.3 };
+const BAT_STANCE = { arm: -0.82, elbow: -1.72, spread: 0.26, elbowIn: 0.86 };
+
+/**
+ * How far the hitter's head comes round off his shoulders to watch the pitcher,
+ * signed by which box he is in.
+ *
+ * A stance is square to the plate, so a hitter who only faced the way his chest
+ * does would spend the at-bat looking at the catcher. A real one turns his head
+ * most of a right angle; so does this one, which is also what puts his face
+ * toward the camera in centre field rather than the back of his helmet.
+ */
+const LOOK_AT_MOUND = 1.46;
 
 /**
  * Bat attitude in torso space, as a direction from the hands to the barrel.
@@ -551,6 +562,7 @@ function poseValues(
   t: number,
   clock: number,
   isBatter = false,
+  batSide: "R" | "L" = "R",
 ): PoseValues {
   const life = idleLife(clock);
 
@@ -577,7 +589,7 @@ function poseValues(
       elbowR: BAT_STANCE.elbow,
       armSpread: BAT_STANCE.spread,
       elbowIn: BAT_STANCE.elbowIn,
-      headYaw: life.headYaw * 0.3,
+      headYaw: (batSide === "R" ? LOOK_AT_MOUND : -LOOK_AT_MOUND) + life.headYaw * 0.16,
       headTilt: life.headTilt,
     };
   }
@@ -1338,6 +1350,7 @@ export function Player({
       live.poseT,
       state.clock.elapsedTime + live.playerId,
       actor.role === "batter",
+      live.batSide ?? "R",
     );
     // Leaning the legs sideways shortens their vertical reach, so the hips have
     // to come down by the same amount or the boots lift off the grass.

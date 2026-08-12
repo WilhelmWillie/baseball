@@ -242,9 +242,32 @@ export const FIELDING_SPOTS: Record<PositionKey, Vector3> = {
   right: fp(132, 262),
 };
 
-/** Batter's box. A right-handed hitter stands on the third-base side. */
+/**
+ * The batter's box. A right-handed hitter stands on the third-base side.
+ *
+ * Deeper in the box than a tape measure would put him. The figures are drawn at
+ * 2.4x life size and the box is not, so a hitter standing a real two and a half
+ * feet off the plate has the catcher crouching inside his own shoulder - and
+ * from a camera in centre field, looking almost straight down the line the two
+ * are stacked along, they merge into one figure. Standing him off gives the
+ * pair somewhere to separate; `CONTACT` in the director follows him out so the
+ * ball still meets the bat.
+ */
 export function batterSpot(batSide: "R" | "L"): Vector3 {
-  return fp(batSide === "R" ? -6 : 6, 2.4);
+  return fp((batSide === "R" ? -1 : 1) * 9.2, BATTER_BOX.depth);
+}
+
+/**
+ * The chalk, in lateral feet from the middle of the plate. Wider than a real
+ * box for the same reason the hitter stands deeper in it - the figure in it is
+ * drawn at 2.4x and the chalk is not - and `batterSpot` puts him in its outer
+ * half, off the plate, which is where the room is.
+ */
+export const BATTER_BOX = { inner: 2.6, outer: 13.2, depth: 2.4, length: 9.4 };
+
+/** How far off the plate the hitter is standing, signed. */
+export function batterOffset(batSide: "R" | "L"): number {
+  return batterSpot(batSide).x;
 }
 
 export function onDeckSpot(batSide: "R" | "L"): Vector3 {

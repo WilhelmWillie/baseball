@@ -115,6 +115,13 @@ export interface Fan {
   shirt: string;
   skin: string;
   hair: string;
+  /**
+   * Drawn with hair down past the ears rather than a cropped cap. It is the
+   * only thing that reads as a woman on a figure this size and this simple -
+   * there is no room for a face, and a body is a capsule - and the crowd is
+   * split half and half on it.
+   */
+  longHair: boolean;
   /** Overall size multiplier, so a crowd is not one person repeated. */
   scale: number;
   /** Where in its idle cycle this one starts, 0..1. */
@@ -254,18 +261,21 @@ function seatRow(
     const offset = (s - (seats - 1) / 2) * pitch;
     const roll = noise(x + s * 3.1, z, salt + s);
     const hat = noise(x, z + s * 2.7, salt + 31);
+    const longHair = noise(x + s * 1.7, z + s, salt + 47) < 0.5;
+    // A club cap goes over cropped hair only - it is the same dome geometry,
+    // just painted, and there is nowhere to put it on the long-haired half.
+    const capped = !longHair && hat < 0.34;
     fans.push({
       p: [x + tangentX * offset, y, z + tangentZ * offset],
       yaw,
       shirt: crowdShirt(roll, palette),
       skin: SKIN_TONES[Math.floor(roll * 97) % SKIN_TONES.length],
-      // One in five is wearing the cap rather than showing their hair, which
-      // sprinkles club colour through the bowl at head height as well as at
-      // shirt height.
-      hair:
-        hat < 0.18
-          ? palette.home[hat < 0.13 ? 0 : 1]
-          : HAIR_TONES[Math.floor(hat * 89) % HAIR_TONES.length],
+      // The capped ones sprinkle club colour through the bowl at head height as
+      // well as at shirt height.
+      hair: capped
+        ? palette.home[hat < 0.24 ? 0 : 1]
+        : HAIR_TONES[Math.floor(hat * 89) % HAIR_TONES.length],
+      longHair,
       scale: 0.88 + noise(x, z + s * 5.3, salt + 11) * 0.26,
       phase: noise(x + s, z, salt + 23),
     });

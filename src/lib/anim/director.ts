@@ -6,6 +6,7 @@ import {
   MOUND_HEIGHT,
   POSITION_KEYS,
   RUBBER_DEPTH,
+  batterOffset,
   batterSpot,
   fp,
   onDeckSpot,
@@ -193,7 +194,15 @@ const RELEASE_HEIGHT = 11.0;
 const RELEASE_DEPTH = RUBBER_DEPTH - 2 - 4.7;
 const RELEASE_LATERAL = 2.3;
 const PLATE_DEPTH = 1.35;
-const CONTACT = fp(0, 2.6, 6.4);
+/**
+ * Where the bat meets the ball, out in front of the plate. It shifts toward
+ * whichever box the hitter is in: he stands further off the plate than a real
+ * one does - see `batterSpot` - and a contact point nailed to the middle of the
+ * plate would be a foot and a half past the end of his bat.
+ */
+function contactPoint(batSide: "R" | "L"): Vector3 {
+  return fp(batterOffset(batSide) * 0.28, 2.6, 6.4);
+}
 
 /**
  * Seconds a runner takes to cover one base. A real sprint home-to-first is
@@ -491,8 +500,8 @@ export class Director {
       if (!player) continue;
       const actorKey = `def:${key}`;
       seen.add(actorKey);
-      const spot = FIELDING_SPOTS[key];
       const isCatcher = key === "catcher";
+      const spot = FIELDING_SPOTS[key];
       this.upsert(actorKey, player, {
         role: "fielder",
         positionKey: key,
@@ -904,7 +913,7 @@ export class Director {
       pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
     const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
     // The catcher's mitt, which sits at the bottom of the zone.
-    const catcherSpot = fp(0, -5.5, zoneHeight(1.4));
+    const mittSpot = fp(0, -5.5, zoneHeight(1.4));
     const tail = foul ? 1.5 : 0.75;
     const duration = flight.plateTime + tail;
 
@@ -957,7 +966,7 @@ export class Director {
             this.ball.visible = true;
             this.pushTrail();
           } else {
-            this.ball.position.lerp(catcherSpot, Math.min(1, u * 1.4));
+            this.ball.position.lerp(mittSpot, Math.min(1, u * 1.4));
             this.ball.visible = u < 0.9;
           }
         }
@@ -991,6 +1000,11 @@ export class Director {
   }
 
   /** A pitch that was put in play, plus everything that followed. */
+  /** Which box the hitter is standing in, for anything aimed at the plate. */
+  private batSide(): "R" | "L" {
+    return this.snapshot?.batter?.batSide ?? "R";
+  }
+
   private compileAtBat(pitch: PitchEvent, result: PlayResultEvent): Anim {
     const cue = new Cue();
     const flight = this.pitchFlight(pitch);
@@ -1005,7 +1019,7 @@ export class Director {
         cue.at("crack", t, contactAt, () => {
           this.onSound?.("crack");
           // Chips of dirt off the back foot as the hitter turns on it.
-          this.fx.spray(CONTACT.clone().setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
+          this.fx.spray(contactPoint(this.batSide()).setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
           // The camera reacts to contact the way a crowd does, and how hard the
           // ball was hit is most of that reaction.
           const heat = result.ball ? heatOf(result.ball) : 0;
@@ -1060,7 +1074,7 @@ export class Director {
     // way - is worked out once, up front. See `./batted`.
     const plan: BattedPlan | null = ball
       ? planBattedBall(ball, {
-          contact: CONTACT,
+          contact: contactPoint(this.batSide()),
           caught: caughtInAir,
           hit: HIT_KINDS.has(result.kind),
         })

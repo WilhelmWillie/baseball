@@ -187,7 +187,13 @@ through the skipped rows, because the row in front is much taller than the steps
 behind it. A few hundred people you can see is a crowd; four thousand you cannot
 is a texture.
 
-Three details do more work than they sound like they should. Bodies are capsules
+The crowd is split half and half on hair down past the ears versus cropped. On
+a figure this size and this simple there is nothing else available to carry it -
+there is no room for a face, and a body is a capsule - so the hairline is the
+whole of the difference. It is a second instanced mesh over its own half of the
+bowl rather than a variant of the first, since a geometry is a geometry.
+
+Three more details do more work than they sound like they should. Bodies are capsules
 rather than chamfered boxes — at the old size that was a pixel of highlight, at
 this one the flat front and four vertical corners of a box are the whole
 silhouette and a stand of them reads as stacked luggage. Hair: a stand of
@@ -227,6 +233,18 @@ than real turf, dirt the colour of a sandpit, cream stonework in place of grey
 concrete and mint seats, so the 3D scene and the interface around it are
 working from one palette. `sky.ts` lights it flatter and softer than a real
 afternoon would be for the same reason.
+
+The hitter stands further off the plate than a tape measure would put him, and
+the chalk is drawn wider to match - both off the same constant, so they cannot
+drift apart. This is the figure scale again: at a real two and a half feet off
+the plate the catcher crouches inside the hitter's own shoulder, and from a
+camera in centre field, looking almost straight down the line the two are
+stacked along, they merge into one figure. Moving the catcher instead would take
+him off the plate he is there to guard, so the hitter is the one who moves, and
+the contact point moves out with him so the ball still meets the bat. In the
+stance his head comes round most of a right angle off his shoulders to watch the
+pitcher, which is what a hitter does and is also what puts his face toward the
+centre-field camera rather than the back of his helmet.
 
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera

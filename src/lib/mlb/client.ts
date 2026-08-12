@@ -48,6 +48,21 @@ export async function fetchSchedule(startDate: string, endDate: string): Promise
   return games;
 }
 
+/**
+ * One game's schedule entry - teams, venue, status, score. Far cheaper than
+ * the live feed when all that is wanted is who is playing.
+ */
+export async function fetchScheduleGame(gamePk: number): Promise<MlbScheduleGame | null> {
+  const url = `${BASE}/v1/schedule?sportId=1&gamePk=${gamePk}&hydrate=team,linescore,venue`;
+  const schedule = await getJson<MlbSchedule>(url, 60);
+  for (const date of schedule.dates ?? []) {
+    for (const game of date.games ?? []) {
+      if (game.gamePk === gamePk) return game;
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveFeed(gamePk: number): Promise<MlbLiveFeed> {
   return getJson<MlbLiveFeed>(`${BASE}/v1.1/game/${gamePk}/feed/live`, 0);
 }

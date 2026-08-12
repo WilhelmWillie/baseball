@@ -1642,25 +1642,34 @@ export class Director {
       }
       case "center":
       default: {
-        // The centre-field camera. Out past the mound and well up, so the
-        // sightline to the hitter clears the pitcher's cap: the pitcher sits
-        // low in frame with his back to the lens, the hitter, catcher and
-        // umpire above him, and the pitch travels away from the camera the way
-        // it does on every broadcast there has ever been.
+        // The centre-field camera, and the thing that makes it that shot rather
+        // than a shot from behind the mound: it stands well off the
+        // pitcher-to-plate line, out in left-centre. Sitting on the line puts
+        // the hitter directly behind the pitcher, and the two stack into one
+        // silhouette however high the camera goes. From out here the pitcher
+        // falls to the left of frame with his back to the lens and the hitter,
+        // catcher and umpire sit to the right of him, which is the composition
+        // every broadcast opens on.
         //
-        // Offset a little to the first-base side rather than sitting on the
-        // pitcher-to-plate line, which is what keeps the two figures from
-        // stacking into one silhouette. Real parks put the camera wherever the
-        // seating bowl allows and it is never quite centred either.
+        // How far round is set by the infield, not by taste. Coming round to
+        // the left swings the sightline to the plate over the shortstop and
+        // then across the third baseman, and their offset from that line does
+        // not shrink with distance the way the lens does - so no amount of
+        // backing off helps, and past about twelve degrees the third baseman
+        // stands in the right of frame at a hundred and sixty feet, the size of
+        // the hitter and twice as distracting. Eleven is the most angle this
+        // infield will give up. The height is then set by the shortstop, who
+        // sits almost on the axis and can only be excluded downwards.
         //
         // A long lens, necessarily. The figures are drawn at 2.4x life size but
-        // the field is not, so a camera far enough back to sit in centre field
-        // needs to be zoomed a long way in before a hitter reads as a hitter.
+        // the sixty feet between them are not, so a camera far enough back to
+        // sit in centre field has to be zoomed a long way in before a hitter
+        // reads as a hitter.
         return {
-          position: fp(-1, 176, 52),
-          target: fp(-1.5, 30, 6),
+          position: fp(-46, 230, 60),
+          target: fp(-2, 31.5, 6),
           lerp: 1.8,
-          fov: 27,
+          fov: 15,
           // Already aimed at the hitter. Dragging it toward the middle of the
           // infield on a phone would point it at the grass in front of the
           // mound and stand everybody up along the top edge of the frame.

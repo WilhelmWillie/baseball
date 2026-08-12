@@ -183,8 +183,11 @@ that stops a fielder chasing a ball through the wall.
 **`lib/field/surfaces.ts`** — grass, foul ground, warning track and infield dirt
 as `THREE.Shape`s in field space.
 
-**`lib/field/park.ts`** — everything vertical (wall, seating bowl, crowd, light
-towers, skyline) as a flat list of `Block`s for one `InstancedMesh`.
+**`lib/field/park.ts`** — everything vertical (wall, seating bowl, light towers,
+skyline) as a flat list of `Block`s for one `InstancedMesh`, plus `buildCrowd()`,
+which seats a `Fan[]` against the same rows. Both come out of one pass and are
+cached together: the crowd is laid out on the bowl's geometry, and building it
+separately would mean writing that geometry down twice.
 
 **`lib/field/sky.ts`** — `Conditions` (hour, cloud, precipitation, roof, wind)
 and `skyLook()`, which turns them into a lighting rig: sun arc, color, fog,
@@ -206,6 +209,8 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | --- | --- |
 | `Field.tsx` | The playing surface from `surfaces.ts`, plus mow stripes |
 | `Park.tsx` | All of `park.ts` in one `InstancedMesh`, plus a tiny second one for lamp faces |
+| `Crowd.tsx` | The spectators — body, head and hair as three `InstancedMesh`es, with an idle bob |
+| `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat |
 | `Ball.tsx` | The ball and its comet trail |
 | `Effects.tsx` | Pushes `Fx` particles into instanced meshes |

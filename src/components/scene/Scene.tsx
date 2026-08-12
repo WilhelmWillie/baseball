@@ -8,6 +8,8 @@ import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
 import { Park } from "./Park";
+import { Crowd } from "./Crowd";
+import { Backstop } from "./Backstop";
 import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
@@ -244,6 +246,8 @@ export function Scene() {
       <Field />
       <GroundOcclusion />
       <Park lampsLit={look.lampsLit} crowd={crowd} />
+      <Crowd palette={crowd} />
+      <Backstop />
       <ContactShadows director={director} />
       <Actors director={director} />
       <Ball director={director} />

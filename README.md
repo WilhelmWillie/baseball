@@ -153,19 +153,52 @@ space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
 Everything vertical — outfield wall, the raked seating bowl, bleachers running
-down both foul lines behind a low padded wall, the crowd, light towers, the
-wooden scoreboard over the batter's eye, and the town of gabled houses and
-oversized trees on three hazy rings beyond the park — is generated in
+down both foul lines behind a low padded wall, light towers, the wooden
+scoreboard over the batter's eye, and the town of gabled houses and oversized
+trees on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
-the tower lights can burn unlit by the sun after dark. Two rules keep a bowl of
-several thousand boxes from tearing itself apart: how many spectators a row
-holds is derived from the arc that row actually spans, rather than being a fixed
-count crammed into whatever width is available; and row blocks are cut deeper
+the tower lights can burn unlit by the sun after dark. Row blocks are cut deeper
 than the gap between rows, because boxes that interpenetrate look solid while
-boxes whose faces land on exactly the same plane flicker. Foul ground
-tapers sharply past the bases, so the seats come right up against the lines
-rather than leaving acres of empty dirt.
+boxes whose faces land on exactly the same plane flicker, and a bowl of several
+thousand of them flickers everywhere at once. Foul ground tapers sharply past
+the bases, so the seats come right up against the lines rather than leaving
+acres of empty dirt.
+
+**The crowd** comes out of the same pass — it is laid out on the bowl's rows, so
+building it separately would mean writing that geometry down twice — but it is
+drawn by `Crowd.tsx` as little people rather than as part of the park. Four
+thousand of them, a body, a head and a cap of hair each, in three instanced
+meshes. Three things make them read at the size they are ever actually seen:
+they are drawn to the players' cartoon scale rather than to the park's real feet,
+because a fan a genuine five feet tall is three pixels of colour from centre
+field and three thousand of *those* are television static, not a crowd; how many
+sit in a row is derived from the arc that row spans, since the bowl is sliced by
+angle and a fixed pitch either leaves the rows behind the plate literally empty
+or clumps the far ones in the middle; and they have hair, which is doing more
+work than it sounds like — a stand of plain skin-toned spheres reads as beads on
+a string, and the dark tops are what turn them into heads. One in five wears a
+cap in the home club's colours instead.
+
+They also move. Not much — a bob under half a hertz and a couple of inches deep,
+each fan starting somewhere different in the cycle so the bowl never pulses as
+one. The per-frame cost of that is deliberately tiny: everything a fan *is* —
+the seat, the facing, the size — is written into its instance matrix once, and
+the idle pass only ever touches the three floats of the translation, at a
+quarter of the display's rate rather than every frame. Reacting to the play is
+a TODO; the note in `Crowd.tsx` says what it would take.
+
+**The netting** behind the plate (`Backstop.tsx`) is there for contrast rather
+than realism. Everything the centre-field camera sees behind the hitter is
+seating bowl — a few thousand small bright things, all of them moving — and a
+batter and catcher standing against that read as more of the same. A dark scrim
+across the backstop knocks the background down a couple of stops and the two
+figures separate immediately. It hangs where a real net hangs, which means the
+cameras *behind* it would be shooting through it; they are not, because it is
+only drawn for a camera standing on the field side of it. Its ends and top edge
+fade out rather than stopping dead — a straight seam with bright crowd on one
+side and dark crowd on the other is far more conspicuous than the darkening it
+was hiding.
 
 The park is painted as a toy rather than a broadcast: grass a shade sweeter
 than real turf, dirt the colour of a sandpit, cream stonework in place of grey
@@ -295,12 +328,19 @@ the ball leaves the park, and **follow** travelling with the runner on the trot.
 Each shot holds for a minimum time so nothing strobes when several things happen
 at once, and hard contact knocks the lens for about half a second.
 
-The center-field camera has to sit higher than a real one does, and that is the
-figure scale again: the players are drawn at 2.4x life size but the sixty feet
-between them are not, so a camera at a realistic elevation would frame a
-pitcher who blots out the hitter entirely. From up where it is, the hitter's
-feet clear the pitcher's cap and the two read as two people rather than one
-silhouette.
+Where that camera stands is the one piece of this that is arithmetic rather than
+taste. It has to come round off the pitcher-to-plate line, or the hitter sits
+directly behind the pitcher and the two stack into a single silhouette; the
+angular gap it opens between them and the on-screen height of the figures both
+fall off with distance, so their ratio depends only on how far round it has come
+and not at all on how far back. Coming round to the left, though, swings the
+sightline over the shortstop and then across the third baseman, whose offsets
+from that line do *not* shrink with distance — so backing off does not help, and
+past about twelve degrees the third baseman stands in the right of frame at a
+hundred and sixty feet, the size of the hitter and twice as distracting. Eleven
+degrees is what this infield will give up. It also has to sit high, and that is
+the figure scale again: the shortstop is nearly on the axis and can only be
+excluded downwards.
 
 Between pitches the feed has the same problem a real one does — twenty-odd
 seconds of nobody doing anything. If the game stays quiet for seven of them it

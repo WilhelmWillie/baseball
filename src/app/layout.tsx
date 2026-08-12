@@ -16,10 +16,37 @@ const nunito = Nunito({
   display: "swap",
 });
 
+const title = "Pocket Ballpark — Watch Baseball Come to Life";
+const description =
+  "Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a charming low-poly ballpark.";
+
+/**
+ * Share cards need absolute URLs, and only the deployment knows what host it
+ * is on. Set NEXT_PUBLIC_SITE_URL to pin it; Vercel fills its own in.
+ */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  title: "Pocket Ballpark — Watch Baseball Come to Life",
-  description:
-    "Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a charming low-poly ballpark.",
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
+  // The og:image itself comes from the opengraph-image routes next to the
+  // pages; these only supply the text around it.
+  openGraph: {
+    title,
+    description,
+    siteName: "Pocket Ballpark",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

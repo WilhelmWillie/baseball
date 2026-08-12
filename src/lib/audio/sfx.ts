@@ -11,6 +11,8 @@ export type SoundName =
   | "pitch"
   | "mitt"
   | "crack"
+  /** A bat cutting through air and finding nothing in it. */
+  | "whiff"
   | "foul"
   | "cheer"
   | "bigCheer"
@@ -117,6 +119,9 @@ class Sfx {
         this.burst({ type: "bandpass", freq: 2600, q: 1.4, attack: 0.001, decay: 0.14, gain: 0.5 });
         this.thump(320, 0.1, 0.22);
         break;
+      case "whiff":
+        this.whoosh(intensity);
+        break;
       case "foul":
         this.burst({ type: "bandpass", freq: 2100, q: 1.6, attack: 0.001, decay: 0.1, gain: 0.34 });
         this.crowd({ start: now + 0.15, length: 1.1, gain: 0.1, bright: 700 });
@@ -187,6 +192,41 @@ class Sfx {
     source.connect(filter).connect(gain).connect(this.master);
     source.start(now, offset, spec.attack + spec.decay + 0.05);
     source.stop(now + spec.attack + spec.decay + 0.06);
+  }
+
+  /**
+   * The bat going through empty air. A crack is an impact and can be a single
+   * hit of noise; a whiff is the barrel passing the ear, so what sells it is
+   * the sweep - a band of noise that rushes up as the bat comes round and falls
+   * away behind it. Nothing about it is percussive, which is exactly why it
+   * reads as a miss.
+   */
+  private whoosh(intensity: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.noise || !this.master) return;
+    const now = ctx.currentTime;
+    const length = 0.34;
+
+    const source = ctx.createBufferSource();
+    source.buffer = this.noise;
+    source.playbackRate.value = 1;
+
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.Q.value = 1.6;
+    band.frequency.setValueAtTime(520, now);
+    band.frequency.exponentialRampToValueAtTime(2300, now + length * 0.4);
+    band.frequency.exponentialRampToValueAtTime(420, now + length);
+
+    const amp = ctx.createGain();
+    const peak = 0.2 + intensity * 0.18;
+    amp.gain.setValueAtTime(0.0001, now);
+    amp.gain.exponentialRampToValueAtTime(peak, now + length * 0.38);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + length);
+
+    source.connect(band).connect(amp).connect(this.master);
+    source.start(now, Math.random() * 1.5, length + 0.05);
+    source.stop(now + length + 0.06);
   }
 
   /** Low sine body, for the weight under a bat crack or a mitt pop. */

@@ -449,7 +449,7 @@ function clamp01(v: number): number {
 }
 
 /** The only poses in which a hitter is still holding the bat. */
-const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing"]);
+const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing", "whiff"]);
 
 /**
  * Distance from the hip joint down to the sole, in rig units. Rotating a leg
@@ -776,6 +776,55 @@ function poseValues(
         armSpread: BAT_STANCE.spread - 0.08 * fire,
         elbowIn: BAT_STANCE.elbowIn - 0.12 * fire,
         batSwing: fire,
+      };
+    }
+    case "whiff": {
+      // He missed, and a swing that hits nothing has nothing to stop it. The
+      // pose picks up exactly where `swing` leaves off and keeps going: the
+      // back leg buckles under him, the front side flies open, the head is
+      // dragged round after the barrel and the chin drops to where the ball was
+      // supposed to be. Then he unwinds and steps back into the box.
+      //
+      // Two beats rather than one, because the wrap and the recovery are
+      // different motions - stopping dead at the deepest point and easing back
+      // out of it is what makes it read as being fooled rather than as a
+      // stumble.
+      //
+      // Most of the turn is the actor's own yaw - see `WHIFF_SPIN` in the
+      // director, since a corkscrew takes the feet with it. What is left here
+      // is the separation between hips and shoulders, and a hitter has only so
+      // much of that in him.
+      const wrap = clamp01(t / 0.4);
+      const recover = clamp01((t - 0.5) / 0.5);
+      const w = wrap * (1 - recover);
+      // Back leg deep, front leg straightening as the weight comes off it.
+      const hipR = -0.5 - 0.55 * w;
+      const kneeR = 0.55 + 0.95 * w;
+      const twist = (-1.98 - 0.3 * wrap) * (1 - recover) + 0.34 * recover;
+      return {
+        ...REST,
+        ...lean(-0.9 * w, 0.34),
+        crouch: legDrop(hipR, kneeR),
+        lean: 0.08 + 0.55 * w,
+        twist,
+        legL: -0.22 + 0.3 * w,
+        legR: hipR,
+        kneeL: 0.55 - 0.28 * w,
+        kneeR,
+        // The hands finish high and wrapped around the front shoulder.
+        armL: BAT_STANCE.arm + 0.16 + 0.34 * w,
+        armR: BAT_STANCE.arm + 0.16 + 0.34 * w,
+        elbowL: BAT_STANCE.elbow + 0.22 + 0.5 * w,
+        elbowR: BAT_STANCE.elbow + 0.22 + 0.5 * w,
+        armSpread: BAT_STANCE.spread - 0.08 - 0.1 * w,
+        elbowIn: BAT_STANCE.elbowIn - 0.12 - 0.3 * w,
+        // The head is dragged round with the shoulders rather than holding on
+        // the ball the way it does through the swing itself: he has lost it.
+        headYaw: twist * 0.5,
+        headTilt: 0.1 + 0.42 * w,
+        roll: 0.26 * w,
+        // The bat cocks itself back up as he steps in for the next one.
+        batSwing: 1 - recover,
       };
     }
     case "dive": {

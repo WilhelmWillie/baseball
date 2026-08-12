@@ -44,6 +44,19 @@ the pitcher's ERA, pitch count, innings and strikeouts.
 log, grouped by half-inning with the running score, scoring plays highlighted.
 Click to pin it open.
 
+**A scoreboard you can fold away** — the panel has three sizes, picked from the
+📋 button or by cycling the control in its own corner. **Full** is everything
+above, log included. **Minimized** keeps only what you cannot follow a game
+without — the score, the half-inning, the outs and who is on base — in a strip
+a couple of hundred pixels wide. **Hidden** leaves the park and nothing else.
+The choice is remembered.
+
+**Between innings** — a half-inning ending is a break, and the park plays it as
+one. The side in the field beams out in a cascade that sweeps from the plate
+outward, the diamond sits empty for a beat, and the side coming on materialises
+the same way from the outfield in, while a card names the break and shows the
+score. It is the one moment in the game with nobody on the field.
+
 **Time of day and weather** — the feed reports first pitch and what the sky was
 doing, and the park is lit from it. A 1:05 start plays under a high sun, a 7:05
 one runs into golden hour and then to a night game under the tower lights, and
@@ -62,7 +75,8 @@ colour, and the figure shrinks up into it.
 inning-by-inning line score, and both clubs' box scores (batting and pitching,
 with W/L/S decisions). It can be dismissed to keep watching the park.
 
-**Sound** — bat crack, mitt pop, pitch whoosh, firework booms and a crowd with
+**Sound** — bat crack, mitt pop, pitch whoosh, the bat cutting empty air on a
+swing and miss, firework booms and a crowd with
 an allegiance: it is the *home* crowd, so it cheers what helps the home club
 and groans at everything else. A strikeout by the home pitcher gets a cheer;
 a home run by the visitors gets a groan. Everything
@@ -285,11 +299,13 @@ Broadcasts do not glide between angles — they cut - and they change lenses to
 say something about the moment. The director owns a shot list: **broadcast**
 behind the plate, **slot** over the catcher on any two-strike pitch, **mound** on
 a long lens every fourth pitch (cut back at release so the pitch stays
-trackable), **ball** tracking a batted ball, **low** at field level down the
-third-base line off a home run or a triple, **wide** as the ball leaves the park,
-and **follow** travelling with the runner on the trot. Each shot holds for a
-minimum time so nothing strobes when several things happen at once, and hard
-contact knocks the lens for about half a second.
+trackable), **ball** tracking a batted ball, **box** down beside the plate at
+swing height on a swing and miss, **low** at field level down the third-base
+line off a home run or a triple, **wide** as the ball leaves the park,
+**change** high behind the plate with the whole diamond in frame while the sides
+swap over, and **follow** travelling with the runner on the trot. Each shot
+holds for a minimum time so nothing strobes when several things happen at once,
+and hard contact knocks the lens for about half a second.
 
 That directed feed is one of four camera modes, and the default. The other three
 are seats rather than shots: one vantage, one lens, held all game. Two of them
@@ -333,6 +349,53 @@ before you have found the ball has not communicated anything.
 
 Real games leave ~20s between pitches, which is plenty of room; the simulated
 game paces itself to match so its animations are not clipped.
+
+### A swing and a miss
+
+Most pitches are worth about a second of anyone's attention. A swing and a miss
+is not one of them: it is the only pitch nobody touched that still had a
+decision in it, and it used to play out as the same mitt pop as a called strike
+with the word SWING & MISS printed over it afterwards.
+
+It gets its own beat now. The camera cuts down beside the box, on the hitter's
+own side of the plate and level with the swing — the slot shot behind the
+catcher is no good for this, because a crouching catcher is drawn at the same
+2.4x scale as everyone else and a miss carries the whole body around behind
+him. The bat goes through empty air a moment before the ball lands in the mitt,
+so the two sounds are separate: a rising-then-falling band of noise for the
+barrel passing, and then leather. The back foot tears a divot out of the box.
+The lens flinches, harder on strike three than on strike one.
+
+The hitter finishes the swing rather than stopping dead at the plate, and then
+keeps going, because a swing that hits nothing has nothing to stop it: the
+shoulders carry past the zone, the back leg buckles, the front side flies open,
+the chin drops to where the ball was supposed to be. Most of that spin is the
+whole figure turning, not the torso against the hips — the pose rig can twist
+one against the other, but a corkscrew turns the feet too, and torso-only got a
+figure whose chest faced the dugout while its legs still faced the plate. Then
+he unwinds and steps back in. The call goes up while he is still wrapped around
+himself, not once it is over.
+
+### The change of sides
+
+Half-innings used to end with a two-second card, after which the next one began
+with a different nine standing where the last nine had been. Nobody left and
+nobody arrived; the field simply had other people on it.
+
+The change-over plays out instead, and it borrows the transporter that already
+retires runners. Whoever is on the field dematerialises in a cascade that
+sweeps from the plate outward, the park sits empty for the better part of a
+second, and the side coming on beams in the same way from the outfield in. The
+empty beat is the whole point: run the two cascades back to back and it reads
+as a substitution, leave a gap and it reads as a break in the game.
+
+The club taking the field is a problem of timing rather than animation. The
+store holds new state back until the animation queue drains — that is the rule
+that stops the scoreboard spoiling what is on screen — so at the moment the
+sides change, the only place the incoming nine exist is the snapshot being held
+back. The director gets a reference to it (`pendingSnapshot`) and applies it
+during the empty beat, which is exactly what that beat is for. The scoreboard
+turns the inning at the same instant, with the card up over both.
 
 ### Walks, strikeouts and who is actually running
 

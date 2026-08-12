@@ -3,6 +3,11 @@
 import { create } from "zustand";
 import { Director } from "@/lib/anim/director";
 import { DEFAULT_CAMERA_VIEW, rememberCameraView, type CameraView } from "@/lib/anim/views";
+import {
+  DEFAULT_SCOREBOARD_MODE,
+  rememberScoreboardMode,
+  type ScoreboardMode,
+} from "@/lib/hud/scoreboard";
 import { sfx } from "@/lib/audio/sfx";
 import { extractEvents, seedCursor } from "@/lib/game/events";
 import { buildHistory, buildSnapshot, inningLabel, ordinalFor } from "@/lib/game/normalize";
@@ -30,11 +35,14 @@ interface GameStore {
   lastUpdate: number;
   /** Which camera the viewer is watching through. Survives a game change. */
   cameraView: CameraView;
+  /** How much of the scoreboard is on screen. Also survives a game change. */
+  scoreboardMode: ScoreboardMode;
 
   reset(): void;
   ingest(feed: MlbLiveFeed): void;
   failed(message: string): void;
   setCameraView(view: CameraView): void;
+  setScoreboardMode(mode: ScoreboardMode): void;
   /** Promote pending state once the animation queue has drained. */
   settle(): void;
 }
@@ -50,6 +58,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   error: null,
   lastUpdate: 0,
   cameraView: DEFAULT_CAMERA_VIEW,
+  scoreboardMode: DEFAULT_SCOREBOARD_MODE,
 
   reset() {
     const director = new Director();
@@ -61,6 +70,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
           : {},
       );
     director.onSound = (name, intensity) => sfx.play(name, { intensity });
+    // Fired as the sides actually change over on the field, part-way through
+    // the intermission. Everything here is state the change-over settles by
+    // itself; the play log is left alone, because the feed may already have
+    // moved on to plays the animation has not reached yet.
+    director.onInningChange = (event) =>
+      set((state) => {
+        if (!state.snapshot) return {};
+        const ahead = state.director.pendingSnapshot;
+        return {
+          snapshot: {
+            ...state.snapshot,
+            // Whoever the feed says is up now that the inning has turned. It
+            // is the same state the field was just rebuilt from, so the
+            // scoreboard and the park name the same nine.
+            ...(ahead
+              ? {
+                  batter: ahead.batter,
+                  onDeck: ahead.onDeck,
+                  defense: ahead.defense,
+                  batterStats: ahead.batterStats,
+                  pitcherStats: ahead.pitcherStats,
+                }
+              : {}),
+            inning: event.inning,
+            isTopInning: event.isTopInning,
+            inningOrdinal: ordinalFor(event.inning),
+            battingSide: event.isTopInning ? "away" : "home",
+            fieldingSide: event.isTopInning ? "home" : "away",
+            count: { balls: 0, strikes: 0, outs: 0 },
+            runners: {},
+          },
+        };
+      });
     director.onPlayResolved = (result) =>
       set((state) => {
         if (!state.snapshot) return {};
@@ -110,6 +152,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   ingest(feed) {
     const { director, snapshot, cursor } = get();
     const next = buildSnapshot(feed);
+    // The newest state, handed to the director whether or not it is allowed to
+    // show it yet: the side change needs to know who is coming on before the
+    // snapshot it comes from is promoted.
+    director.pendingSnapshot = next;
 
     if (!snapshot) {
       // First read: jump straight to the live edge, do not replay the game.
@@ -184,5 +230,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Deliberately outside `reset()`: a seat is a preference, not game state.
     set({ cameraView: view });
     rememberCameraView(view);
+  },
+
+  setScoreboardMode(mode) {
+    // A preference like the seat, and kept for the same reason.
+    set({ scoreboardMode: mode });
+    rememberScoreboardMode(mode);
   },
 }));

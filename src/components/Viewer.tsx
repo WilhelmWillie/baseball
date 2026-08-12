@@ -6,11 +6,17 @@ import dynamic from "next/dynamic";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { useGameStore } from "@/store/gameStore";
 import { CAMERA_VIEWS, storedCameraView } from "@/lib/anim/views";
+import {
+  SCOREBOARD_MODES,
+  nextScoreboardMode,
+  storedScoreboardMode,
+} from "@/lib/hud/scoreboard";
 import { sfx } from "@/lib/audio/sfx";
 import { Ball } from "@/components/brand/Ball";
 import { Scorebug } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
 import { History } from "./hud/History";
+import { Intermission } from "./hud/Intermission";
 import { GameOver } from "./hud/GameOver";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
@@ -73,18 +79,26 @@ export function Viewer({
   const cameraView = useGameStore((s) => s.cameraView);
   const setCameraView = useGameStore((s) => s.setCameraView);
 
+  const scoreboard = useGameStore((s) => s.scoreboardMode);
+  const setScoreboardMode = useGameStore((s) => s.setScoreboardMode);
+
   const [soundOn, setSoundOn] = useState(true);
   const [showRoster, setShowRoster] = useState(false);
   const [showCameras, setShowCameras] = useState(false);
+  const [showPanels, setShowPanels] = useState(false);
 
   const activeView = CAMERA_VIEWS.find((v) => v.id === cameraView) ?? CAMERA_VIEWS[0];
+  const activeScoreboard =
+    SCOREBOARD_MODES.find((m) => m.id === scoreboard) ?? SCOREBOARD_MODES[0];
 
   // Restored after mount rather than read while the store is created: the
   // server has no localStorage, and the two renders have to agree.
   useEffect(() => {
     const saved = storedCameraView();
     if (saved) setCameraView(saved);
-  }, [setCameraView]);
+    const savedScoreboard = storedScoreboardMode();
+    if (savedScoreboard) setScoreboardMode(savedScoreboard);
+  }, [setCameraView, setScoreboardMode]);
 
   // Audio cannot start until the page has been interacted with, so the first
   // gesture anywhere wakes the context.
@@ -103,19 +117,27 @@ export function Viewer({
       <Scene />
 
       {/* Scoreboard and play log: a full-width band across the top of a phone,
-          a floating panel once there is room beside it. */}
-      <div className="absolute inset-x-2 top-2 z-10 flex flex-col gap-1.5 sm:inset-x-auto sm:left-4 sm:top-4 sm:gap-2">
-        {snapshot ? (
-          <>
-            <Scorebug snapshot={snapshot} />
-            <History history={history} snapshot={snapshot} />
-          </>
-        ) : (
-          <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
-            {connection === "error" ? "Can't reach the feed" : "Tuning in…"}
-          </div>
-        )}
-      </div>
+          a floating panel once there is room beside it. Hidden takes the whole
+          corner with it, log included - the point of hiding it is the park. */}
+      {scoreboard !== "hidden" && (
+        <div className="absolute inset-x-2 top-2 z-10 flex flex-col gap-1.5 sm:inset-x-auto sm:left-4 sm:top-4 sm:gap-2">
+          {snapshot ? (
+            <>
+              <Scorebug
+                snapshot={snapshot}
+                mode={scoreboard}
+                onCycle={() => setScoreboardMode(nextScoreboardMode(scoreboard))}
+              />
+              {/* The last play is what makes the full card full. */}
+              {scoreboard === "full" && <History history={history} snapshot={snapshot} />}
+            </>
+          ) : (
+            <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
+              {connection === "error" ? "Can't reach the feed" : "Tuning in…"}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Controls: along the bottom on a phone, where a thumb reaches; stacked
           in the top corner on anything larger. */}
@@ -129,7 +151,10 @@ export function Viewer({
           </Link>
           <div className="relative">
             <ControlButton
-              onClick={() => setShowCameras(!showCameras)}
+              onClick={() => {
+                setShowCameras(!showCameras);
+                setShowPanels(false);
+              }}
               active={showCameras}
               title="Change camera"
             >
@@ -161,6 +186,49 @@ export function Viewer({
                       }`}
                     >
                       {view.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* How much of the scoreboard is on screen. It lives out here rather
+              than only on the panel because hidden is a state the panel cannot
+              offer a way back from. */}
+          <div className="relative">
+            <ControlButton
+              onClick={() => {
+                setShowPanels(!showPanels);
+                setShowCameras(false);
+              }}
+              active={showPanels}
+              title="Show or hide the scoreboard"
+            >
+              📋<span className="hidden sm:inline"> {activeScoreboard.label}</span>
+            </ControlButton>
+            {showPanels && (
+              <div className="absolute bottom-full left-1/2 z-30 mb-2 w-52 -translate-x-1/2 overflow-hidden rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-1 lip-float sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mb-0 sm:mt-2 sm:translate-x-0">
+                {SCOREBOARD_MODES.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setScoreboardMode(option.id);
+                      setShowPanels(false);
+                    }}
+                    className={`flex w-full flex-col items-start rounded-xl px-3 py-2 text-left transition-colors ${
+                      option.id === scoreboard
+                        ? "bg-grass text-card"
+                        : "text-bark hover:bg-grass-mist"
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{option.label}</span>
+                    <span
+                      className={`text-[10px] font-semibold ${
+                        option.id === scoreboard ? "text-card/80" : "text-bark-soft"
+                      }`}
+                    >
+                      {option.hint}
                     </span>
                   </button>
                 ))}
@@ -204,6 +272,14 @@ export function Viewer({
       <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-full -translate-x-1/2 -translate-y-1/2 px-3 sm:top-24 sm:w-auto sm:translate-y-0 sm:px-0">
         <Callout />
       </div>
+
+      {/* The break between half-innings. High in the frame on a big screen, so
+          the card is not sitting on top of the diamond it is a break from. */}
+      {snapshot && (
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 px-3 sm:top-14 sm:translate-y-0">
+          <Intermission snapshot={snapshot} />
+        </div>
+      )}
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (

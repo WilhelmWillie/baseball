@@ -26,8 +26,10 @@ import {
   type BattedPlan,
 } from "./batted";
 import { foulBallFor, runnerProgress } from "@/lib/game/events";
+import { ordinalFor } from "@/lib/game/normalize";
 import type {
   GameSnapshot,
+  InningChangeEvent,
   NormalizedEvent,
   PitchEvent,
   PlayResultEvent,
@@ -43,6 +45,8 @@ export type Pose =
   | "windup"
   | "throw"
   | "swing"
+  /** The follow-through of a swing that hit nothing: wrapped up, off balance. */
+  | "whiff"
   | "catch"
   | "walk"
   | "celebrate"
@@ -104,6 +108,10 @@ export type CameraMode =
   | "mound"
   /** Over the catcher, tight on the hitter. */
   | "slot"
+  /** Down beside the box on the hitter's own side, level with the swing. */
+  | "box"
+  /** High behind the plate with the whole diamond in frame, between innings. */
+  | "change"
   /** Travels with whichever actor `cameraFollowKey` names. */
   | "follow";
 
@@ -112,6 +120,7 @@ const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
   low: 1.1,
   mound: 0.9,
   slot: 0.9,
+  box: 1.3,
   wide: 1.2,
   follow: 1,
 };
@@ -120,6 +129,21 @@ export interface CallOut {
   text: string;
   detail?: string;
   tone: "neutral" | "good" | "bad" | "big";
+  at: number;
+}
+
+/**
+ * The break between half-innings. Set while the sides are changing over and
+ * cleared when the new one takes the field, so the HUD can put a card up over
+ * a park that has nobody in it.
+ */
+export interface Intermission {
+  /** "Middle of the 5th". */
+  title: string;
+  /** The half-inning about to start. */
+  half: string;
+  detail: string;
+  /** Wall clock, so React can key an entrance off it. */
   at: number;
 }
 
@@ -170,8 +194,52 @@ const TROT_PER_BASE = 3.4;
 const SWING_TIME = 0.55;
 const SWING_LEAD = 0.2;
 
+/**
+ * How long the hitter stays wrapped up in a swing that hit nothing. Deliberately
+ * longer than the swing that got him there: the miss is the moment, and cutting
+ * away from it at swing speed throws away the only thing worth watching about a
+ * pitch nobody put in play.
+ */
+const WHIFF_TIME = 1.05;
+
+/**
+ * How far the hitter's whole body is dragged round by a swing that hit nothing,
+ * in radians. The pose can only twist a torso against the hips; a corkscrew
+ * turns the feet as well, and without this the legs stay pointed at the plate
+ * while the chest ends up facing the dugout.
+ */
+const WHIFF_SPIN = 1.05;
+
 /** A walk is not a race. */
 const WALK_PER_BASE = 4.2;
+
+/**
+ * The change-over between half-innings, beat by beat, in seconds.
+ *
+ * The empty stretch in the middle is the point of the whole thing. Beaming one
+ * side out and the next straight in reads as a substitution; leaving the park
+ * with nobody on it for the better part of a second is what makes it read as a
+ * break in the game. `BEAM_STAGGER` then keeps a side from going all at once -
+ * a cascade across the field looks deliberate where a simultaneous blink looks
+ * like a dropped frame.
+ */
+const SIDE_CHANGE_OUT = 0.5;
+const SIDE_CHANGE_IN = 2.5;
+const SIDE_CHANGE_END = 5.4;
+const BEAM_STAGGER = 0.075;
+/** How long one figure takes to dissolve, or to come back. */
+const BEAM_TIME = 0.45;
+
+/**
+ * What a broadcast calls the break. The event names the half about to start, so
+ * the half that just ended - which is what the card is actually about - is the
+ * one before it.
+ */
+function intermissionTitle(event: InningChangeEvent): string {
+  if (!event.isTopInning) return `Middle of the ${ordinalFor(event.inning)}`;
+  if (event.inning <= 1) return "Play ball";
+  return `End of the ${ordinalFor(event.inning - 1)}`;
+}
 
 function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
@@ -323,7 +391,15 @@ export class Director {
   /** Decaying knock on the lens after a hard-hit ball. */
   cameraShake = 0;
   callout: CallOut | null = null;
+  /** Set for the length of a side change, null the rest of the time. */
+  intermission: Intermission | null = null;
   snapshot: GameSnapshot | null = null;
+  /**
+   * The newest state the feed has published, which the store is holding back
+   * until the queue drains. The side change is the one animation that needs it
+   * early: the club taking the field is in there and nowhere else.
+   */
+  pendingSnapshot: GameSnapshot | null = null;
   /** Set while an animation is playing, so the store holds back new state. */
   busy = false;
   queueLength = 0;
@@ -336,6 +412,11 @@ export class Director {
    */
   onCount?: (count: { balls: number; strikes: number }) => void;
   onPlayResolved?: (result: PlayResultEvent) => void;
+  /**
+   * Fired as the sides start changing over, so the scoreboard turns the inning
+   * with the animation rather than several seconds after it.
+   */
+  onInningChange?: (event: InningChangeEvent) => void;
   /** Fired at the moment a sound should be heard, not when an event arrives. */
   onSound?: (name: SoundName, intensity?: number) => void;
 
@@ -429,10 +510,21 @@ export class Director {
    * `dissolve` ramp on the actor and the particles are separate: the effect
    * fires once, the ramp runs every frame.
    */
-  private beamOut(actor: Actor) {
-    const color = this.snapshot?.teams[actor.side]?.palette.primary ?? "#8ce0ff";
-    this.fx.beam(actor.position.clone(), color);
-    this.onSound?.("beam");
+  private beamOut(actor: Actor, sound = true) {
+    this.beamAt(actor.position, actor.side, sound);
+  }
+
+  /**
+   * The transporter column itself, in a club's colour. Beaming in and beaming
+   * out look the same from outside - what differs is which way the `dissolve`
+   * ramp on the actor runs.
+   */
+  private beamAt(where: Vector3, side: TeamSide, sound = true) {
+    const color = this.snapshot?.teams[side]?.palette.primary ?? "#8ce0ff";
+    this.fx.beam(where.clone(), color);
+    // A whole side goes at once during a change-over, and nine transporters
+    // firing on top of each other is noise rather than an effect.
+    if (sound) this.onSound?.("beam");
   }
 
   /** Replace the world with authoritative state. Only called when idle. */
@@ -567,6 +659,8 @@ export class Director {
     this.currentTime = 0;
     this.queueLength = 0;
     this.busy = false;
+    // Whatever was interrupted, nothing is between innings any more.
+    this.intermission = null;
   }
 
   isIdle(): boolean {
@@ -632,6 +726,7 @@ export class Director {
         actor.pose === "walk" ||
         actor.pose === "throw" ||
         actor.pose === "swing" ||
+        actor.pose === "whiff" ||
         actor.pose === "dive" ||
         actor.pose === "annoyed" ||
         actor.pose === "celebrate"
@@ -809,8 +904,17 @@ export class Director {
     const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
     // The catcher's mitt, which sits at the bottom of the zone.
     const catcherSpot = fp(0, -5.5, zoneHeight(1.4));
-    const tail = foul ? 1.5 : 0.75;
+    const whiffed = pitch.outcome === "swinging_strike";
+    /** A whiff on two strikes is a punchout: the at-bat ends on this swing. */
+    const punchout = whiffed && pitch.count.strikes >= 2;
+    const tail = foul ? 1.5 : whiffed ? 1.9 : 0.75;
     const duration = flight.plateTime + tail;
+    /** Where the swing ends and the hitter's own momentum takes over. */
+    const whiffAt = flight.plateTime - SWING_LEAD + SWING_TIME;
+    const speed = pitch.speed ? `${Math.round(pitch.speed)} MPH` : undefined;
+    const detail = [pitch.pitchType, speed].filter(Boolean).join(" · ");
+    /** Which way the hitter was pointed before the swing turned him. */
+    let stance: number | null = null;
 
     return {
       label: `pitch:${pitch.id}`,
@@ -838,13 +942,58 @@ export class Director {
           );
         }
         if (swings || pitch.outcome === "in_play") {
-          this.swingAt(t, flight.plateTime - SWING_LEAD, false);
+          // A whiff hands the batter over to the follow-through below rather
+          // than snapping him back to the stance at the end of the swing.
+          this.swingAt(t, flight.plateTime - SWING_LEAD, whiffed);
         }
 
         cue.at("plate", t, flight.plateTime, () => {
           if (foul) this.onSound?.("foul");
+          // The bat goes through where the ball was a moment before it lands in
+          // the mitt, so the two sounds are separate: air, then leather.
+          else if (whiffed) this.onSound?.("whiff", punchout ? 0.9 : 0.6);
           else this.onSound?.("mitt");
         });
+
+        // --- The miss ---
+        // Everything a swing and miss is worth: the barrel through empty air,
+        // the hitter turning himself inside out after it, the dirt his back
+        // foot tears out of the box, and a camera that flinches. It gets its
+        // own shot because the alternative is watching a ball land in a mitt.
+        if (whiffed) {
+          cue.at("whiff", t, flight.plateTime, () => {
+            this.knockCamera(punchout ? 0.55 : 0.34);
+            this.setShot("box", { cut: true, force: true });
+            // Spikes tearing out of the box as he spins off his back side -
+            // thrown from where he is standing, not from the plate.
+            const feet = (this.batter()?.position ?? CONTACT).clone().setY(0.4);
+            this.fx.spray(feet, new Vector3(0, 1, -0.35), 16, 0.75);
+            this.fx.puff(feet.clone().setY(0.5), 11, { spread: 4.4, lift: 1.9, size: 0.95 });
+          });
+          // The mitt lands late, under the follow-through, and it pops.
+          cue.at("mitt", t, flight.plateTime + 0.09, () =>
+            this.onSound?.("mitt", punchout ? 1 : 0.8),
+          );
+          // Named while he is still wrapped around himself rather than once he
+          // has stepped back in and it is over.
+          cue.at("call", t, flight.plateTime + 0.28, () =>
+            this.setCallout(punchout ? "STRIKE THREE!" : "SWING & MISS", "bad", detail),
+          );
+          if (t >= whiffAt) {
+            const batter = this.batter();
+            // Not once he has taken off - a dropped third strike is a run to
+            // first, and the follow-through is not what he is doing any more.
+            if (batter && batter.pose !== "run") {
+              stance ??= batter.facing;
+              const u = clamp01((t - whiffAt) / WHIFF_TIME);
+              batter.pose = "whiff";
+              batter.poseT = u;
+              // The same two beats the pose runs on: round, and back.
+              const round = clamp01(u / 0.4) * (1 - clamp01((u - 0.5) / 0.5));
+              batter.facing = stance - WHIFF_SPIN * round;
+            }
+          }
+        }
 
         if (t > flight.plateTime) {
           const u = clamp01((t - flight.plateTime) / (foul ? 1.1 : 0.32));
@@ -864,8 +1013,6 @@ export class Director {
         }
       },
       onEnd: () => {
-        const speed = pitch.speed ? `${Math.round(pitch.speed)} MPH` : undefined;
-        const detail = [pitch.pitchType, speed].filter(Boolean).join(" · ");
         switch (pitch.outcome) {
           case "ball":
             this.setCallout("BALL", "neutral", detail);
@@ -874,7 +1021,7 @@ export class Director {
             this.setCallout("STRIKE", "bad", detail || "Called");
             break;
           case "swinging_strike":
-            this.setCallout("SWING & MISS", "bad", detail);
+            // Already called, back when he missed it.
             break;
           case "foul":
             this.setCallout("FOUL", "neutral", detail);
@@ -885,6 +1032,9 @@ export class Director {
           default:
             break;
         }
+        // Square to the plate again, whatever the follow-through did to him.
+        const batter = this.batter();
+        if (stance !== null && batter) batter.facing = stance;
         this.ball.visible = false;
         this.onCount?.(countAfter(pitch));
       },
@@ -1430,16 +1580,106 @@ export class Director {
     };
   }
 
-  private compileInningChange(event: NormalizedEvent & { type: "inning_change" }): Anim {
+  /**
+   * The side change, and the only time the park is ever empty.
+   *
+   * A half-inning used to end with a two-second card and the next one starting
+   * with a different nine already standing where the last nine had been. This
+   * plays the change-over instead: whoever is out there dematerialises in a
+   * cascade from the plate outward, the field sits empty for a beat, and the
+   * side coming on beams in the same way.
+   *
+   * The club taking the field is only known to `pendingSnapshot` - the store is
+   * holding that state back until the queue drains, which is after this. Half
+   * of the effect is that the empty beat gives us somewhere to apply it.
+   */
+  private compileInningChange(event: InningChangeEvent): Anim {
+    const cue = new Cue();
+    /** Whoever was on the field when the half ended. */
+    const leaving: Actor[] = [];
+    /** Whoever is coming on. Not known until the swap. */
+    const arriving: Actor[] = [];
+    let swapped = false;
+
     return {
       label: `inning:${event.id}`,
-      duration: 1.8,
+      duration: SIDE_CHANGE_END,
       onStart: () => {
-        this.setCallout(event.description.toUpperCase(), "neutral", "Teams change sides");
-        this.setShot("wide", { cut: true, force: true });
+        // The card carries the break, so nothing else needs to.
+        this.callout = null;
+        this.intermission = {
+          title: intermissionTitle(event),
+          half: `${event.isTopInning ? "Top" : "Bottom"} ${ordinalFor(event.inning)}`,
+          detail: "Teams are changing sides",
+          at: Date.now(),
+        };
+        this.setShot("change", { cut: true, force: true });
+        this.onSound?.("organ");
+        // Sorted by how far from the plate they are standing, so the cascade
+        // sweeps outward across the park instead of nine people blinking out
+        // together.
+        leaving.push(
+          ...[...this.actors.values()]
+            .filter((actor) => actor.visible)
+            .sort((a, b) => a.position.lengthSq() - b.position.lengthSq()),
+        );
       },
-      update: () => {},
+      update: (t) => {
+        // Only until the swap: past it these are either gone from the roster or
+        // the very actors the arrivals loop below is bringing back.
+        if (!swapped) {
+          for (let i = 0; i < leaving.length; i++) {
+            const actor = leaving[i];
+            const at = SIDE_CHANGE_OUT + i * BEAM_STAGGER;
+            if (t < at) continue;
+            cue.at(`out:${actor.key}`, t, at, () => this.beamOut(actor, i % 3 === 0));
+            actor.dissolve = clamp01((t - at) / BEAM_TIME);
+            actor.visible = actor.dissolve < 1;
+          }
+        }
+
+        // The swap. `applySnapshot` is what puts the new side on the field; it
+        // only ever touches actors, so the scoreboard is unaffected by it.
+        cue.at("swap", t, SIDE_CHANGE_IN, () => {
+          const next = this.pendingSnapshot;
+          if (next) this.applySnapshot(next);
+          // The scoreboard turns with the field, not before it: the card is up
+          // over both, so this is the moment the inning actually changes as far
+          // as anyone watching is concerned.
+          this.onInningChange?.(event);
+          arriving.push(
+            ...[...this.actors.values()].sort(
+              (a, b) => b.position.lengthSq() - a.position.lengthSq(),
+            ),
+          );
+          // Nobody is here yet: they arrive one at a time below.
+          for (const actor of arriving) {
+            actor.dissolve = 1;
+            actor.visible = false;
+          }
+          swapped = true;
+        });
+        if (!swapped) return;
+
+        // Coming on: the same ramp, run backwards, from the outfield in.
+        for (let i = 0; i < arriving.length; i++) {
+          const actor = arriving[i];
+          const at = SIDE_CHANGE_IN + 0.3 + i * BEAM_STAGGER;
+          if (t < at) continue;
+          cue.at(`in:${actor.key}`, t, at, () =>
+            this.beamAt(actor.home, actor.side, i % 3 === 0),
+          );
+          actor.visible = true;
+          actor.dissolve = 1 - clamp01((t - at) / BEAM_TIME);
+        }
+      },
       onEnd: () => {
+        // Whatever the ramps were mid-way through, everybody is solid now.
+        for (const actor of this.actors.values()) {
+          actor.dissolve = 0;
+          actor.visible = true;
+        }
+        this.intermission = null;
         this.setShot("broadcast", { cut: true, force: true });
       },
     };
@@ -1477,6 +1717,12 @@ export class Director {
       }
       case "base":
         return { position: fp(78, 16, 34), target: BASE_POSITIONS.first.clone(), lerp: 2 };
+      case "change":
+        // The side change. High enough behind the plate to hold the whole
+        // diamond, because what is worth seeing is nine of them going at once;
+        // the `wide` shot is aimed past the infield at the sky over center and
+        // reduces a team dematerialising to a few specks.
+        return { position: fp(0, -116, 72), target: fp(0, 88, 6), lerp: 1.4 };
       case "low": {
         // Low down the third-base line, looking out with the ball. Nothing
         // sells distance like a camera at eye level under a rising fly.
@@ -1492,6 +1738,19 @@ export class Director {
       case "slot":
         // Over the catcher's shoulder, tight on the hitter.
         return { position: fp(13, -21, 12), target: fp(1, 7, 5), lerp: 2.3 };
+      case "box": {
+        // Level with the swing, out toward the line on the hitter's own side of
+        // the plate. The slot shot is composed over the catcher and he is
+        // exactly what a miss needs the camera to be past: a swing that hits
+        // nothing carries the whole body around, and none of that reads from
+        // behind a crouching figure of the same height.
+        const side = this.snapshot?.batter?.batSide === "L" ? 1 : -1;
+        return {
+          position: fp(side * 33, -6, 8.5),
+          target: fp(side * 5, 4.5, 6.5),
+          lerp: 2.8,
+        };
+      }
       case "follow": {
         const actor = this.cameraFollowKey ? this.actors.get(this.cameraFollowKey) : undefined;
         const at = actor ? actor.position : fp(0, 40, 0);

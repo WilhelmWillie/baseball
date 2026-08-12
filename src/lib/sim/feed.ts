@@ -126,6 +126,8 @@ interface BuiltPlay {
   completeTime: number;
   /** State captured after the play, used to rebuild the linescore. */
   after: SimState;
+  /** This play recorded the third out - the half-inning ends on it. */
+  endsHalf: boolean;
 }
 
 function cloneLines<T>(source: Record<number, T>): Record<number, T> {
@@ -602,7 +604,8 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
     // flip is what used to leave the linescore a full at-bat behind the third
     // out - the departed side kept "fielding" through the first hitter of the
     // next half until that hitter's at-bat completed.
-    if (state.outs >= 3) {
+    const endsHalf = state.outs >= 3;
+    if (endsHalf) {
       state.outs = 0;
       state.bases = [null, null, null];
       if (!state.isTop) state.inning += 1;
@@ -615,6 +618,7 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       eventTimes: times,
       completeTime,
       after: cloneState(state),
+      endsHalf,
     });
   }
 
@@ -728,6 +732,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
   let state = initialState();
   let currentPlay: MlbPlay | undefined;
   let nextUp: MlbPlay | undefined;
+  let lastCompleteIdx = -1;
 
   for (let i = 0; i < GAME.plays.length; i++) {
     const built = GAME.plays[i];
@@ -757,12 +762,33 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
     currentPlay = play;
     if (isComplete) {
       state = built.after;
+      lastCompleteIdx = i;
       // Between at-bats the real feed already names the next hitter.
       nextUp = GAME.plays[i + 1]?.play;
     } else {
       nextUp = undefined;
     }
   }
+
+  // The between-innings break. After a half ends, a real feed spends the walk to
+  // the next half-inning reporting `inningState` "Middle" (top just ended) or
+  // "End" (bottom just ended) with the finished half still on the linescore -
+  // the commercial window, field empty. The demo does the same: hold that state
+  // from the third out until a few seconds before the next half's first pitch,
+  // so the players are back on and settled by the time it is thrown.
+  const SETTLE_LEAD = 4;
+  const lastComplete = lastCompleteIdx >= 0 ? GAME.plays[lastCompleteIdx] : undefined;
+  const nextBuilt = lastCompleteIdx >= 0 ? GAME.plays[lastCompleteIdx + 1] : undefined;
+  const nextFirst = nextBuilt?.eventTimes[0] ?? Infinity;
+  // No next play means the game is over, not on a break - don't strand the
+  // linescore in "Middle"/"End" forever behind the final scoreboard.
+  const inBreak = Boolean(lastComplete?.endsHalf) && nextBuilt !== undefined && t < nextFirst - SETTLE_LEAD;
+  const endedTop = lastComplete?.play.about?.isTopInning ?? true;
+  const breakInning = lastComplete?.play.about?.inning ?? state.inning;
+
+  const dispInning = inBreak ? breakInning : state.inning;
+  const dispIsTop = inBreak ? endedTop : state.isTop;
+  const dispInningState = inBreak ? (endedTop ? "Middle" : "End") : dispIsTop ? "Top" : "Bottom";
 
   const inningsPlayed = Math.max(1, state.inning);
   const fieldingRoster = state.isTop ? HOME_ROSTER : AWAY_ROSTER;
@@ -810,11 +836,11 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
     liveData: {
       plays: { allPlays, currentPlay: activePlay },
       linescore: {
-        currentInning: state.inning,
-        currentInningOrdinal: ORDINALS[Math.min(8, state.inning - 1)],
-        inningState: state.isTop ? "Top" : "Bottom",
-        inningHalf: state.isTop ? "Top" : "Bottom",
-        isTopInning: state.isTop,
+        currentInning: dispInning,
+        currentInningOrdinal: ORDINALS[Math.min(8, dispInning - 1)],
+        inningState: dispInningState,
+        inningHalf: dispIsTop ? "Top" : "Bottom",
+        isTopInning: dispIsTop,
         scheduledInnings: 9,
         innings: state.innings.slice(0, inningsPlayed).map((frame, i) => ({
           num: i + 1,

@@ -255,6 +255,16 @@ function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
 }
 
+/**
+ * MLB's `linescore.inningState` reads "Top", "Middle", "Bottom" or "End". The
+ * two middles are the between-halves breaks - "Middle" after the top half,
+ * "End" after the bottom - which on a broadcast is where the commercial goes
+ * and the field sits empty. That is the signal the intermission holds on.
+ */
+function isBetweenInnings(inningState: string | undefined): boolean {
+  return inningState === "Middle" || inningState === "End";
+}
+
 /** The count after a pitch lands. `pitch.count` is the count before it. */
 function countAfter(pitch: PitchEvent): { balls: number; strikes: number } {
   const { balls, strikes } = pitch.count;
@@ -455,6 +465,16 @@ export class Director {
    */
   gameOver = false;
 
+  /**
+   * True from the moment the field starts emptying on the third out until the
+   * next side has beamed back on - the whole between-innings break. The
+   * intermission overlay polls this the way the callout HUD polls `callout`, so
+   * it never has to run off a React render.
+   */
+  get intermission(): boolean {
+    return this.awaitingReturn;
+  }
+
   constructor() {
     this.fx.onBurst = (intensity) => this.onSound?.("firework", intensity);
   }
@@ -565,13 +585,22 @@ export class Director {
    * lights the fuse.
    */
   applySnapshot(snapshot: GameSnapshot) {
-    // Holding the park empty between halves. While we wait for the new side, a
-    // snapshot that still shows the side that just left fielding with the
-    // inning already three-out over is a stale reading of the half we came out
-    // of - let it through and it beams the departed team straight back onto the
-    // field for an instant before the real change lands. Keep waiting instead.
-    // A reversal (the out overturned, so the count drops back under three) is
-    // not stale: the same side belongs back on, and this lets them return.
+    // Holding the park empty between halves. The broadcast's own signal for
+    // this is `inningState`: "Middle" is the break after the top half, "End"
+    // the break after the bottom - the windows a real feed spends in
+    // commercial with an empty field. While the feed says we are in one, the
+    // park stays empty however long it lasts; play resuming (a live "Top" or
+    // "Bottom") is what brings the next side on. See `intermission`.
+    if (this.awaitingReturn && isBetweenInnings(snapshot.inningState)) {
+      this.snapshot = snapshot;
+      return;
+    }
+    // A safety net for the instant before the feed catches up to the break: a
+    // snapshot still showing the side that just left fielding with the inning
+    // already three-out over is a stale reading of the half we came out of -
+    // let it through and it beams the departed team straight back on for a
+    // frame. A reversal (the out overturned, count back under three) is not
+    // stale: the same side belongs back on, and this lets them return.
     if (
       this.awaitingReturn &&
       this.awaitingSide &&

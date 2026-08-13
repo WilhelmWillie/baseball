@@ -342,8 +342,8 @@ const CROWD_WEIGHT: Partial<
   >
 > = {
   home_run: { magnitude: 1, favorsBatter: true, tier: "long" },
-  triple: { magnitude: 0.9, favorsBatter: true, tier: "short" },
-  double: { magnitude: 0.72, favorsBatter: true, tier: "short" },
+  triple: { magnitude: 0.9, favorsBatter: true, tier: "medium" },
+  double: { magnitude: 0.72, favorsBatter: true, tier: "medium" },
   single: { magnitude: 0.55, favorsBatter: true, tier: "short" },
   error: { magnitude: 0.45, favorsBatter: true, tier: "short" },
   sac_fly: { magnitude: 0.55, favorsBatter: true, tier: "short" },

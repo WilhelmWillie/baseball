@@ -44,6 +44,8 @@ const DIRT_COLORS = ["#a97c4e", "#96683c", "#bb9068", "#8a6136", "#c2a077"];
 
 const CONFETTI_EXTRA = ["#ffd447", "#ff6b6b", "#4ecdc4", "#f7f7f2", "#b388ff"];
 const FIREWORK_BRIGHTS = ["#ffd447", "#ff5f8f", "#5ce1e6", "#b6ff5c", "#ffffff"];
+/** Hot embers for a fuming fan - dark enough to read as anger, not as fire. */
+const EMBER_COLORS = ["#c62828", "#8d2020", "#5c1010"];
 
 /** Lift a color to something that reads as a firework against a bright sky. */
 function brighten(hex: string): Color {
@@ -194,6 +196,71 @@ export class Fx {
         rot: new Vector3(),
         gravity: -34,
         drag: 0.9,
+        flutter: 0,
+        phase: 0,
+      });
+    }
+  }
+
+  /**
+   * A quick shimmer over one happy fan's seat - a handful of bright motes that
+   * pop up and are gone. Small on purpose: this reads a single fan's mood, not
+   * a stadium celebration, so it has to stay well under the confetti it sits
+   * alongside.
+   */
+  crowdCheer(origin: Vector3, colors: string[]) {
+    const palette = colors.map((hex) => brighten(hex));
+    for (let i = 0; i < 5; i++) {
+      if (this.sparks.length >= MAX_SPARKS) break;
+      const angle = Math.random() * Math.PI * 2;
+      this.sparks.push({
+        pos: origin
+          .clone()
+          .add(new Vector3(randomIn(-0.5, 0.5), randomIn(0, 0.5), randomIn(-0.5, 0.5))),
+        vel: new Vector3(
+          Math.cos(angle) * randomIn(1, 3),
+          randomIn(4, 9),
+          Math.sin(angle) * randomIn(1, 3),
+        ),
+        color: palette[Math.floor(Math.random() * palette.length)].clone(),
+        life: randomIn(0.35, 0.6),
+        maxLife: 0.6,
+        size: randomIn(0.12, 0.24),
+        spin: new Vector3(),
+        rot: new Vector3(),
+        gravity: -4,
+        drag: 1.6,
+        flutter: 0,
+        phase: 0,
+      });
+    }
+  }
+
+  /**
+   * A puff of dark red smoke over one fuming fan's seat - the same small scale
+   * as `crowdCheer`, just angrier: it hangs low and sinks rather than rising.
+   */
+  crowdFume(origin: Vector3) {
+    for (let i = 0; i < 4; i++) {
+      if (this.dust.length >= MAX_DUST) break;
+      const angle = Math.random() * Math.PI * 2;
+      this.dust.push({
+        pos: origin
+          .clone()
+          .add(new Vector3(randomIn(-0.35, 0.35), randomIn(0.3, 0.7), randomIn(-0.35, 0.35))),
+        vel: new Vector3(
+          Math.cos(angle) * randomIn(0.2, 0.5),
+          randomIn(1, 2),
+          Math.sin(angle) * randomIn(0.2, 0.5),
+        ),
+        color: new Color(EMBER_COLORS[Math.floor(Math.random() * EMBER_COLORS.length)]),
+        life: randomIn(0.6, 1),
+        maxLife: 1,
+        size: randomIn(0.3, 0.55),
+        spin: new Vector3(),
+        rot: new Vector3(),
+        gravity: -1,
+        drag: 1.2,
         flutter: 0,
         phase: 0,
       });

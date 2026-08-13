@@ -78,7 +78,7 @@ const SHAKE_RATE = 2.2;
 const WOBBLE = FAN_HEIGHT * 0.05;
 const WOBBLE_RATE = 3.4;
 /**
- * How red a fan's shirt runs at full frustration, and how quickly it gets
+ * How red a fan's face runs at full frustration, and how quickly it gets
  * there. `ANGER_MIX` is a multiplier on `sad` rather than a cap, so a fan
  * reaches full red well before the most extreme reactions peak - a flush,
  * not a slow fade.
@@ -179,8 +179,8 @@ interface Rest {
   head: Float32Array;
   /** How far the hair cap sits above the centre of its head. */
   hairLift: Float32Array;
-  /** Each fan's own shirt colour, so a flush of anger has something to fade back to. */
-  shirtColor: Float32Array;
+  /** Each fan's own skin colour, so a flush of anger has something to fade back to. */
+  skinColor: Float32Array;
 }
 
 /**
@@ -197,7 +197,7 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
   const bodyM = parts.bodies.instanceMatrix.array as Float32Array;
   const headM = parts.heads.instanceMatrix.array as Float32Array;
   const eyeM = parts.eyes.instanceMatrix.array as Float32Array;
-  const bodyC = parts.bodies.instanceColor!.array as Float32Array;
+  const headC = parts.heads.instanceColor!.array as Float32Array;
   // The whole crowd shares one reaction; a fan's own excitement is that signal
   // read for their allegiance, shaped by the envelope and their phase. When the
   // stands are quiet `react.home` is 0 and every fan falls through to pure idle.
@@ -256,13 +256,13 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
     eyeM[m + 12] = headX;
     eyeM[m + 13] = headY;
 
-    // A fuming fan's shirt flushes red, fading back to its own colour as the
-    // envelope eases off - the same signal that drives the slump, read as
-    // colour instead of motion.
+    // A fuming fan's face flushes red, fading back to its own skin tone as
+    // the envelope eases off - the same signal that drives the slump, read
+    // as colour instead of motion.
     const anger = Math.min(1, sad * ANGER_MIX);
-    bodyC[r] = rest.shirtColor[r] + (ANGER_COLOR.r - rest.shirtColor[r]) * anger;
-    bodyC[r + 1] = rest.shirtColor[r + 1] + (ANGER_COLOR.g - rest.shirtColor[r + 1]) * anger;
-    bodyC[r + 2] = rest.shirtColor[r + 2] + (ANGER_COLOR.b - rest.shirtColor[r + 2]) * anger;
+    headC[r] = rest.skinColor[r] + (ANGER_COLOR.r - rest.skinColor[r]) * anger;
+    headC[r + 1] = rest.skinColor[r + 1] + (ANGER_COLOR.g - rest.skinColor[r + 1]) * anger;
+    headC[r + 2] = rest.skinColor[r + 2] + (ANGER_COLOR.b - rest.skinColor[r + 2]) * anger;
   }
   // Hair comes in two shapes and so lives in two meshes over two subsets of the
   // crowd. Rather than branch inside the loop above, each one reads the head
@@ -277,8 +277,8 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
     hair.mesh.instanceMatrix.needsUpdate = true;
   }
   parts.bodies.instanceMatrix.needsUpdate = true;
-  parts.bodies.instanceColor!.needsUpdate = true;
   parts.heads.instanceMatrix.needsUpdate = true;
+  parts.heads.instanceColor!.needsUpdate = true;
   parts.eyes.instanceMatrix.needsUpdate = true;
 }
 
@@ -449,7 +449,7 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
     const body = new Float32Array(fans.length * 3);
     const head = new Float32Array(fans.length * 3);
     const hairLift = new Float32Array(fans.length);
-    const shirtColor = new Float32Array(fans.length * 3);
+    const skinColor = new Float32Array(fans.length * 3);
     const tmpColor = new Color();
     for (let i = 0; i < fans.length; i++) {
       const fan = fans[i];
@@ -461,12 +461,12 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
       head[i * 3 + 1] = fan.p[1] + FAN_HEIGHT * (BODY_H + HEAD_D * 0.44) * s;
       head[i * 3 + 2] = fan.p[2];
       hairLift[i] = FAN_HEIGHT * HEAD_D * 0.06 * s;
-      tmpColor.set(fan.shirt);
-      shirtColor[i * 3] = tmpColor.r;
-      shirtColor[i * 3 + 1] = tmpColor.g;
-      shirtColor[i * 3 + 2] = tmpColor.b;
+      tmpColor.set(fan.skin);
+      skinColor[i * 3] = tmpColor.r;
+      skinColor[i * 3 + 1] = tmpColor.g;
+      skinColor[i * 3 + 2] = tmpColor.b;
     }
-    return { body, head, hairLift, shirtColor };
+    return { body, head, hairLift, skinColor };
   }, [fans]);
 
   useFrame((state) => {

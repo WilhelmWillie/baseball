@@ -81,8 +81,9 @@ const SHAKE_RATE = 2.2;
  */
 const EXCITED_BOB = 2.4;
 const SLUMP_CALM = 0.5;
-/** Seconds to reach full tilt, then the decay time-constant of the ease back. */
+/** Seconds to reach full tilt. */
 const REACT_ATTACK = 0.18;
+/** Decay time-constant of an untiered (resting) reaction's ease back. */
 const REACT_DECAY = 1.5;
 /**
  * How far apart in time the bowl's reaction is spread by phase. Without it a
@@ -105,25 +106,31 @@ const FACE_OPEN = 0.85;
  * and `away` are the signed excitement the director handed us; `start` is the
  * clock reading the current reaction began at, and `id` is the last reaction we
  * saw, so a new stir of the stands restarts the envelope rather than blending
- * into the tail of the old one.
+ * into the tail of the old one. `sustain`/`decay` are how long this particular
+ * reaction holds at full excitement and how slowly it eases back - a routine
+ * play and a walk-off share the same rise, not the same length.
  */
 interface Reaction {
   id: number;
   home: number;
   away: number;
   start: number;
+  sustain: number;
+  decay: number;
 }
 
 /**
- * A reaction's strength over time for one fan: up fast, then a long ease back
- * to nothing. `d` is seconds since this fan's own (phase-staggered) start;
- * before it begins or once it has died away this is 0 and the fan is back to
- * plain idle, so nothing here disturbs the resting bowl.
+ * A reaction's strength over time for one fan: up fast, held at full for
+ * `sustain` seconds, then an ease back to nothing over `decay`. `d` is
+ * seconds since this fan's own (phase-staggered) start; before it begins or
+ * once it has died away this is 0 and the fan is back to plain idle, so
+ * nothing here disturbs the resting bowl.
  */
-function reactEnvelope(d: number): number {
+function reactEnvelope(d: number, sustain: number, decay: number): number {
   if (d <= 0) return 0;
   const rise = d < REACT_ATTACK ? d / REACT_ATTACK : 1;
-  const fall = Math.exp(-Math.max(0, d - REACT_ATTACK) / REACT_DECAY);
+  const held = d - REACT_ATTACK - sustain;
+  const fall = held <= 0 ? 1 : Math.exp(-held / decay);
   return rise * fall;
 }
 
@@ -195,7 +202,9 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
           : fan.allegiance === "neutral"
             ? react.home * NEUTRAL_GAIN
             : react.home;
-      e = reactEnvelope(t - react.start - fan.phase * REACT_SPREAD) * signal;
+      e =
+        reactEnvelope(t - react.start - fan.phase * REACT_SPREAD, react.sustain, react.decay) *
+        signal;
     }
     const happy = e > 0 ? e : 0;
     const sad = e < 0 ? -e : 0;
@@ -335,7 +344,14 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
   // The reaction the stands are currently playing out. Latched from the
   // director each frame the way `<Actors>` latches the roster version - a new
   // `crowdReactionId` restarts the envelope from the current clock.
-  const reaction = useRef<Reaction>({ id: 0, home: 0, away: 0, start: 0 });
+  const reaction = useRef<Reaction>({
+    id: 0,
+    home: 0,
+    away: 0,
+    start: 0,
+    sustain: 0,
+    decay: REACT_DECAY,
+  });
 
   const parts = useMemo<Parts>(() => {
     const radius = FAN_HEIGHT * HEAD_D * 0.5;
@@ -415,6 +431,8 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
       r.home = director.crowdReaction.home;
       r.away = director.crowdReaction.away;
       r.start = t;
+      r.sustain = director.crowdReaction.sustain;
+      r.decay = director.crowdReaction.decay;
     }
     breathe(parts, fans, rest, t, r);
   });

@@ -314,23 +314,83 @@ export function basePathPoint(progress: number, bow = 0): Vector3 {
 }
 
 /**
- * How much each outcome moves the crowd, and which side it favours.
- * Plays not listed here (walks, hit batsmen) pass without a reaction.
+ * How long a reaction takes to fully wind down: a fast rise, then a hold at
+ * full excitement, then an ease back to idle. Only `sustain` and `decay`
+ * differ by tier - the attack is always the same quick beat.
+ */
+export type ReactionTier = "short" | "medium" | "long";
+
+const REACTION_ENVELOPE: Record<ReactionTier, { sustain: number; decay: number }> = {
+  short: { sustain: 0, decay: 1.5 },
+  medium: { sustain: 4, decay: 4 },
+  long: { sustain: 10, decay: 7 },
+};
+
+const TIER_RANK: Record<ReactionTier, number> = { short: 0, medium: 1, long: 2 };
+
+/**
+ * How much each outcome moves the crowd, which side it favours, and the
+ * reaction's floor duration - the situational read in `reactionTierFor` can
+ * only raise this, never lower it. Plays not listed here (walks, hit
+ * batsmen) pass without a reaction unless a run scores on them, which is
+ * handled separately as every run gets its own re-erupting cheer.
  */
 const CROWD_WEIGHT: Partial<
-  Record<PlayResultEvent["kind"], { magnitude: number; favorsBatter: boolean }>
+  Record<
+    PlayResultEvent["kind"],
+    { magnitude: number; favorsBatter: boolean; tier: ReactionTier }
+  >
 > = {
-  home_run: { magnitude: 1, favorsBatter: true },
-  triple: { magnitude: 0.9, favorsBatter: true },
-  double: { magnitude: 0.72, favorsBatter: true },
-  single: { magnitude: 0.55, favorsBatter: true },
-  error: { magnitude: 0.45, favorsBatter: true },
-  sac_fly: { magnitude: 0.55, favorsBatter: true },
-  strikeout: { magnitude: 0.62, favorsBatter: false },
-  field_out: { magnitude: 0.45, favorsBatter: false },
-  double_play: { magnitude: 0.85, favorsBatter: false },
-  generic: { magnitude: 0.35, favorsBatter: false },
+  home_run: { magnitude: 1, favorsBatter: true, tier: "long" },
+  triple: { magnitude: 0.9, favorsBatter: true, tier: "short" },
+  double: { magnitude: 0.72, favorsBatter: true, tier: "short" },
+  single: { magnitude: 0.55, favorsBatter: true, tier: "short" },
+  error: { magnitude: 0.45, favorsBatter: true, tier: "short" },
+  sac_fly: { magnitude: 0.55, favorsBatter: true, tier: "short" },
+  strikeout: { magnitude: 0.62, favorsBatter: false, tier: "short" },
+  field_out: { magnitude: 0.45, favorsBatter: false, tier: "short" },
+  double_play: { magnitude: 0.85, favorsBatter: false, tier: "medium" },
+  generic: { magnitude: 0.35, favorsBatter: false, tier: "short" },
 };
+
+/** Outs where the defence retired a batter or runner - eligible for the "clutch" escalation. */
+const OUT_KINDS = new Set<PlayResultEvent["kind"]>(["strikeout", "field_out", "double_play"]);
+
+/**
+ * Read the situation, not just the kind, to decide how long the stands stay
+ * up: a play that scores or saves a run earns the long hold that magnitude
+ * alone would not give it. Never drops below the kind's own floor tier.
+ */
+function reactionTierFor(
+  result: PlayResultEvent,
+  snapshot: GameSnapshot | null,
+  baseTier: ReactionTier,
+): ReactionTier {
+  let tier: ReactionTier = baseTier;
+  const raise = (t: ReactionTier) => {
+    if (TIER_RANK[t] > TIER_RANK[tier]) tier = t;
+  };
+
+  if (result.isScoringPlay || result.runners.some((r) => r.isScoring)) {
+    raise("long");
+  } else if (
+    result.runners.some(
+      (r) => r.from !== "home" && r.to !== "out" && r.to !== r.from && !r.isScoring,
+    )
+  ) {
+    raise("medium");
+  }
+
+  if (OUT_KINDS.has(result.kind)) {
+    const thrownOutAtPlate = result.runners.some(
+      (r) => r.to === "out" && (r.from === "third" || r.outAt === "home"),
+    );
+    const runnerInScoringPosition = Boolean(snapshot?.runners.second || snapshot?.runners.third);
+    if (thrownOutAtPlate || runnerInScoringPosition) raise("long");
+  }
+
+  return tier;
+}
 
 /**
  * Plays where the defence retired the batter with the ball they hit. Anything
@@ -419,7 +479,9 @@ export class Director {
    * `crowdReactionId` the way `<Actors>` watches `rosterVersion` and starts a
    * fresh reaction whenever it changes. See `stirCrowd`.
    */
-  crowdReaction: { home: number; away: number; at: number } | null = null;
+  crowdReaction:
+    | { home: number; away: number; at: number; sustain: number; decay: number }
+    | null = null;
   crowdReactionId = 0;
   callout: CallOut | null = null;
   snapshot: GameSnapshot | null = null;
@@ -520,12 +582,14 @@ export class Director {
    * the home side gets `+magnitude` when it went their way and `-magnitude` when
    * it did not, and the visitors get the opposite. Called from the play's own
    * reaction cue, so it lands after the outcome is settled, not off the bat.
+   * `tier` decides how long the stands stay up before easing back to idle.
    */
-  private stirCrowd(favorsBatter: boolean, magnitude: number) {
+  private stirCrowd(favorsBatter: boolean, magnitude: number, tier: ReactionTier = "short") {
     const homeIsBatting = this.snapshot?.battingSide === "home";
     const goodForHome = favorsBatter === homeIsBatting;
     const home = goodForHome ? magnitude : -magnitude;
-    this.crowdReaction = { home, away: -home, at: this.now() };
+    const { sustain, decay } = REACTION_ENVELOPE[tier];
+    this.crowdReaction = { home, away: -home, at: this.now(), sustain, decay };
     this.crowdReactionId += 1;
   }
 
@@ -1373,6 +1437,7 @@ export class Director {
                 : Math.max(0.15, ballDuration),
           favorsBatter: weight.favorsBatter,
           magnitude: weight.magnitude,
+          tier: reactionTierFor(result, this.snapshot, weight.tier),
           ...this.crowdVoice(weight.favorsBatter, weight.magnitude),
         }
       : null;
@@ -1406,7 +1471,7 @@ export class Director {
             this.onSound?.(reaction.sound, reaction.intensity);
             // The stands move to the same beat the cheer sounds on - after the
             // outcome is settled, so they never tip a big play early.
-            this.stirCrowd(reaction.favorsBatter, reaction.magnitude);
+            this.stirCrowd(reaction.favorsBatter, reaction.magnitude, reaction.tier);
             // A home run gets its show started while the ball is still up.
             if (result.kind === "home_run") this.launchFireworks(5);
           });
@@ -1417,8 +1482,9 @@ export class Director {
           cue.at(`score:${track.actorKey}`, t, track.end, () => {
             const voice = this.crowdVoice(true, 0.8);
             this.onSound?.(voice.sound, voice.intensity);
-            // A run crossing re-erupts the stands, on top of any hit reaction.
-            this.stirCrowd(true, 0.85);
+            // A run crossing re-erupts the stands, on top of any hit reaction,
+            // and always earns the long hold - a run just scored either way.
+            this.stirCrowd(true, 0.85, "long");
             this.throwConfetti(result.kind === "home_run" ? 200 : 140);
             this.launchFireworks(result.kind === "home_run" ? 7 : 3);
           });

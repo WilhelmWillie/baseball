@@ -150,20 +150,7 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
 
 /** Final-score card, shown over the park once the game goes final. */
 export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
-  const [dismissed, setDismissed] = useState(false);
   const [tab, setTab] = useState<TeamSide>("away");
-
-  if (dismissed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setDismissed(false)}
-        className="pointer-events-auto rounded-full border-2 border-grass bg-card px-4 py-2 text-xs font-bold text-grass-deep lip-float"
-      >
-        Final — see the box score
-      </button>
-    );
-  }
 
   const homeWon = snapshot.score.home > snapshot.score.away;
   const tied = snapshot.score.home === snapshot.score.away;
@@ -182,13 +169,12 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
                 {snapshot.venue} · {snapshot.lineScore.length} innings
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setDismissed(true)}
+            <Link
+              href="/"
               className="rounded-full border-2 border-grass-deep/15 px-3 py-1 text-xs font-bold text-bark-soft transition-colors hover:border-grass/60 hover:text-grass-deep"
             >
               Close
-            </button>
+            </Link>
           </div>
 
           <div className="mt-4 flex items-center gap-6">

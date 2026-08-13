@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Baloo_2, Nunito } from "next/font/google";
 import "./globals.css";
+import { AnalyticsProvider } from "@/lib/analytics/posthog";
 
 // Baloo carries the wordmark and every number on the scorebug; Nunito reads
 // small and round for everything else.
@@ -52,7 +53,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`h-full antialiased ${baloo.variable} ${nunito.variable}`}>
-      <body className="flex min-h-full flex-col bg-paper text-bark">{children}</body>
+      <body className="flex min-h-full flex-col bg-paper text-bark">
+        <AnalyticsProvider>{children}</AnalyticsProvider>
+      </body>
     </html>
   );
 }

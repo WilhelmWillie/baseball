@@ -8,6 +8,8 @@ import { useReplay } from "@/hooks/useReplay";
 import { useGameStore } from "@/store/gameStore";
 import { CAMERA_VIEWS, storedCameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
+import { track } from "@/lib/analytics/events";
+import { useWatchTimer } from "@/lib/analytics/useWatchTimer";
 import { Ball } from "@/components/brand/Ball";
 import { Scorebug, type ScoreMode } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
@@ -75,11 +77,47 @@ export function Viewer({
   // that is not in charge sits inert.
   useLiveFeed(gamePk, !isReplay);
   const replay = useReplay(gamePk, isReplay, { startAtBat, startAtBatIndex });
+  useWatchTimer(gamePk, mode);
 
   const snapshot = useGameStore((s) => s.snapshot);
   const history = useGameStore((s) => s.history);
   const connection = useGameStore((s) => s.connection);
   const error = useGameStore((s) => s.error);
+
+  // "Which games are people opening" - fired once when the viewer lands on a
+  // game, before the feed has said anything.
+  useEffect(() => {
+    track("game_opened", { gamePk, mode });
+  }, [gamePk, mode]);
+
+  // The same question, but readable: fired once the first snapshot arrives, so
+  // it can carry the team abbreviations and venue rather than just the id.
+  const loadedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!snapshot || loadedFor.current === gamePk) return;
+    loadedFor.current = gamePk;
+    track("game_loaded", {
+      gamePk,
+      mode,
+      home: snapshot.teams.home.abbrev,
+      away: snapshot.teams.away.abbrev,
+      venue: snapshot.venue,
+      isLive: snapshot.status.isLive,
+    });
+  }, [snapshot, gamePk, mode]);
+
+  // Report a feed failure once per outage, not on every failed poll.
+  const errored = useRef(false);
+  useEffect(() => {
+    if (connection === "error" && error) {
+      if (!errored.current) {
+        errored.current = true;
+        track("feed_error", { gamePk, message: error });
+      }
+    } else {
+      errored.current = false;
+    }
+  }, [connection, error, gamePk]);
 
   const cameraView = useGameStore((s) => s.cameraView);
   const setCameraView = useGameStore((s) => s.setCameraView);
@@ -112,6 +150,7 @@ export function Viewer({
     scoreTouched.current = true;
     if (mode !== "hidden") lastShown.current = mode;
     setScoreMode(mode);
+    track("scoreboard_mode_changed", { scoreMode: mode, gamePk });
   };
 
   const activeView = CAMERA_VIEWS.find((v) => v.id === cameraView) ?? CAMERA_VIEWS[0];
@@ -203,6 +242,9 @@ export function Viewer({
                     key={view.id}
                     type="button"
                     onClick={() => {
+                      if (view.id !== cameraView) {
+                        track("camera_switched", { from: cameraView, to: view.id, gamePk });
+                      }
                       setCameraView(view.id);
                       setShowCameras(false);
                     }}
@@ -231,6 +273,7 @@ export function Viewer({
               setSoundOn(next);
               sfx.setMuted(!next);
               if (next) sfx.resume();
+              track("sound_toggled", { on: next, gamePk });
             }}
             active={soundOn}
             title="Bat, mitt and crowd audio"

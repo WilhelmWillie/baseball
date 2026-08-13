@@ -206,7 +206,9 @@ export class Fx {
    * A quick shimmer over one happy fan's seat - a handful of bright motes that
    * pop up and are gone. Small on purpose: this reads a single fan's mood, not
    * a stadium celebration, so it has to stay well under the confetti it sits
-   * alongside.
+   * alongside. Sized against the crowd's own cartoon scale, not a realistic
+   * ember - a spark drawn at real-world size is a couple of pixels next to an
+   * eight-foot fan and simply does not read.
    */
   crowdCheer(origin: Vector3, colors: string[]) {
     const palette = colors.map((hex) => brighten(hex));
@@ -216,19 +218,19 @@ export class Fx {
       this.sparks.push({
         pos: origin
           .clone()
-          .add(new Vector3(randomIn(-0.5, 0.5), randomIn(0, 0.5), randomIn(-0.5, 0.5))),
+          .add(new Vector3(randomIn(-1.2, 1.2), randomIn(0, 1.2), randomIn(-1.2, 1.2))),
         vel: new Vector3(
-          Math.cos(angle) * randomIn(1, 3),
-          randomIn(4, 9),
-          Math.sin(angle) * randomIn(1, 3),
+          Math.cos(angle) * randomIn(2, 6),
+          randomIn(8, 16),
+          Math.sin(angle) * randomIn(2, 6),
         ),
         color: palette[Math.floor(Math.random() * palette.length)].clone(),
-        life: randomIn(0.35, 0.6),
-        maxLife: 0.6,
-        size: randomIn(0.12, 0.24),
+        life: randomIn(0.4, 0.7),
+        maxLife: 0.7,
+        size: randomIn(0.55, 0.95),
         spin: new Vector3(),
         rot: new Vector3(),
-        gravity: -4,
+        gravity: -8,
         drag: 1.6,
         flutter: 0,
         phase: 0,
@@ -247,19 +249,19 @@ export class Fx {
       this.dust.push({
         pos: origin
           .clone()
-          .add(new Vector3(randomIn(-0.35, 0.35), randomIn(0.3, 0.7), randomIn(-0.35, 0.35))),
+          .add(new Vector3(randomIn(-0.8, 0.8), randomIn(0.6, 1.6), randomIn(-0.8, 0.8))),
         vel: new Vector3(
-          Math.cos(angle) * randomIn(0.2, 0.5),
-          randomIn(1, 2),
-          Math.sin(angle) * randomIn(0.2, 0.5),
+          Math.cos(angle) * randomIn(0.4, 1),
+          randomIn(2, 4),
+          Math.sin(angle) * randomIn(0.4, 1),
         ),
         color: new Color(EMBER_COLORS[Math.floor(Math.random() * EMBER_COLORS.length)]),
-        life: randomIn(0.6, 1),
-        maxLife: 1,
-        size: randomIn(0.3, 0.55),
+        life: randomIn(0.7, 1.2),
+        maxLife: 1.2,
+        size: randomIn(0.75, 1.3),
         spin: new Vector3(),
         rot: new Vector3(),
-        gravity: -1,
+        gravity: -2,
         drag: 1.2,
         flutter: 0,
         phase: 0,

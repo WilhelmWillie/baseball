@@ -514,7 +514,10 @@ function spawnSideFx(
   const count = Math.min(pool.length, Math.max(2, Math.round(Math.abs(signal) * 8)));
   for (let n = 0; n < count; n++) {
     const fan = fans[pool[Math.floor(Math.random() * pool.length)]];
-    const origin = new Vector3(fan.p[0], fan.p[1] + FAN_HEIGHT * 1.1 * fan.scale, fan.p[2]);
+    // Well above the fan's own head - the stands are packed shoulder to
+    // shoulder, row above row, so anything spawned near head height is
+    // immediately buried behind whoever is sitting in the next row up.
+    const origin = new Vector3(fan.p[0], fan.p[1] + FAN_HEIGHT * 1.7 * fan.scale, fan.p[2]);
     if (signal > 0) director.fx.crowdCheer(origin, colors);
     else director.fx.crowdFume(origin);
   }

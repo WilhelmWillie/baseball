@@ -126,6 +126,8 @@ interface BuiltPlay {
   completeTime: number;
   /** State captured after the play, used to rebuild the linescore. */
   after: SimState;
+  /** This play recorded the third out - the half-inning ends on it. */
+  endsHalf: boolean;
 }
 
 function cloneLines<T>(source: Record<number, T>): Record<number, T> {
@@ -592,29 +594,50 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       atBatIndex,
     };
 
-    plays.push({
-      play,
-      eventTimes: times,
-      completeTime,
-      after: cloneState(state),
-    });
-
     clock = completeTime + SECONDS_AFTER_PLAY;
     atBatIndex++;
 
-    if (state.outs >= 3) {
+    // Flip sides on the third out *before* snapshotting `after`. The play's own
+    // `about.inning`/`isTopInning` were baked in above and still name the half
+    // it was played in; but the state the feed reports once this play is
+    // published needs to be the new half already. Capturing `after` before the
+    // flip is what used to leave the linescore a full at-bat behind the third
+    // out - the departed side kept "fielding" through the first hitter of the
+    // next half until that hitter's at-bat completed.
+    const endsHalf = state.outs >= 3;
+    if (endsHalf) {
       state.outs = 0;
       state.bases = [null, null, null];
       if (!state.isTop) state.inning += 1;
       state.isTop = !state.isTop;
       clock += 10;
     }
+
+    plays.push({
+      play,
+      eventTimes: times,
+      completeTime,
+      after: cloneState(state),
+      endsHalf,
+    });
   }
 
   return { plays, totalSeconds: clock };
 }
 
 const GAME = buildGame();
+
+/**
+ * When the final scripted play resolves - i.e. when the game is decided. The
+ * demo used to sit "In Progress" for another `SECONDS_AFTER_PLAY` plus a slack
+ * ten seconds before flipping to Final, which read as the game taking an age to
+ * notice its own last out. It now reports "Game Over" the moment this passes.
+ */
+const LAST_PLAY_COMPLETE = GAME.plays.length
+  ? GAME.plays[GAME.plays.length - 1].completeTime
+  : 0;
+/** How long "Game Over" stands before the official "Final", as on a real feed. */
+const FINAL_DELAY = 8;
 
 function inningsPitched(outs: number): string {
   return `${Math.floor(outs / 3)}.${outs % 3}`;
@@ -721,6 +744,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
   let state = initialState();
   let currentPlay: MlbPlay | undefined;
   let nextUp: MlbPlay | undefined;
+  let lastCompleteIdx = -1;
 
   for (let i = 0; i < GAME.plays.length; i++) {
     const built = GAME.plays[i];
@@ -750,12 +774,33 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
     currentPlay = play;
     if (isComplete) {
       state = built.after;
+      lastCompleteIdx = i;
       // Between at-bats the real feed already names the next hitter.
       nextUp = GAME.plays[i + 1]?.play;
     } else {
       nextUp = undefined;
     }
   }
+
+  // The between-innings break. After a half ends, a real feed spends the walk to
+  // the next half-inning reporting `inningState` "Middle" (top just ended) or
+  // "End" (bottom just ended) with the finished half still on the linescore -
+  // the commercial window, field empty. The demo does the same: hold that state
+  // from the third out until a few seconds before the next half's first pitch,
+  // so the players are back on and settled by the time it is thrown.
+  const SETTLE_LEAD = 4;
+  const lastComplete = lastCompleteIdx >= 0 ? GAME.plays[lastCompleteIdx] : undefined;
+  const nextBuilt = lastCompleteIdx >= 0 ? GAME.plays[lastCompleteIdx + 1] : undefined;
+  const nextFirst = nextBuilt?.eventTimes[0] ?? Infinity;
+  // No next play means the game is over, not on a break - don't strand the
+  // linescore in "Middle"/"End" forever behind the final scoreboard.
+  const inBreak = Boolean(lastComplete?.endsHalf) && nextBuilt !== undefined && t < nextFirst - SETTLE_LEAD;
+  const endedTop = lastComplete?.play.about?.isTopInning ?? true;
+  const breakInning = lastComplete?.play.about?.inning ?? state.inning;
+
+  const dispInning = inBreak ? breakInning : state.inning;
+  const dispIsTop = inBreak ? endedTop : state.isTop;
+  const dispInningState = inBreak ? (endedTop ? "Middle" : "End") : dispIsTop ? "Top" : "Bottom";
 
   const inningsPlayed = Math.max(1, state.inning);
   const fieldingRoster = state.isTop ? HOME_ROSTER : AWAY_ROSTER;
@@ -772,7 +817,19 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
   const liveCount = activePlay && !activePlay.about?.isComplete ? activePlay.count : { balls: 0, strikes: 0, outs: state.outs };
 
   const started = t > 0;
-  const finished = t > GAME.totalSeconds + 10;
+  // The game is decided the instant the last play resolves; MLB's own "Game
+  // Over" (coded "O") flips there, ahead of the official "Final" (coded "F")
+  // that follows a beat later. `decided` drives the decisions and the ending.
+  const decided = started && t >= LAST_PLAY_COMPLETE;
+  const official = started && t >= LAST_PLAY_COMPLETE + FINAL_DELAY;
+
+  const status = official
+    ? { abstractGameState: "Final", codedGameState: "F", detailedState: "Final", abstractGameCode: "F" }
+    : decided
+      ? { abstractGameState: "Live", codedGameState: "O", detailedState: "Game Over", abstractGameCode: "L" }
+      : started
+        ? { abstractGameState: "Live", codedGameState: "I", detailedState: "In Progress", abstractGameCode: "L" }
+        : { abstractGameState: "Preview", codedGameState: "P", detailedState: "Scheduled", abstractGameCode: "P" };
 
   return {
     gamePk: DEMO_GAME_PK,
@@ -785,12 +842,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
         dateTime: new Date(Date.now() - t * 1000).toISOString(),
         ...clockLabel(weather.hour ?? 13.17),
       },
-      status: {
-        abstractGameState: finished ? "Final" : started ? "Live" : "Preview",
-        codedGameState: finished ? "F" : started ? "I" : "P",
-        detailedState: finished ? "Final" : started ? "In Progress" : "Scheduled",
-        abstractGameCode: finished ? "F" : started ? "L" : "P",
-      },
+      status,
       teams: { away: AWAY_TEAM, home: HOME_TEAM },
       players: playersDict(),
       venue: { name: "Demo Park" },
@@ -803,11 +855,11 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
     liveData: {
       plays: { allPlays, currentPlay: activePlay },
       linescore: {
-        currentInning: state.inning,
-        currentInningOrdinal: ORDINALS[Math.min(8, state.inning - 1)],
-        inningState: state.isTop ? "Top" : "Bottom",
-        inningHalf: state.isTop ? "Top" : "Bottom",
-        isTopInning: state.isTop,
+        currentInning: dispInning,
+        currentInningOrdinal: ORDINALS[Math.min(8, dispInning - 1)],
+        inningState: dispInningState,
+        inningHalf: dispIsTop ? "Top" : "Bottom",
+        isTopInning: dispIsTop,
         scheduledInnings: 9,
         innings: state.innings.slice(0, inningsPlayed).map((frame, i) => ({
           num: i + 1,
@@ -849,7 +901,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
           home: boxscoreTeam(HOME_TEAM, HOME_ROSTER, state),
         },
       },
-      decisions: finished
+      decisions: decided
         ? state.score.away > state.score.home
           ? { winner: personRef(AWAY_ROSTER[8]), loser: personRef(HOME_ROSTER[8]) }
           : { winner: personRef(HOME_ROSTER[8]), loser: personRef(AWAY_ROSTER[8]) }

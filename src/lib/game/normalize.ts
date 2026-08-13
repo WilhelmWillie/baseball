@@ -3,6 +3,7 @@ import {
   type PositionKey,
 } from "@/lib/field/geometry";
 import { readConditions } from "@/lib/field/sky";
+import { deriveGameOver } from "@/lib/game/gameOver";
 import { buildUniforms, paletteFor } from "@/lib/mlb/teams";
 import type {
   MlbBoxscoreTeam,
@@ -270,10 +271,37 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
 
   const abstract = gameData?.status?.abstractGameState ?? "Preview";
   const detailed = gameData?.status?.detailedState ?? abstract;
-  const isFinal = abstract === "Final" || /final|game over|completed/i.test(detailed);
-  const isLive = abstract === "Live" && !isFinal;
+  const coded = gameData?.status?.codedGameState;
+  // The feed's own word that the game is decided. "Game Over" (coded "O") is
+  // MLB's own early signal - it posts a beat after the last out, ahead of the
+  // official "Final" (coded "F"), and MLB withholds it through a review, so it
+  // is both quick and reversal-safe. "Final" and the detailed text are the
+  // slower, fully-official confirmations.
+  const statusFinal =
+    abstract === "Final" ||
+    coded === "F" ||
+    coded === "O" ||
+    /final|game over|completed/i.test(detailed);
 
   const isTopInning = linescore?.isTopInning ?? true;
+  const inningState = linescore?.inningState ?? "Top";
+  // Don't wait on the feed's status flip: the rules of play already say when the
+  // game is decided. Derived fresh each snapshot, so an overturned game-ending
+  // out simply reads "not over" on the next read (see `deriveGameOver`).
+  const logicalFinal = deriveGameOver({
+    inning: linescore?.currentInning ?? 1,
+    isTopInning,
+    inningState,
+    outs: linescore?.outs ?? 0,
+    homeScore: linescore?.teams?.home?.runs ?? 0,
+    awayScore: linescore?.teams?.away?.runs ?? 0,
+    scheduledInnings: linescore?.scheduledInnings ?? 9,
+  });
+  const isFinal = statusFinal || logicalFinal;
+  // Keep polling brisk off the *authoritative* final only: if the logical
+  // fast-path calls it early and a review then reverses the out, a live game
+  // must not have already dropped to the idle poll rate and be slow to notice.
+  const isLive = abstract === "Live" && !statusFinal;
   // In the top half the home club is on defense.
   const fieldingSide: TeamSide = isTopInning ? "home" : "away";
   const battingSide: TeamSide = isTopInning ? "away" : "home";
@@ -345,7 +373,7 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
     inning: linescore?.currentInning ?? 1,
     inningOrdinal: linescore?.currentInningOrdinal ?? "1st",
     isTopInning,
-    inningState: linescore?.inningState ?? "Top",
+    inningState,
     count: {
       balls: linescore?.balls ?? 0,
       strikes: linescore?.strikes ?? 0,

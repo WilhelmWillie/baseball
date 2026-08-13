@@ -12,6 +12,7 @@ import { Scorebug, type ScoreMode } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
 import { History } from "./hud/History";
 import { GameOver } from "./hud/GameOver";
+import { Intermission } from "./hud/Intermission";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
   ssr: false,
@@ -243,6 +244,9 @@ export function Viewer({
       <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-full -translate-x-1/2 -translate-y-1/2 px-3 sm:top-24 sm:w-auto sm:translate-y-0 sm:px-0">
         <Callout />
       </div>
+
+      {/* Between-innings credits card, shown while the field is empty. */}
+      <Intermission />
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (

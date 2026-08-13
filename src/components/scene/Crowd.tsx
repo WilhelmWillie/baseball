@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
   BufferAttribute,
@@ -14,6 +14,7 @@ import {
   SphereGeometry,
 } from "three";
 import { FAN_HEIGHT, buildCrowd, type CrowdPalette, type Fan } from "@/lib/field/park";
+import type { Director } from "@/lib/anim/director";
 
 /**
  * The people in the seats.
@@ -50,6 +51,48 @@ const HEAD_RATE = 0.61;
 const SWAY = 0.12;
 const SWAY_RATE = 0.23;
 
+/**
+ * Reacting to the play. When the director stirs the stands (see
+ * `crowdReaction` there) a fan's excitement ramps up fast and eases back over a
+ * couple of seconds: a happy one comes up out of the seat and hops, a
+ * disappointed one sinks down and shakes its head. Every bit of it is still a
+ * nudge to the translation - the same three matrix slots the idle bob writes,
+ * no rotation rebuilt - so a whole bowl on its feet costs no more than a
+ * breathing one. The excitement is signed and read per allegiance, which is how
+ * the home majority and the visiting corner move in opposite directions to the
+ * same play.
+ */
+/** How high a fan rises out of the seat at full excitement, in feet at scale 1. */
+const STAND_LIFT = FAN_HEIGHT * 0.3;
+/** Height and rate of the hop once they are on their feet. */
+const JUMP_AMP = FAN_HEIGHT * 0.16;
+const JUMP_RATE = 1.9;
+/** How far a dejected fan sinks into the seat, and how much lower the head hangs. */
+const SLUMP = FAN_HEIGHT * 0.11;
+const HEAD_HANG = 0.5;
+/** A dejected head shakes side to side - "no, no" - this far and this fast. */
+const HEAD_SHAKE = FAN_HEIGHT * 0.06;
+const SHAKE_RATE = 2.2;
+/**
+ * How much deeper the idle bob runs at full excitement, and how much a slump
+ * quiets it. Only the amplitude is scaled, never the rate: the bob's phase is
+ * `t * rate`, so a rate that moved would jump the whole crowd. The lift of the
+ * seat and the hop, both added on top, are what actually read as jumping.
+ */
+const EXCITED_BOB = 2.4;
+const SLUMP_CALM = 0.5;
+/** Seconds to reach full tilt, then the decay time-constant of the ease back. */
+const REACT_ATTACK = 0.18;
+const REACT_DECAY = 1.5;
+/**
+ * How far apart in time the bowl's reaction is spread by phase. Without it a
+ * few thousand people would come up out of their seats on the very same frame -
+ * a wave machine, not a crowd. A third of a second of spread is a ripple.
+ */
+const REACT_SPREAD = 0.35;
+/** Neutral fans lean home, but quietly. */
+const NEUTRAL_GAIN = 0.5;
+
 /** Eyes. Dark enough to read at six pixels, not so dark they look like holes. */
 const EYE = "#2b2426";
 
@@ -58,13 +101,31 @@ const CAP_THETA = Math.PI * 0.42;
 const FACE_OPEN = 0.85;
 
 /**
- * TODO: react to the play. The director already knows when something has
- * happened and how big it was - `crowdVoice` computes exactly that for the
- * sound - so the shape of this is a 0..1 excitement level read here, driving
- * amplitude and rate up and putting a fraction of the bowl on its feet. The
- * per-instance phase below is what would keep that from looking like a wave
- * machine.
+ * The live reaction the crowd is playing out, latched off the director. `home`
+ * and `away` are the signed excitement the director handed us; `start` is the
+ * clock reading the current reaction began at, and `id` is the last reaction we
+ * saw, so a new stir of the stands restarts the envelope rather than blending
+ * into the tail of the old one.
  */
+interface Reaction {
+  id: number;
+  home: number;
+  away: number;
+  start: number;
+}
+
+/**
+ * A reaction's strength over time for one fan: up fast, then a long ease back
+ * to nothing. `d` is seconds since this fan's own (phase-staggered) start;
+ * before it begins or once it has died away this is 0 and the fan is back to
+ * plain idle, so nothing here disturbs the resting bowl.
+ */
+function reactEnvelope(d: number): number {
+  if (d <= 0) return 0;
+  const rise = d < REACT_ATTACK ? d / REACT_ATTACK : 1;
+  const fall = Math.exp(-Math.max(0, d - REACT_ATTACK) / REACT_DECAY);
+  return rise * fall;
+}
 
 /**
  * A hair mesh and the fans it covers. Hair is the one part that comes in two
@@ -109,25 +170,58 @@ interface Rest {
  * costs nothing: a few thousand sines and float writes, not a few thousand
  * matrix rebuilds.
  */
-function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number) {
+function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reaction) {
   if (t < parts.nextAt) return;
   parts.nextAt = t + 1 / STEP_RATE;
   const bodyM = parts.bodies.instanceMatrix.array as Float32Array;
   const headM = parts.heads.instanceMatrix.array as Float32Array;
   const eyeM = parts.eyes.instanceMatrix.array as Float32Array;
+  // The whole crowd shares one reaction; a fan's own excitement is that signal
+  // read for their allegiance, shaped by the envelope and their phase. When the
+  // stands are quiet `react.home` is 0 and every fan falls through to pure idle.
+  const stirred = react.home !== 0;
   for (let i = 0; i < fans.length; i++) {
     const fan = fans[i];
     const turn = fan.phase * Math.PI * 2;
     const s = fan.scale;
-    const bob = Math.sin(t * BOB_RATE * Math.PI * 2 + turn) * BOB * s;
+
+    // Signed excitement for this fan: the visitors feel a play the opposite way
+    // from the home stands, and the neutrals lean home but softly.
+    let e = 0;
+    if (stirred) {
+      const signal =
+        fan.allegiance === "away"
+          ? react.away
+          : fan.allegiance === "neutral"
+            ? react.home * NEUTRAL_GAIN
+            : react.home;
+      e = reactEnvelope(t - react.start - fan.phase * REACT_SPREAD) * signal;
+    }
+    const happy = e > 0 ? e : 0;
+    const sad = e < 0 ? -e : 0;
+
+    // Idle bob, deeper when elated and calmer when dejected - amplitude only.
+    const bobAmp = BOB * (1 + happy * EXCITED_BOB) * (1 - sad * SLUMP_CALM) * s;
+    const bob = Math.sin(t * BOB_RATE * Math.PI * 2 + turn) * bobAmp;
     const sway = Math.sin(t * SWAY_RATE * Math.PI * 2 + turn * 1.7) * SWAY * s;
     const nod = Math.sin(t * HEAD_RATE * Math.PI * 2 + turn * 2.3) * HEAD_BOB * s;
+
+    // Up out of the seat and hopping when happy, sunk into it when not. The hop
+    // carries `turn` so the bowl is not one synchronised pogo.
+    const lift = happy * STAND_LIFT * s;
+    const hop = Math.abs(Math.sin(t * JUMP_RATE * Math.PI * 2 + turn)) * happy * JUMP_AMP * s;
+    const slump = sad * SLUMP * s;
+    const rise = lift + hop - slump;
+    // A dejected head shakes side to side and hangs a little below the body.
+    const shake = Math.sin(t * SHAKE_RATE * Math.PI * 2 + turn * 1.3) * sad * HEAD_SHAKE * s;
+    const hang = sad * SLUMP * HEAD_HANG * s;
+
     const m = i * 16;
     const r = i * 3;
-    const headX = rest.head[r] + sway * 1.3;
-    const headY = rest.head[r + 1] + bob + nod;
+    const headX = rest.head[r] + sway * 1.3 + shake;
+    const headY = rest.head[r + 1] + bob + nod + rise - hang;
     bodyM[m + 12] = rest.body[r] + sway;
-    bodyM[m + 13] = rest.body[r + 1] + bob;
+    bodyM[m + 13] = rest.body[r + 1] + bob + rise;
     headM[m + 12] = headX;
     headM[m + 13] = headY;
     // The eyes share the head's transform exactly: same seat, same facing, same
@@ -235,8 +329,13 @@ function joinGeometries(parts: BufferGeometry[]): BufferGeometry {
   return out;
 }
 
-export function Crowd({ palette }: { palette: CrowdPalette }) {
+export function Crowd({ palette, director }: { palette: CrowdPalette; director: Director }) {
   const fans = useMemo(() => buildCrowd(palette), [palette]);
+
+  // The reaction the stands are currently playing out. Latched from the
+  // director each frame the way `<Actors>` latches the roster version - a new
+  // `crowdReactionId` restarts the envelope from the current clock.
+  const reaction = useRef<Reaction>({ id: 0, home: 0, away: 0, start: 0 });
 
   const parts = useMemo<Parts>(() => {
     const radius = FAN_HEIGHT * HEAD_D * 0.5;
@@ -307,7 +406,18 @@ export function Crowd({ palette }: { palette: CrowdPalette }) {
     return { body, head, hairLift };
   }, [fans]);
 
-  useFrame((state) => breathe(parts, fans, rest, state.clock.elapsedTime));
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const r = reaction.current;
+    // Pick up a fresh stir of the stands and start its envelope from now.
+    if (director.crowdReactionId !== r.id && director.crowdReaction) {
+      r.id = director.crowdReactionId;
+      r.home = director.crowdReaction.home;
+      r.away = director.crowdReaction.away;
+      r.start = t;
+    }
+    breathe(parts, fans, rest, t, r);
+  });
 
   return (
     <>

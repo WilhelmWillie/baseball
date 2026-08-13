@@ -627,6 +627,18 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
 
 const GAME = buildGame();
 
+/**
+ * When the final scripted play resolves - i.e. when the game is decided. The
+ * demo used to sit "In Progress" for another `SECONDS_AFTER_PLAY` plus a slack
+ * ten seconds before flipping to Final, which read as the game taking an age to
+ * notice its own last out. It now reports "Game Over" the moment this passes.
+ */
+const LAST_PLAY_COMPLETE = GAME.plays.length
+  ? GAME.plays[GAME.plays.length - 1].completeTime
+  : 0;
+/** How long "Game Over" stands before the official "Final", as on a real feed. */
+const FINAL_DELAY = 8;
+
 function inningsPitched(outs: number): string {
   return `${Math.floor(outs / 3)}.${outs % 3}`;
 }
@@ -805,7 +817,19 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
   const liveCount = activePlay && !activePlay.about?.isComplete ? activePlay.count : { balls: 0, strikes: 0, outs: state.outs };
 
   const started = t > 0;
-  const finished = t > GAME.totalSeconds + 10;
+  // The game is decided the instant the last play resolves; MLB's own "Game
+  // Over" (coded "O") flips there, ahead of the official "Final" (coded "F")
+  // that follows a beat later. `decided` drives the decisions and the ending.
+  const decided = started && t >= LAST_PLAY_COMPLETE;
+  const official = started && t >= LAST_PLAY_COMPLETE + FINAL_DELAY;
+
+  const status = official
+    ? { abstractGameState: "Final", codedGameState: "F", detailedState: "Final", abstractGameCode: "F" }
+    : decided
+      ? { abstractGameState: "Live", codedGameState: "O", detailedState: "Game Over", abstractGameCode: "L" }
+      : started
+        ? { abstractGameState: "Live", codedGameState: "I", detailedState: "In Progress", abstractGameCode: "L" }
+        : { abstractGameState: "Preview", codedGameState: "P", detailedState: "Scheduled", abstractGameCode: "P" };
 
   return {
     gamePk: DEMO_GAME_PK,
@@ -818,12 +842,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
         dateTime: new Date(Date.now() - t * 1000).toISOString(),
         ...clockLabel(weather.hour ?? 13.17),
       },
-      status: {
-        abstractGameState: finished ? "Final" : started ? "Live" : "Preview",
-        codedGameState: finished ? "F" : started ? "I" : "P",
-        detailedState: finished ? "Final" : started ? "In Progress" : "Scheduled",
-        abstractGameCode: finished ? "F" : started ? "L" : "P",
-      },
+      status,
       teams: { away: AWAY_TEAM, home: HOME_TEAM },
       players: playersDict(),
       venue: { name: "Demo Park" },
@@ -882,7 +901,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
           home: boxscoreTeam(HOME_TEAM, HOME_ROSTER, state),
         },
       },
-      decisions: finished
+      decisions: decided
         ? state.score.away > state.score.home
           ? { winner: personRef(AWAY_ROSTER[8]), loser: personRef(HOME_ROSTER[8]) }
           : { winner: personRef(HOME_ROSTER[8]), loser: personRef(AWAY_ROSTER[8]) }

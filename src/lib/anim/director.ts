@@ -26,7 +26,7 @@ import {
   planBattedBall,
   type BattedPlan,
 } from "./batted";
-import { foulBallFor, runnerProgress } from "@/lib/game/events";
+import { contactBallFor, foulBallFor, runnerProgress } from "@/lib/game/events";
 import type {
   GameSnapshot,
   NormalizedEvent,
@@ -180,6 +180,25 @@ const MATERIALIZE_TIME = 0.6;
  * the pitcher for the next hitter.
  */
 const POST_OUT_PAUSE = 1.1;
+
+/**
+ * How long the director will sit on a ball in play waiting for its result to
+ * catch up, before giving up and animating the pitch on its own.
+ *
+ * A batted ball and what came of it are one motion, and the pitch cannot be
+ * drawn until the result is known - there is no way to finish it. `events.ts`
+ * holds the deciding pitch back for this reason, but that hold is a hard edge:
+ * once it expires the cursor moves past the pitch and the two halves can never
+ * be rejoined. This is the soft landing under it. A result that lands a moment
+ * after the feed-side hold gave up still fuses, and the cost of being wrong is
+ * a few seconds of the field idling the way it does between any two pitches.
+ *
+ * It also covers what the feed-side hold structurally cannot: a result the
+ * normalizer never held in the first place, and one separated from its pitch in
+ * the queue. Five seconds against a 3s proxy cache and a 1.5s chase poll is one
+ * to two genuinely fresh reads; much less than that would be decorative.
+ */
+const FUSE_GRACE_MS = 5000;
 
 export interface CallOut {
   text: string;
@@ -490,6 +509,20 @@ export class Director {
   queueLength = 0;
   /** Bumped whenever the actor roster changes, so React can re-render. */
   rosterVersion = 0;
+  /**
+   * Set while a ball in play is being held at the head of the queue waiting for
+   * its result. See `FUSE_GRACE_MS` and `compileNext`.
+   */
+  private fuseWait: { id: string; since: number } | null = null;
+
+  /**
+   * True while a struck ball is waiting on its outcome. The poll loop chases
+   * the feed through this the same way it does through the normalizer's hold -
+   * a grace window that no fresh read lands inside cannot fuse anything.
+   */
+  get awaitingResult(): boolean {
+    return this.fuseWait !== null;
+  }
 
   /**
    * Fired as each animation resolves so the scoreboard advances in step with
@@ -854,9 +887,23 @@ export class Director {
   enqueue(events: NormalizedEvent[]) {
     this.queue.push(...events);
     // A long backlog means we fell behind (tab was hidden, feed hiccup).
-    // Drop the play-by-play detail and keep the outcomes.
+    // Drop the play-by-play detail and keep the outcomes - except for a ball in
+    // play, which is half of a single fused animation. Dropping one of those
+    // leaves its result to play with no swing in front of it, which is the very
+    // thing the fusion exists to prevent.
     if (this.queue.length > 14) {
-      this.queue = this.queue.filter((e) => e.type !== "pitch").slice(-8);
+      this.queue = this.queue
+        .filter((e) => e.type !== "pitch" || e.startsPlay)
+        .slice(-10);
+      // The slice can still behead a fused pair. A struck pitch whose result
+      // was cut away from it would sit out the whole grace window and then fall
+      // back, so shed it now rather than stalling on a result that is gone.
+      while (this.queue.length > 0) {
+        const head = this.queue[0];
+        if (head.type !== "pitch" || !head.startsPlay) break;
+        if (this.resultIndexFor(head.atBatIndex) > 0) break;
+        this.queue.shift();
+      }
     }
     this.queueLength = this.queue.length;
   }
@@ -868,10 +915,27 @@ export class Director {
     this.currentTime = 0;
     this.queueLength = 0;
     this.busy = false;
+    this.fuseWait = null;
   }
 
+  /**
+   * The queue has drained and nothing is playing, so the world may be replaced.
+   * Deliberately false while a ball in play waits for its result: the pitch has
+   * not been shown yet, and promoting the snapshot would put the outcome on the
+   * scoreboard ahead of it. See `store/gameStore.ts`.
+   */
   isIdle(): boolean {
     return !this.current && this.queue.length === 0;
+  }
+
+  /**
+   * Nothing is moving under the animation clock, so the field may drift home.
+   * Unlike `isIdle` this is true during a fusion wait - the queue is not empty,
+   * but there is no animation running and the park should go on breathing
+   * rather than freezing mid-pose until the result lands.
+   */
+  private isResting(): boolean {
+    return !this.current && (this.queue.length === 0 || this.fuseWait !== null);
   }
 
   update(dt: number) {
@@ -918,7 +982,7 @@ export class Director {
       if (actor.dissolve <= 0) actor.arriving = false;
     }
 
-    if (this.isIdle()) {
+    if (this.isResting()) {
       this.idleTime += dt;
       this.restIdle(dt);
     }
@@ -1000,6 +1064,10 @@ export class Director {
       return;
     }
 
+    // A lull with a struck ball held in the queue is not a genuine one - a
+    // pitch is about to be thrown - so the broadcast stays on it. Settling back
+    // to `center` above is still right; wandering off to the bowl is not.
+    if (this.fuseWait) return;
     if (this.idleTime < IDLE_CUTAWAY_AFTER) return;
     if (this.now() - this.lastCutawayAt < IDLE_CUTAWAY_GAP * 1000) return;
     // The runner at first is only a shot when there is one; with the bases
@@ -1029,19 +1097,48 @@ export class Director {
     if (this.onIdleCutaway) this.endIdleCutaway();
   }
 
+  /**
+   * Where this at-bat's result sits in the queue behind its pitch, or -1.
+   * Matching on `atBatIndex` rather than taking whatever is next is what lets a
+   * result be fused across an action event that landed between the two - and
+   * what stops a pitch being fused to some other at-bat's outcome.
+   */
+  private resultIndexFor(atBatIndex: number): number {
+    return this.queue.findIndex(
+      (e, i) => i > 0 && e.type === "play_result" && e.atBatIndex === atBatIndex,
+    );
+  }
+
   private compileNext(): Anim | null {
-    const next = this.queue.shift();
+    // Peek rather than shift: a ball in play may have to be left where it is.
+    const next = this.queue[0];
     if (!next) return null;
 
-    switch (next.type) {
-      case "pitch": {
-        // A ball in play flows straight into its result, so compile them as one.
-        if (next.startsPlay && this.queue[0]?.type === "play_result") {
-          const result = this.queue.shift() as PlayResultEvent;
-          return this.compileAtBat(next, result);
-        }
-        return this.compilePitch(next);
+    if (next.type === "pitch" && next.startsPlay) {
+      const at = this.resultIndexFor(next.atBatIndex);
+      if (at > 0) {
+        // The pitch and what came of it are one motion. Take the result out
+        // from wherever it landed and compile the pair on a single clock.
+        const [result] = this.queue.splice(at, 1) as [PlayResultEvent];
+        this.queue.shift();
+        this.fuseWait = null;
+        return this.compileAtBat(next, result);
       }
+      // Not here yet. Wait rather than throwing a pitch that cannot be
+      // finished - there is no honest way to end a swing whose outcome is
+      // unknown. The field goes on idling through this; see `isResting`.
+      if (!this.fuseWait || this.fuseWait.id !== next.id) {
+        this.fuseWait = { id: next.id, since: this.now() };
+      }
+      if (this.now() - this.fuseWait.since < FUSE_GRACE_MS) return null;
+    }
+
+    this.queue.shift();
+    this.fuseWait = null;
+
+    switch (next.type) {
+      case "pitch":
+        return this.compilePitch(next);
       case "play_result":
         return this.compileResult(next);
       case "action":
@@ -1168,15 +1265,63 @@ export class Director {
     }
   }
 
+  /**
+   * The instant the bat meets the ball: the crack, the chips of dirt off the
+   * back foot, and the knock the contact puts on the lens. One definition,
+   * whether the outcome is known (`compileAtBat`) or not (`compilePitch`).
+   *
+   * Without a result there is no batted ball to read the heat off, so the
+   * camera takes a moderate knock and no cut: a speculative flight must not be
+   * given the angle a home run gets.
+   */
+  private contactBeat(result?: PlayResultEvent) {
+    this.onSound?.("crack");
+    this.fx.spray(contactPoint(this.batSide()).setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
+    if (!result) {
+      this.knockCamera(0.3);
+      return;
+    }
+    // The camera reacts to contact the way a crowd does, and how hard the ball
+    // was hit is most of that reaction.
+    const heat = result.ball ? heatOf(result.ball) : 0;
+    const big = result.kind === "home_run" || result.kind === "triple";
+    this.knockCamera(big ? 0.85 : result.ball ? 0.2 + heat * 0.55 : 0.2);
+    // A ball scalded on a line deserves the same angle a home run gets:
+    // nothing sells a screamer like a camera at the height it is travelling at.
+    const screamer = result.ball?.trajectory === "line_drive" && heat > 0.72;
+    if (big || screamer) this.setShot("low", { cut: true, force: true });
+  }
+
+  /**
+   * How much of a speculative flight to show when a ball in play has to be
+   * animated without its result. The trajectory is a guess, and the feed's real
+   * one replaces it moments later from the same contact point, so this shows
+   * just enough to read as "he got it" - a full carry would risk showing a lazy
+   * fly for what the feed is about to call a home run.
+   */
+  private static readonly CONTACT_PREVIEW = 1.2;
+
   private compilePitch(pitch: PitchEvent): Anim {
     const cue = new Cue();
     const flight = this.pitchFlight(pitch);
     const swings =
       pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
     const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
+    // A ball in play whose result never arrived. It has to read as contact:
+    // sending it to the catcher instead is what made a home run look like a
+    // strike. See `contactBallFor`.
+    const struck =
+      pitch.outcome === "in_play"
+        ? planBattedBall(contactBallFor(pitch), {
+            contact: contactPoint(this.batSide()),
+            caught: false,
+            hit: true,
+          })
+        : null;
     // The catcher's mitt, which sits at the bottom of the zone.
     const mittSpot = fp(0, -5.5, zoneHeight(1.4));
-    const tail = foul ? 1.5 : 0.75;
+    const preview = Director.CONTACT_PREVIEW;
+    const tail = struck ? preview + 0.35 : foul ? 1.5 : 0.75;
     const duration = flight.plateTime + tail;
 
     return {
@@ -1208,18 +1353,27 @@ export class Director {
             this.setShot("center", { cut: true, force: true }),
           );
         }
-        if (swings || pitch.outcome === "in_play") {
-          this.swingAt(t, flight.plateTime - SWING_LEAD, false);
+        if (swings || struck) {
+          // A ball that was struck follows through; a swing that missed snaps
+          // back to ready.
+          this.swingAt(t, flight.plateTime - SWING_LEAD, Boolean(struck));
         }
 
         cue.at("plate", t, flight.plateTime, () => {
-          if (foul) this.onSound?.("foul");
+          if (struck) this.contactBeat();
+          else if (foul) this.onSound?.("foul");
           else this.onSound?.("mitt");
         });
 
         if (t > flight.plateTime) {
           const u = clamp01((t - flight.plateTime) / (foul ? 1.1 : 0.32));
-          if (foul) {
+          if (struck) {
+            // Off the bat and still climbing when this cuts out. The result
+            // animation picks the ball up from the same contact point.
+            this.ball.position.copy(struck.at(Math.min(t - flight.plateTime, preview)));
+            this.ball.visible = t - flight.plateTime < preview;
+            if (this.ball.visible) this.pushTrail();
+          } else if (foul) {
             // Foul: kick the ball up and back out of play.
             const target = fp(foul.lateral, foul.depth, 0);
             const p = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z))
@@ -1277,22 +1431,35 @@ export class Director {
     return {
       label: `atbat:${result.id}`,
       duration: contactAt + inner.duration,
-      onStart: () => inner.onStart?.(),
+      onStart: () => {
+        // A fused at-bat opens on a pitch, so it is framed like one. This used
+        // to run `inner.onStart` here instead, which put the ball-tracking shot
+        // on the windup: every pitch that was *not* fused got the broadcast
+        // framing and every pitch that was did not.
+        this.pitchCount += 1;
+        const hitter = this.batter();
+        if (hitter) {
+          hitter.dissolve = 0;
+          hitter.arriving = false;
+          hitter.visible = true;
+        }
+        if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
+        else if (this.pitchCount % 4 === 0) this.setShot("mound", { cut: true, force: true });
+        else this.setShot("center", { cut: true, force: true });
+      },
       update: (t, dt) => {
+        if (this.cameraMode === "mound") {
+          cue.at("cutback", t, flight.releaseAt, () =>
+            this.setShot("center", { cut: true, force: true }),
+          );
+        }
         cue.at("crack", t, contactAt, () => {
-          this.onSound?.("crack");
-          // Chips of dirt off the back foot as the hitter turns on it.
-          this.fx.spray(contactPoint(this.batSide()).setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
-          // The camera reacts to contact the way a crowd does, and how hard the
-          // ball was hit is most of that reaction.
-          const heat = result.ball ? heatOf(result.ball) : 0;
-          const big = result.kind === "home_run" || result.kind === "triple";
-          this.knockCamera(big ? 0.85 : result.ball ? 0.2 + heat * 0.55 : 0.2);
-          // A ball scalded on a line deserves the same angle a home run gets:
-          // nothing sells a screamer like a camera at the height it is
-          // travelling at.
-          const screamer = result.ball?.trajectory === "line_drive" && heat > 0.72;
-          if (big || screamer) this.setShot("low", { cut: true, force: true });
+          // The result's own setup - the ball-tracking shot and how tightly it
+          // follows - lands at contact now rather than on the windup, so it is
+          // in place before the ball leaves the bat and `contactBeat` can still
+          // override it for a home run or a screamer.
+          inner.onStart?.();
+          this.contactBeat(result);
         });
         if (t <= contactAt) {
           flight.update(t);

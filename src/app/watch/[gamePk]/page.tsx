@@ -6,15 +6,23 @@ export default async function WatchPage({
   searchParams,
 }: {
   params: Promise<{ gamePk: string }>;
-  searchParams: Promise<{ at?: string; hour?: string; wx?: string; wind?: string }>;
+  searchParams: Promise<{
+    at?: string;
+    hour?: string;
+    wx?: string;
+    wind?: string;
+    lag?: string;
+  }>;
 }) {
   const { gamePk } = await params;
-  const { at, hour, wx, wind } = await searchParams;
+  const { at, hour, wx, wind, lag } = await searchParams;
   const isDemo = gamePk === "demo" || Number(gamePk) === DEMO_GAME_PK;
   // ?at=<seconds> jumps into the simulated game part-way through, and
-  // ?hour= / ?wx= / ?wind= put it under any sky you like.
+  // ?hour= / ?wx= / ?wind= put it under any sky you like. ?lag=<seconds> slows
+  // the simulated feed's results down, which is how the pitch/result fusion is
+  // tested against a feed that takes its time.
   const offset = isDemo ? Math.max(0, Number(at ?? 0) || 0) : 0;
-  const demoQuery = Object.entries({ hour, wx, wind })
+  const demoQuery = Object.entries({ hour, wx, wind, lag })
     .filter(([, value]) => value)
     .map(([key, value]) => `&${key}=${encodeURIComponent(value as string)}`)
     .join("");

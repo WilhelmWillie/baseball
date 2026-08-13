@@ -214,10 +214,22 @@ function battedBallFrom(
   };
 }
 
+/**
+ * GUMBO's call codes for a ball put in play: out(s), no out, run(s).
+ * `isInPlay` is the usual signal, but it is not the only one the feed carries
+ * and it is not always the first to appear.
+ */
+const IN_PLAY_CODES = new Set(["X", "D", "E"]);
+
 function pitchOutcome(event: MlbPlayEvent): PitchOutcome {
   const d = event.details;
-  if (d?.isInPlay) return "in_play";
   const code = d?.call?.code ?? d?.code;
+  // Contact is read from more than one signal. Getting it wrong is expensive in
+  // a way the other outcomes are not: MLB sets `isStrike` on a ball in play, so
+  // a missing `isInPlay` used to fall through to the `default:` arm below and
+  // call a home run a called strike - which both skipped the hold and cleared
+  // `startsPlay`, so the pitch and its result could never animate as one motion.
+  if (d?.isInPlay || IN_PLAY_CODES.has(code ?? "")) return "in_play";
   if (code === "H") return "hit_by_pitch";
   if (d?.isBall) return "ball";
   switch (code) {
@@ -235,6 +247,11 @@ function pitchOutcome(event: MlbPlayEvent): PitchOutcome {
     case "C":
       return "called_strike";
     default:
+      // Nothing recognized the code, but batted-ball tracking hangs off it: the
+      // bat hit the ball. This sits *behind* the foul codes deliberately, since
+      // MLB publishes `hitData` for some fouls too and a foul misread as
+      // contact would hold an at-bat that has not ended.
+      if (event.hitData) return "in_play";
       return d?.isStrike ? "called_strike" : "other";
   }
 }
@@ -314,8 +331,24 @@ function deciderIndex(playEvents: MlbPlayEvent[]): number | null {
  * How long to wait for a result before giving up and playing the pitch alone.
  * MLB usually publishes one within a poll or two; if something has gone wrong
  * upstream, a late animation still beats a frozen field.
+ *
+ * A home run is the slowest play the feed has to finalize - the ball is up for
+ * four seconds, then the trot, then the runs and RBI have to reconcile - and at
+ * twelve seconds this gave up on exactly the plays most worth seeing whole.
+ * Waiting is cheap: the field idles the way it does between any two pitches,
+ * and a real broadcast leaves twenty-odd seconds there anyway.
+ *
+ * This is no longer the only thing standing between a batted ball and a
+ * disjointed animation. When it does expire the pitch goes out flagged
+ * `startsPlay`, and `FUSE_GRACE` in the director gives the result one more
+ * chance to catch up before anything is drawn. See `compileNext`.
+ *
+ * The two together are the budget, and fifteen seconds is this half of it. The
+ * floor on usefully splitting it is how fast a genuinely new read can arrive:
+ * the proxy caches for 3s and the chase poll runs at 1.5s, so a phase shorter
+ * than about four seconds is decorative. Fifteen buys three or four.
  */
-const HOLD_TIMEOUT_MS = 12000;
+const HOLD_TIMEOUT_MS = 15000;
 
 /** Position the cursor at the live edge without emitting anything. */
 export function seedCursor(feed: MlbLiveFeed): FeedCursor {
@@ -516,5 +549,22 @@ export function foulBallFor(pitch: PitchEvent): BattedBall {
     undefined,
     seed,
     { isHomeRun: false, isFoul: true, batSide: pitch.batSide },
+  );
+}
+
+/**
+ * A plausible fair ball off the bat, for the case where a pitch was put in play
+ * but its result has not arrived and cannot be waited for any longer. Nothing
+ * here is real - with no play and no `hitData`, `battedBallFrom` synthesizes an
+ * angle from the bat side - so whoever draws it should show only the first
+ * moment of the carry. The feed's own trajectory replaces it shortly after.
+ */
+export function contactBallFor(pitch: PitchEvent): BattedBall {
+  const seed = hash(`${pitch.id}:contact`);
+  return battedBallFrom(
+    {},
+    undefined,
+    seed,
+    { isHomeRun: false, isFoul: false, batSide: pitch.batSide },
   );
 }

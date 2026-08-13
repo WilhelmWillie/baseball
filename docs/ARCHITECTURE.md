@@ -64,8 +64,8 @@ src/
     sim/        scripted demo game, emitted in GUMBO's shape
 ```
 
-Roughly 11.1k lines across 43 source files. Two files dominate:
-`lib/anim/director.ts` (1515) and `components/scene/Player.tsx` (1375).
+Roughly 14.3k lines across 51 source files. Two files dominate:
+`lib/anim/director.ts` (2186) and `components/scene/Player.tsx` (1465).
 
 ## Routes
 
@@ -111,7 +111,8 @@ downstream speaks:
   `InningChangeEvent`. `PlayResultEvent.kind` is the bucket the animator
   branches on (`home_run`, `double_play`, `sac_fly`, …).
 - `FeedCursor` — how far through the feed the normalizer has read, including the
-  `hold` that keeps a pitch back until its result arrives.
+  `hold` that keeps a pitch back until its result arrives. The hold is the first
+  half of the fusion budget; the director's `FUSE_GRACE_MS` is the second.
 
 **`lib/game/normalize.ts`** — `buildSnapshot(feed)` and `buildHistory(feed)`.
 Pure functions from a feed response to state; no incremental logic.
@@ -122,12 +123,19 @@ strikes from the pitches rather than trusting the feed's `count` field (which is
 documented inconsistently), and it decides which pitch ended an at-bat *before*
 MLB publishes the result, so the pitch and its outcome can animate as one motion.
 
+Contact is read from `details.isInPlay` *and* GUMBO's `X`/`D`/`E` call codes,
+with `hitData` as a last resort behind the foul codes. Reading a ball in play as
+anything else is the expensive mistake here: MLB sets `isStrike` on one, so a
+single missing field used to make a home run animate as a called strike.
+
 **`lib/game/schedule.ts`** — `summarizeGame()` / `sortGames()` for the home page.
 
 ### State and the polling loop
 
 **`hooks/useLiveFeed.ts`** — polls `/api/game/[gamePk]`. Interval varies: 5s
-live, 15s idle, 1.8s demo, 1.5s while a pitch is held waiting on its result.
+live, 15s idle, 1.8s demo, 1.5s while a struck ball is waiting on its result —
+which means either wait, the normalizer's `hold` or the director's
+`awaitingResult`. A grace window no fresh read lands inside cannot fuse anything.
 Backs off on failure, re-polls immediately when the tab becomes visible, and
 only surfaces an error after two consecutive failures.
 
@@ -149,8 +157,16 @@ advances outs and score when a play's animation finishes.
 
 - `actors: Map<string, Actor>` — every figure's transform, pose and pose phase.
 - The animation queue: `enqueue()`, `update(dt)`, `isIdle()`, `clearQueue()`.
+  `isIdle()` means *the world may be replaced*; the private `isResting()` means
+  *nothing is animating*. They differ during a fusion wait, and conflating them
+  is what would freeze the park mid-pose while one is open.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
+  `compileNext` peeks rather than shifting, so a ball in play can be held back
+  until its result arrives (`FUSE_GRACE_MS`) instead of being animated into a
+  swing that has no ending. Past that it falls back to a short flight off the
+  bat — never into the catcher's mitt, which is what made a home run read as a
+  strike.
 - The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
 - Callbacks out: `onCount`, `onPlayResolved`, `onSound`.
 
@@ -233,6 +249,12 @@ the crack lands with the swing rather than with the poll that reported it.
 **`lib/sim/feed.ts`** — renders that script as a GUMBO-shaped response for an
 elapsed time, so the demo exercises the same normalization and animation path a
 real game does. `DEMO_GAME_PK = 747001`.
+
+Results lag their deciding pitch by `RESULT_LAG`, longest on a home run, and
+`?lag=<seconds>` overrides it — a flat 1.2s meant the demo never once exercised
+a slow feed, which is precisely how the pitch/result fusion came to be broken in
+production while looking perfect here. Half the demo's batted balls also omit
+`isInPlay` on purpose, so the call-code path stays exercised.
 
 ## Conventions
 

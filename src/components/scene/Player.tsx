@@ -126,7 +126,9 @@ function handAnchor(isAlien: boolean, stance: typeof BAT_STANCE): Vector3 {
   return mid;
 }
 
-const ALIEN_SKIN = ["#8ad694", "#79c9c2", "#a6d977", "#7bc7ad", "#b7d96b"];
+// Neutral greys with a touch of warm/cool variation, so a roster of aliens
+// still reads as individuals without anyone looking radioactive.
+const ALIEN_SKIN = ["#a8adb2", "#b0aca6", "#9ca1a6", "#b6b5b2", "#9fa4a8"];
 const ROBOT_METAL = "#c3cad2";
 const DARK_PART = "#31373f";
 const EYE_GLOW = "#7ff0ff";
@@ -983,7 +985,7 @@ export function Player({
       trim: phong(uniform.trim, 34, "#333333"),
       helmet: new MeshPhongMaterial({ color: uniform.helmet, shininess: 78, specular: "#9a9a9a" }),
       skin: isAlien
-        ? phong(alienSkin(actor.playerId), 52, "#5b6b58")
+        ? phong(alienSkin(actor.playerId), 52, "#6a6d70")
         : new MeshPhongMaterial({ color: ROBOT_METAL, shininess: 92, specular: "#b9c0c8" }),
       dark: phong(DARK_PART, 40, "#3a3a3a"),
       // Big glossy eyes are most of an alien's face.
@@ -1116,13 +1118,11 @@ export function Player({
     }
 
     if (isAlien) {
-      add(torso, GEO.ring, materials.trim, [0, 1.6, 0], [1.15, 1.15, 1.15], [Math.PI / 2, 0, 0]);
+      // A clean jersey: just the team emblem on the chest and the neck rising
+      // out of the collar. The old collar ring and flank piping cluttered the
+      // silhouette without adding anything the team colors weren't already
+      // carrying.
       add(torso, GEO.emblem, materials.trim, [0, 1.02, 0.48]);
-      // Piping down the flanks.
-      for (const side of [-1, 1]) {
-        add(torso, GEO.box, materials.trim, [side * 0.86, 0.9, 0], [0.06, 1.2, 0.5]);
-        add(torso, GEO.lowSphere, materials.jersey, [side * 0.94, 1.48, 0], [0.6, 0.5, 0.6]);
-      }
       add(torso, GEO.taper, materials.skin, [0, 1.88, 0], [0.46, 0.42, 0.46]);
     } else {
       // Chest plate with status lights and cooling vents.

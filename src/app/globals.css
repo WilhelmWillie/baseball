@@ -52,20 +52,19 @@ body {
   box-shadow: 0 4px 0 0 rgba(31, 90, 57, 0.22), 0 12px 26px -12px rgba(20, 40, 28, 0.7);
 }
 
-@keyframes callout {
+/* The play banner rises from the bottom edge and settles with a small
+   overshoot, so a new call reads as sliding into the frame. */
+@keyframes banner {
   0% {
-    transform: scale(0.7) translateY(10px) rotate(-3deg);
+    transform: translateY(105%);
     opacity: 0;
   }
-  55% {
-    transform: scale(1.09) translateY(0) rotate(1.5deg);
+  70% {
+    transform: translateY(-4%);
     opacity: 1;
   }
-  75% {
-    transform: scale(0.98) rotate(-1deg);
-  }
   100% {
-    transform: scale(1) rotate(0deg);
+    transform: translateY(0);
     opacity: 1;
   }
 }

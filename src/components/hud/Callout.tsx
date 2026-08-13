@@ -38,18 +38,23 @@ export function Callout() {
   if (!call) return null;
 
   return (
-    <div className="pointer-events-none flex flex-col items-center">
+    // A full-width banner along the bottom edge. On a phone it floats just
+    // above the thumb controls so it never covers them; on a larger screen the
+    // bottom is empty, so it sits flush against it, edge to edge.
+    <div className="pointer-events-none absolute inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-10 px-2 sm:bottom-0 sm:px-0">
       <div
         key={call.at}
-        className={`animate-[callout_320ms_cubic-bezier(0.34,1.56,0.64,1)] rounded-2xl border-2 px-4 py-2 font-display text-xl font-extrabold lip-float sm:px-6 sm:py-2.5 sm:text-3xl ${TONE[call.tone]}`}
+        className={`flex animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:gap-1 sm:rounded-b-none sm:border-x-0 sm:border-b-0 sm:py-4 ${TONE[call.tone]}`}
       >
-        {call.text}
+        <span className="font-display text-xl font-extrabold leading-tight sm:text-3xl">
+          {call.text}
+        </span>
+        {call.detail && (
+          <span className="text-[11px] font-semibold leading-snug opacity-90 sm:text-sm">
+            {call.detail}
+          </span>
+        )}
       </div>
-      {call.detail && (
-        <div className="mt-1.5 max-w-md rounded-full bg-card/95 px-3 py-1 text-center text-[11px] font-semibold text-bark lip-float">
-          {call.detail}
-        </div>
-      )}
     </div>
   );
 }

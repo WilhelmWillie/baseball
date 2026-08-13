@@ -240,10 +240,9 @@ export function Viewer({
         </div>
       </div>
 
-      {/* Center: play callouts */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-full -translate-x-1/2 -translate-y-1/2 px-3 sm:top-24 sm:w-auto sm:translate-y-0 sm:px-0">
-        <Callout />
-      </div>
+      {/* Bottom: full-width play banner. It positions itself along the bottom
+          edge - above the thumb controls on a phone, flush on a wider screen. */}
+      <Callout />
 
       {/* Between-innings credits card, shown while the field is empty. */}
       <Intermission />

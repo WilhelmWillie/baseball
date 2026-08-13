@@ -277,7 +277,7 @@ export function Scene() {
       <Field />
       <GroundOcclusion />
       <Park lampsLit={look.lampsLit} crowd={crowd} />
-      <Crowd palette={crowd} />
+      <Crowd palette={crowd} director={director} />
       <Backstop />
       <ContactShadows director={director} />
       <Actors director={director} />

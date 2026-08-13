@@ -410,6 +410,17 @@ export class Director {
   cameraFollowKey: string | null = null;
   /** Decaying knock on the lens after a hard-hit ball. */
   cameraShake = 0;
+  /**
+   * The latest stir of the stands, for the crowd to play out. `home` and `away`
+   * are signed excitement, roughly -1..1: positive is elated, negative dejected,
+   * and the two are opposite because a park's two allegiances feel a play in
+   * opposite directions. Set at the same post-outcome instant the cheer sounds,
+   * never before, so the crowd cannot give a big play away. `<Crowd>` watches
+   * `crowdReactionId` the way `<Actors>` watches `rosterVersion` and starts a
+   * fresh reaction whenever it changes. See `stirCrowd`.
+   */
+  crowdReaction: { home: number; away: number; at: number } | null = null;
+  crowdReactionId = 0;
   callout: CallOut | null = null;
   snapshot: GameSnapshot | null = null;
   /** Set while an animation is playing, so the store holds back new state. */
@@ -500,6 +511,22 @@ export class Director {
       sound: magnitude >= 0.9 ? "bigCheer" : "cheer",
       intensity: magnitude,
     };
+  }
+
+  /**
+   * Stir the stands. Same reading of the play as `crowdVoice` - `favorsBatter`
+   * against who is batting tells us whether it was good for the home club - only
+   * this comes out as a signed number the seats can move to rather than a sound:
+   * the home side gets `+magnitude` when it went their way and `-magnitude` when
+   * it did not, and the visitors get the opposite. Called from the play's own
+   * reaction cue, so it lands after the outcome is settled, not off the bat.
+   */
+  private stirCrowd(favorsBatter: boolean, magnitude: number) {
+    const homeIsBatting = this.snapshot?.battingSide === "home";
+    const goodForHome = favorsBatter === homeIsBatting;
+    const home = goodForHome ? magnitude : -magnitude;
+    this.crowdReaction = { home, away: -home, at: this.now() };
+    this.crowdReactionId += 1;
   }
 
   /** Palette of whichever club is celebrating. */
@@ -1344,6 +1371,8 @@ export class Director {
               : weight.favorsBatter
                 ? ballDuration
                 : Math.max(0.15, ballDuration),
+          favorsBatter: weight.favorsBatter,
+          magnitude: weight.magnitude,
           ...this.crowdVoice(weight.favorsBatter, weight.magnitude),
         }
       : null;
@@ -1375,6 +1404,9 @@ export class Director {
         if (reaction) {
           cue.at("reaction", t, reaction.at, () => {
             this.onSound?.(reaction.sound, reaction.intensity);
+            // The stands move to the same beat the cheer sounds on - after the
+            // outcome is settled, so they never tip a big play early.
+            this.stirCrowd(reaction.favorsBatter, reaction.magnitude);
             // A home run gets its show started while the ball is still up.
             if (result.kind === "home_run") this.launchFireworks(5);
           });
@@ -1385,6 +1417,8 @@ export class Director {
           cue.at(`score:${track.actorKey}`, t, track.end, () => {
             const voice = this.crowdVoice(true, 0.8);
             this.onSound?.(voice.sound, voice.intensity);
+            // A run crossing re-erupts the stands, on top of any hit reaction.
+            this.stirCrowd(true, 0.85);
             this.throwConfetti(result.kind === "home_run" ? 200 : 140);
             this.launchFireworks(result.kind === "home_run" ? 7 : 3);
           });

@@ -66,15 +66,38 @@ export interface CrowdPalette {
 
 const NEUTRAL_CROWD = ["#f3e7d2", "#e6b183", "#cfd8c3", "#8b6d52", "#b8c7d6", "#f7cfc0"];
 
+/** Who a fan is pulling for. Drives both the shirt and how they react. */
+export type Allegiance = "home" | "away" | "neutral";
+
+/**
+ * Which club a fan is rooting for, from the same stable `roll` the shirt is
+ * picked from. The thresholds are the shirt's: it is a home crowd (the first
+ * two thirds), a visible away minority, and the rest in street clothes with no
+ * dog in the fight. `crowdShirt` reads off this so a fan's colours and their
+ * reaction never disagree - a home jersey that groans at a home run would give
+ * the whole thing away.
+ */
+function allegianceFor(roll: number): Allegiance {
+  if (roll < 0.66) return "home";
+  if (roll < 0.78) return "away";
+  return "neutral";
+}
+
 /**
  * Picks a shirt. `roll` is the same stable noise the seat placement uses, so
  * the same fan is the same colour every rebuild.
  */
 function crowdShirt(roll: number, palette: CrowdPalette): string {
-  if (roll < 0.5) return palette.home[0];
-  if (roll < 0.66) return palette.home[1];
-  if (roll < 0.78) return roll < 0.74 ? palette.away[0] : palette.away[1];
-  return NEUTRAL_CROWD[Math.floor(((roll - 0.78) / 0.22) * NEUTRAL_CROWD.length) % NEUTRAL_CROWD.length];
+  switch (allegianceFor(roll)) {
+    case "home":
+      return roll < 0.5 ? palette.home[0] : palette.home[1];
+    case "away":
+      return roll < 0.74 ? palette.away[0] : palette.away[1];
+    default:
+      return NEUTRAL_CROWD[
+        Math.floor(((roll - 0.78) / 0.22) * NEUTRAL_CROWD.length) % NEUTRAL_CROWD.length
+      ];
+  }
 }
 
 /** Deterministic noise so the park looks identical on every render. */
@@ -115,6 +138,12 @@ export interface Fan {
   shirt: string;
   skin: string;
   hair: string;
+  /**
+   * Which club they are pulling for. The stands are drawn as a home crowd, but
+   * the visitors have a corner too - this is what lets the two halves react in
+   * opposite directions to the same play. See `components/scene/Crowd.tsx`.
+   */
+  allegiance: Allegiance;
   /**
    * Drawn with hair down past the ears rather than a cropped cap. It is the
    * only thing that reads as a woman on a figure this size and this simple -
@@ -269,6 +298,7 @@ function seatRow(
       p: [x + tangentX * offset, y, z + tangentZ * offset],
       yaw,
       shirt: crowdShirt(roll, palette),
+      allegiance: allegianceFor(roll),
       skin: SKIN_TONES[Math.floor(roll * 97) % SKIN_TONES.length],
       // The capped ones sprinkle club colour through the bowl at head height as
       // well as at shirt height.

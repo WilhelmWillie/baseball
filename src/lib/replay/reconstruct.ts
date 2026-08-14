@@ -40,6 +40,8 @@ const RESULT_LAG_MS = 1500;
 const BREAK_LEAD_MS = 1000;
 /** Frames must advance, so a non-monotonic upstream timestamp cannot stall. */
 const MIN_STEP_MS = 200;
+/** How far ahead of the first pitch the recording opens, absent a real stamp. */
+const OPENING_LEAD_MS = 2000;
 /** Used when a play event carries no timestamp of its own. */
 const FALLBACK_STEP_MS = 1000;
 
@@ -294,6 +296,8 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
   let outs = 0;
   let originMs: number | null = null;
   let lastT = -MIN_STEP_MS;
+  /** The recording opens on the first pitch, not on the feed's first entry. */
+  let seenFirstPitch = false;
 
   const push = (absoluteMs: number | null, feed: MlbLiveFeed, meta: FrameMeta) => {
     if (originMs == null) originMs = absoluteMs ?? Date.now();
@@ -450,6 +454,46 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
       const event = events[j];
       applySubstitution(defense, sides, event);
       const at = parseTime(event.startTime);
+
+      // MLB hangs pregame `game_advisory` events off the first play, stamped
+      // when the lineups went up - hours before anyone threw anything. They are
+      // real feed entries and stay in the document, but they must not open the
+      // recording: the clock is anchored on the first pitch, and a poller
+      // arriving then would have seen them already bundled into it.
+      if (!seenFirstPitch) {
+        if (!event.isPitch) continue;
+        seenFirstPitch = true;
+        // Open on the state just *before* that pitch - batter in the box,
+        // nothing thrown. The store seeds its cursor off the first frame it
+        // sees without animating it, so opening on the pitch itself would
+        // swallow the first pitch of the game. `about.startTime` is when MLB
+        // says the plate appearance began, a beat ahead of the delivery.
+        push(
+          parseTime(play.about?.startTime) ?? (at ?? 0) - OPENING_LEAD_MS,
+          buildFeed({
+            current: inFlight(play, j - 1),
+            inning,
+            isTop,
+            inningState: isTop ? "Top" : "Bottom",
+            balls: 0,
+            strikes: 0,
+            batter: play.matchup?.batter,
+            onDeck: onDeckAfter(i),
+            pitcher: play.matchup?.pitcher,
+            fielding,
+            isFinal: false,
+          }),
+          {
+            inning,
+            isTop,
+            atBatIndex: index,
+            playComplete: false,
+            scoring: false,
+            between: false,
+          },
+        );
+      }
+
       if (at != null) lastAbsoluteMs = at;
       const revealed = events.slice(0, j + 1);
       push(

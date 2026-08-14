@@ -100,10 +100,13 @@ recorded bytes instead of a script.
 Two objects per game, under a versioned prefix:
 
 ```
-recordings/v1/{gamePk}/manifest.json       ~80 KB   metadata + seek index
-recordings/v1/{gamePk}/frames.ndjson.gz    ~1–2 MB  keyframe + patches
-recordings/v1/index.json                            list of recorded games
+recordings/v1/{gamePk}/manifest.json       ~50-60 KB  metadata + seek index
+recordings/v1/{gamePk}/frames.ndjson.gz    ~180-215 KB  keyframe + patches
+recordings/v1/index.json                              list of recorded games
 ```
+
+Measured, not estimated: two real nine-inning games in `public/recordings/`
+come to 532 KB together — see [Recorded games](#recorded-games).
 
 ### `frames.ndjson.gz`
 
@@ -116,12 +119,12 @@ Every subsequent line is an RFC-6902 JSON Patch against the previous frame.
 {"kind":"patch","t":38900,"ops":[…]}
 ```
 
-Why patches: a full GUMBO feed is roughly 1.5–4 MB, and a game produces
-~600–900 frames worth keeping. Storing them whole is ~2 GB. The delta between
-two adjacent pitches is a new `playEvent`, a count change and a few boxscore
-counters — single-digit KB. Keyframe + patches lands around **1–2 MB gzipped
-per game**, and materializing the whole game in the browser is a few hundred
-milliseconds of `applyPatch` calls.
+Why patches: a full GUMBO feed for a finished game is roughly 750 KB–900 KB, and
+a game produces ~420–510 frames worth keeping. Storing them whole would be
+300–450 MB. The delta between two adjacent pitches is a new `playEvent`, a count
+change and a few boxscore counters — single-digit KB. Keyframe plus patches
+lands at **180–215 KB gzipped for a whole game**, about a quarter the size of
+one raw feed.
 
 `t` is **milliseconds since the first pitch**, derived from real recorded
 timestamps. Recordings store *only* real time — no compression is baked in, so
@@ -213,6 +216,13 @@ later — mirroring what MLB actually does and what `deciderIndex()` /
 Cheap, reliable, works for any game ever played, and already delivers everything
 the demo game lacks: real players, real Statcast coordinates, real substitutions,
 real spray charts, real pacing.
+
+One wrinkle real feeds carry: MLB hangs pregame `game_advisory` events off the
+first play, stamped when the lineups went up — in one recorded game, 2h24m
+before anyone threw a pitch. The recording is anchored on the first pitch and
+opens on the state just before it, so the first pitch of the game animates
+rather than being swallowed by the store's cursor seed. Get this wrong and a
+nine-inning game reports a five-and-a-half-hour duration.
 
 The linescore is the part that has to be exact, and is. `buildSnapshot` reads
 the whole defensive alignment, the batter, the runners, the count and the score
@@ -454,10 +464,21 @@ npm run record -- --date 2025-10-01 --list   # pick a completed game
 npm run record -- 775302
 ```
 
-Expect: validation passes, the final score matches the schedule endpoint, and a
-size report in the ballpark of 1–2 MB gzipped for ~600–900 frames. Record a game
-with a known-awkward event too — extra innings, a rain delay, a position player
-pitching — and confirm it validates.
+Expect: validation passes, the final score matches the feed, and a size report
+around 180–215 KB gzipped for ~420–510 frames. A nine-inning game should report a
+real duration near 3 hours — a much larger number means the clock is anchored
+somewhere other than the first pitch. Record a game with a known-awkward event
+too — extra innings, a rain delay, a position player pitching — and confirm it
+validates.
+
+### Recorded games
+
+Committed under `public/recordings/v1/`, both from 2026-08-13:
+
+| gamePk | Game | Why it's here |
+| --- | --- | --- |
+| `824561` | CIN 9 @ CWS 8 | High-scoring one-run game: 88 at-bats, 343 pitches, 12 pitchers, 30 markers. The busiest substitution path available. |
+| `823508` | SEA 1 @ NYY 0 | Shutout: 66 at-bats, 286 pitches, few runs and long quiet stretches. The opposite shape. |
 
 **Replay:**
 
@@ -494,17 +515,21 @@ without restructuring.
 | Risk | Mitigation |
 | --- | --- |
 | Timecode endpoints undocumented and quirky | Tier 1 needs none of them; Tier 2 is Phase 5, gated on hand-verification. |
-| Recording sizes larger than estimated | The recorder prints a size report in Phase 1, before any storage commitment. Frame fingerprinting is tunable if it comes in high. |
-| Materializing 700+ frames janks the browser | Measure in Phase 2. If it hurts: materialize lazily around the playhead and keep periodic keyframes in the file (every 100th frame) so seeking never walks far. Design the format with room for keyframes now. |
+| ~~Recording sizes larger than estimated~~ | Settled: 180–215 KB gzipped per game, roughly a tenth of the estimate. Committing recordings to the repo is comfortable at this size. |
+| Materializing ~500 frames janks the browser | Measure in Phase 2. If it hurts: materialize lazily around the playhead and keep periodic keyframes in the file (every 100th frame) so seeking never walks far. Design the format with room for keyframes now. |
 | A `reset()` per seek flashes an empty field | One frame, reads as a cut. If objectionable, the lighter `clearQueue()` + `applySnapshot()` path is available without a format change. |
 | MLB rate-limits a 2,000-request Tier-2 run | Sequential with delay, resumable, and it only ever runs offline against finished games. |
 | GUMBO shape drifts between seasons | `v` in the format; the recorder validates against the current normalizer at record time, so a bad recording is caught at creation, not at playback. |
 
-Open questions, none blocking Phase 1:
+Open questions:
 
-- Which games to record first? A blowout, a one-run game and an extra-inning
-  game would cover the animation path's interesting edges.
 - Bucket public or private? Public + CDN is assumed above; private costs one
   presign route.
+- With recordings this small, is S3/R2 still wanted at all, or is committing
+  them to `public/recordings/` enough? Phase 4 is cheap either way, but two
+  games cost 532 KB — the repo-bloat argument for object storage is weaker than
+  it looked when the size was assumed to be 1–2 MB per game.
+- An extra-inning game and one with a rain delay are still worth recording as
+  fixtures; neither shape has been exercised yet.
 - Should recordings expire? They are small and immutable; a lifecycle rule can
   be added later if the bucket grows.

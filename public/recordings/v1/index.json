@@ -1,0 +1,46 @@
+{
+  "games": [
+    {
+      "gamePk": 824561,
+      "date": "2026-08-13",
+      "venue": "Rate Field",
+      "home": {
+        "id": 145,
+        "abbrev": "CWS",
+        "name": "Chicago White Sox",
+        "score": 8
+      },
+      "away": {
+        "id": 113,
+        "abbrev": "CIN",
+        "name": "Cincinnati Reds",
+        "score": 9
+      },
+      "frameCount": 508,
+      "durationMs": 11187503,
+      "source": "reconstructed",
+      "recordedAt": "2026-08-14T22:43:44.940Z"
+    },
+    {
+      "gamePk": 823508,
+      "date": "2026-08-13",
+      "venue": "Yankee Stadium",
+      "home": {
+        "id": 147,
+        "abbrev": "NYY",
+        "name": "New York Yankees",
+        "score": 0
+      },
+      "away": {
+        "id": 136,
+        "abbrev": "SEA",
+        "name": "Seattle Mariners",
+        "score": 1
+      },
+      "frameCount": 419,
+      "durationMs": 10001751,
+      "source": "reconstructed",
+      "recordedAt": "2026-08-14T22:44:38.067Z"
+    }
+  ]
+}

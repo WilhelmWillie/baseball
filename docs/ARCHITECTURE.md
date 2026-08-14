@@ -62,10 +62,11 @@ src/
     field/      field math, park construction, sky and weather
     audio/      Web Audio synthesis
     sim/        scripted demo game, emitted in GUMBO's shape
+    replay/     recording format: reconstruction, encoding, validation
 ```
 
-Roughly 11.1k lines across 43 source files. Two files dominate:
-`lib/anim/director.ts` (1515) and `components/scene/Player.tsx` (1375).
+Roughly 15.4k lines across 56 source files. Two files dominate:
+`lib/anim/director.ts` and `components/scene/Player.tsx`.
 
 ## Routes
 
@@ -234,6 +235,41 @@ the crack lands with the swing rather than with the poll that reported it.
 elapsed time, so the demo exercises the same normalization and animation path a
 real game does. `DEMO_GAME_PK = 747001`.
 
+### Recording
+
+Capturing a real game so it can be replayed. Design and rationale live in
+[RECORDING.md](./RECORDING.md); playback (`lib/replay/source.ts`, the timeline,
+the `/api/replay` routes) is not built yet.
+
+**`lib/replay/format.ts`** — *read this first.* The on-disk contract shared by
+the recorder and, later, the player: `FrameLine` (one keyframe then RFC-6902
+patches), `RecordingManifest` (the seek index and scrub-bar markers), and
+`frameFingerprint()`, which decides what counts as a frame — a frame is kept
+only when something the renderer would react to changes.
+
+**`lib/replay/reconstruct.ts`** — `reconstructFrames(finalFeed)`. A finished
+GUMBO document carries the whole game *and* its timing, so one request is enough
+to rebuild what the feed looked like at every moment: plays and pitches are
+revealed in order and the linescore is rolled back to match. The linescore is
+the part that matters — `buildSnapshot` reads the entire defensive alignment,
+the batter and the runners off it, so a naive slice of the final feed would put
+the closer on the mound in the first inning.
+
+**`lib/replay/encode.ts`** — `dedupeFrames`, `encodeFrames`, `buildManifest`,
+and `verifyEncoding`, which replays the encoded stream back into frames so a
+recording is only ever published on the strength of the bytes that will be read,
+not the objects in memory. Patches are diffed against JSON-normalized feeds
+because `undefined` keys do not survive serialization.
+
+**`lib/replay/validate.ts`** — `validateFrames()` walks a recording through the
+real `buildSnapshot` / `extractEvents` exactly the way the store does. With no
+test suite in the repo, this is what makes a recording trustworthy enough to use
+as a fixture.
+
+**`scripts/record-game.ts`** — the CLI (`npm run record`). Lists a day's games,
+records one, or re-records from a saved feed with `--from`. Needs outbound
+access to `statsapi.mlb.com`.
+
 ## Conventions
 
 - **Field math is in feet**, in `lateral`/`depth`. Convert with `fp()`. Do not
@@ -267,6 +303,9 @@ real game does. `DEMO_GAME_PK = 747001`.
 | Polling behaviour | `hooks/useLiveFeed.ts` |
 | When state becomes visible | `store/gameStore.ts` |
 | The demo game's script | `lib/sim/script.ts` |
+| What a recording stores | `lib/replay/format.ts` |
+| How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
+| What makes a recording valid | `lib/replay/validate.ts` |
 
 ## Notes
 

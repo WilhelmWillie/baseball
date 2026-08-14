@@ -3,7 +3,9 @@
 A design for capturing real MLB games off the Stats API, storing them, and
 replaying them in the ballpark with a scrubbable timeline.
 
-Status: **proposed**. Nothing in `src/` implements this yet.
+Status: **Phase 1 shipped** — the format and the recorder exist and produce
+validated recordings. Playback (Phases 2–3) is not built yet, so a recording
+cannot be watched in the ballpark until then.
 
 ## Context
 
@@ -170,10 +172,18 @@ is what the scrub bar draws: half-inning boundaries and scoring plays.
 `scripts/record-game.ts`, run manually:
 
 ```bash
-npx tsx scripts/record-game.ts 775302            # record + validate, write locally
-npx tsx scripts/record-game.ts 775302 --upload   # …and push to S3/R2
-npx tsx scripts/record-game.ts --date 2025-10-01 --list   # find gamePks
+npm run record -- --date 2025-10-01 --list   # find a finished game's gamePk
+npm run record -- 775302                     # record + validate, write locally
+npm run record -- 775302 --out /tmp/rec      # write somewhere else
+npm run record -- --from feed.json           # re-record from a saved feed
 ```
+
+Output lands in `public/recordings/v1/<gamePk>/` by default, which is where the
+app will read recordings from in local development. `--upload` arrives with the
+S3/R2 work in Phase 4.
+
+A game that is not final is refused unless `--force` is passed: retroactive
+recording expects the whole game to be in the document.
 
 It runs in **two tiers**, and the reason matters: the high-fidelity path depends
 on an upstream capability we should not assume works until we have watched it
@@ -204,10 +214,20 @@ Cheap, reliable, works for any game ever played, and already delivers everything
 the demo game lacks: real players, real Statcast coordinates, real substitutions,
 real spray charts, real pacing.
 
-**Fidelity gap:** boxscore and season stats are as-of end of game rather than
-as-of that moment (the HUD's `batterStats` / `pitcherStats` will read slightly
-ahead), and mid-game feed corrections are invisible. Acceptable, and recorded in
-the manifest as `"source": "reconstructed"`.
+The linescore is the part that has to be exact, and is. `buildSnapshot` reads
+the whole defensive alignment, the batter, the runners, the count and the score
+off `linescore`, so a naive slice of the final feed would stand the closer on
+the mound in the first inning. Defense is rebuilt from the starting nine and
+walked forward through substitutions; the pitcher comes straight off each play's
+`matchup`, which is exact by construction. Runners come from walking each
+completed play's `runners[].movement`, and balls and strikes are recounted from
+the revealed pitches the same way `lib/game/events.ts` recounts them.
+
+**Fidelity gap:** the boxscore is the one thing that cannot be sliced — MLB
+publishes it only in its final state, so per-player stat lines read as
+end-of-game throughout. Nothing on the field is wrong, only the numbers beside a
+name in the HUD and the Lineup panel. Mid-game feed corrections are likewise
+invisible. Recorded in the manifest as `"source": "reconstructed"`.
 
 ### Tier 2 — timecode walk (higher fidelity, add once verified)
 
@@ -236,17 +256,23 @@ run by hand, and nothing at runtime depends on it.
 
 ### Validation pass
 
-After building frames, the recorder replays its own output through the real
-`buildSnapshot()` and `extractEvents()` and asserts:
+The recorder checks its work twice before writing anything.
 
-- every frame parses into a `GameSnapshot` without throwing;
-- the event stream contains no gaps (no at-bat whose result never arrives);
-- the final score from the last frame matches the schedule endpoint;
-- no frame gap exceeds a sanity bound (catches a truncated recording).
+**Against the normalizer** (`validate.ts`) — it walks the frames exactly the way
+`gameStore.ingest` does: seed the cursor off the first frame, then
+`extractEvents` forward. It asserts that every frame builds a `GameSnapshot`
+without throwing, that no at-bat is pitched but left unresolved, that time never
+runs backwards, and that the last frame's score matches the feed's.
 
-It prints a summary — frames, pitches, plays, size, compression ratio — and
-refuses to `--upload` if validation fails. This is what makes a recording
-trustworthy enough to be a fixture.
+**Against its own bytes** (`verifyEncoding`) — it replays the encoded keyframe
+and patches back into frames and compares fingerprints. A recording is never
+published on the strength of the objects in memory, only on what will actually
+be read back.
+
+It then prints a summary — frames, at-bats, pitches, plays, duration, size,
+compression ratio — and refuses to write if either check fails. With no test
+suite in the repo, this is what makes a recording trustworthy enough to be a
+fixture.
 
 ## Storage
 
@@ -280,11 +306,14 @@ Uploaded with `Cache-Control: public, max-age=31536000, immutable` and
 
 ### New: `src/lib/replay/`
 
-| File | Responsibility |
-| --- | --- |
-| `format.ts` | `RecordingManifest`, `RecordingFrame`, `FRAME_FORMAT_VERSION`; the shared contract between recorder and player. Imported by the script too. |
-| `source.ts` | `loadRecording(gamePk)` → fetch manifest + frames, apply patches, return `MlbLiveFeed[]` materialized in memory. Handles gzip and version checks. |
-| `timeline.ts` | `compressTimeline(frames, policy)` → the play-time mapping; `frameAt(t)`; `seekTargets(manifest)`. Pure, unit-testable, no React. |
+| File | Responsibility | Status |
+| --- | --- | --- |
+| `format.ts` | `FrameLine`, `RecordingManifest`, `FRAME_FORMAT_VERSION`, `frameFingerprint`; the shared contract between recorder and player. Imported by the script too. | done |
+| `reconstruct.ts` | `reconstructFrames(finalFeed)` → the Tier-1 rebuild: plays and pitches revealed in order, linescore rolled back to match. | done |
+| `encode.ts` | `dedupeFrames`, `encodeFrames`, `buildManifest`, `verifyEncoding`. | done |
+| `validate.ts` | `validateFrames()` — walks a recording through the real normalizer the way the store does. | done |
+| `source.ts` | `loadRecording(gamePk)` → fetch manifest + frames, apply patches, return `MlbLiveFeed[]` materialized in memory. Handles gzip and version checks. | Phase 2 |
+| `timeline.ts` | `compressTimeline(frames, policy)` → the play-time mapping; `frameAt(t)`; `seekTargets(manifest)`. Pure, unit-testable, no React. | Phase 2 |
 
 ### New: `src/hooks/useReplay.ts`
 
@@ -366,16 +395,17 @@ and a `mode` prop on `Viewer`.
 
 | File | Change |
 | --- | --- |
-| `src/lib/replay/{format,source,timeline}.ts` | New. |
+| `src/lib/replay/{format,reconstruct,encode,validate}.ts` | New. Done in Phase 1. |
+| `src/lib/replay/{source,timeline}.ts` | New. Phase 2. |
 | `src/hooks/useReplay.ts` | New — mirrors `useLiveFeed.ts`. |
 | `src/components/hud/Timeline.tsx` | New. |
 | `src/app/api/replay/**` | New — three routes. |
-| `scripts/record-game.ts` | New — the recorder, validator and uploader. |
+| `scripts/record-game.ts` | New — the recorder and validator. Done in Phase 1; `--upload` lands in Phase 4. |
 | `src/store/gameStore.ts` | Add `seek(feed)`; composes the existing `reset` + `ingest`. |
 | `src/components/Viewer.tsx` | Accept `mode: "live" \| "demo" \| "replay"`; pick the driver hook; render `<Timeline/>` in replay. |
 | `src/app/watch/[gamePk]/page.tsx` | Read `?replay=1`, pass `mode`. |
 | `src/components/GameList.tsx` | Recordings section from `/api/replay`. |
-| `package.json` | `+ tsx`, `+ @aws-sdk/client-s3` (dev); `fast-json-patch` (runtime, ~10 KB) for patch apply. |
+| `package.json` | `+ tsx` (dev) and `+ fast-json-patch` (runtime, ~10 KB) — both done in Phase 1, along with the `record` script. `+ @aws-sdk/client-s3` (dev) in Phase 4. |
 | `docs/ARCHITECTURE.md`, `README.md` | Document `lib/replay/`, the format, the recorder. |
 
 **Reused, not rebuilt:** `buildSnapshot` / `buildHistory` (`lib/game/normalize.ts`),
@@ -392,9 +422,10 @@ to apply by hand — worth doing only if the dependency is genuinely objectionab
 
 ## Phasing
 
-**Phase 1 — Record.** `format.ts`, the Tier-1 reconstructing recorder, the
-validation pass, local file output. Deliverable: a real game on disk, validated,
-with a printed size and frame report. No app changes yet.
+**Phase 1 — Record. ✅ Done.** `format.ts`, `reconstruct.ts`, `encode.ts`,
+`validate.ts` and `scripts/record-game.ts`. A game is written to disk as a
+validated keyframe-plus-patches stream with a manifest, and the run prints a
+size and frame report. No app changes; nothing plays back yet.
 
 **Phase 2 — Replay.** `source.ts`, `timeline.ts`, `useReplay.ts`, the `seek`
 store action, the `Viewer` mode switch, the `/api/replay` routes reading from
@@ -419,8 +450,8 @@ before any infrastructure exists.
 **Recorder** (needs a machine with `statsapi.mlb.com` reachable):
 
 ```bash
-npx tsx scripts/record-game.ts --date 2025-10-01 --list   # pick a completed game
-npx tsx scripts/record-game.ts 775302
+npm run record -- --date 2025-10-01 --list   # pick a completed game
+npm run record -- 775302
 ```
 
 Expect: validation passes, the final score matches the schedule endpoint, and a
@@ -431,7 +462,6 @@ pitching — and confirm it validates.
 **Replay:**
 
 ```bash
-cp -r recordings/775302 public/recordings/
 npm run dev
 open 'http://localhost:3000/watch/775302?replay=1'
 ```

@@ -19,13 +19,21 @@ const CHASE_INTERVAL = 1500;
  * Polls the live feed. The spec's V0 guidance is plain polling, so that is what
  * this does - the interval tightens while the game is actually in progress.
  */
-export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0, demoQuery = "") {
+export function useLiveFeed(
+  gamePk: string,
+  isDemo: boolean,
+  demoOffset = 0,
+  demoQuery = "",
+  /** Off while a recording is driving the store instead. */
+  enabled = true,
+) {
   const ingest = useGameStore((s) => s.ingest);
   const failed = useGameStore((s) => s.failed);
   const reset = useGameStore((s) => s.reset);
   const demoStart = useRef<number>(0);
 
   useEffect(() => {
+    if (!enabled) return;
     reset();
     demoStart.current = Date.now();
     let cancelled = false;
@@ -81,5 +89,5 @@ export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0, dem
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [gamePk, isDemo, demoOffset, demoQuery, ingest, failed, reset]);
+  }, [gamePk, isDemo, demoOffset, demoQuery, enabled, ingest, failed, reset]);
 }

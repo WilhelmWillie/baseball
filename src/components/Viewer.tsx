@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
+import { useReplay } from "@/hooks/useReplay";
 import { useGameStore } from "@/store/gameStore";
 import { CAMERA_VIEWS, storedCameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
@@ -13,6 +14,7 @@ import { Callout } from "./hud/Callout";
 import { History } from "./hud/History";
 import { GameOver } from "./hud/GameOver";
 import { Intermission } from "./hud/Intermission";
+import { Transport } from "./hud/Transport";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
   ssr: false,
@@ -51,20 +53,32 @@ function ControlButton({
   );
 }
 
+/** Where the feed comes from: the API, the simulator, or a recording on disk. */
+export type ViewerMode = "live" | "demo" | "replay";
+
 export function Viewer({
   gamePk,
-  isDemo,
+  mode = "live",
   demoOffset = 0,
   demoQuery = "",
+  startSeconds = 0,
 }: {
   gamePk: string;
-  isDemo: boolean;
+  mode?: ViewerMode;
   /** Start the simulated game this many seconds in. */
   demoOffset?: number;
   /** Extra query passed through to the simulated feed (time of day, weather). */
   demoQuery?: string;
+  /** Start a recording this many seconds into its play-time. */
+  startSeconds?: number;
 }) {
-  useLiveFeed(gamePk, isDemo, demoOffset, demoQuery);
+  const isDemo = mode === "demo";
+  const isReplay = mode === "replay";
+
+  // Both drivers are always called - a hook cannot be conditional - and the one
+  // that is not in charge sits inert.
+  useLiveFeed(gamePk, isDemo, demoOffset, demoQuery, !isReplay);
+  const replay = useReplay(gamePk, isReplay, startSeconds);
 
   const snapshot = useGameStore((s) => s.snapshot);
   const history = useGameStore((s) => s.history);
@@ -152,7 +166,13 @@ export function Viewer({
           )
         ) : (
           <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
-            {connection === "error" ? "Can't reach the feed" : "Tuning in…"}
+            {isReplay
+              ? replay.status === "error"
+                ? "Can't read the recording"
+                : "Cueing up the tape…"
+              : connection === "error"
+                ? "Can't reach the feed"
+                : "Tuning in…"}
           </div>
         )}
       </div>
@@ -229,16 +249,33 @@ export function Viewer({
         <div className="hidden items-center gap-2 rounded-full bg-card/85 px-2.5 py-1 text-[11px] font-semibold text-bark-soft sm:flex">
           <span
             className={`h-2 w-2 rounded-full ${
-              connection === "live"
-                ? "animate-[blink_1.4s_ease-in-out_infinite] bg-grass"
-                : connection === "error"
-                  ? "bg-clay"
-                  : "bg-clay-soft"
+              isReplay
+                ? "bg-clay-soft"
+                : connection === "live"
+                  ? "animate-[blink_1.4s_ease-in-out_infinite] bg-grass"
+                  : connection === "error"
+                    ? "bg-clay"
+                    : "bg-clay-soft"
             }`}
           />
-          {isDemo ? "Simulated game" : connection === "live" ? "Live" : connection}
+          {isReplay
+            ? "Recording"
+            : isDemo
+              ? "Simulated game"
+              : connection === "live"
+                ? "Live"
+                : connection}
         </div>
       </div>
+
+      {/* Transport for a recording. Sits above the thumb controls on a phone;
+          on anything larger those move to the top corner and the bottom is
+          free. */}
+      {isReplay && (
+        <div className="absolute inset-x-2 bottom-16 z-20 flex justify-center sm:inset-x-0 sm:bottom-4">
+          <Transport replay={replay} />
+        </div>
+      )}
 
       {/* Center: play callouts */}
       <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-full -translate-x-1/2 -translate-y-1/2 px-3 sm:top-24 sm:w-auto sm:translate-y-0 sm:px-0">
@@ -250,7 +287,11 @@ export function Viewer({
 
       {/* Bottom-left: lineup */}
       {showRoster && snapshot && (
-        <div className="absolute bottom-16 left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-3.5 text-xs text-bark lip-float sm:bottom-4 sm:left-4 sm:max-h-[46vh]">
+        <div
+          className={`absolute left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-3.5 text-xs text-bark lip-float sm:left-4 sm:max-h-[46vh] ${
+            isReplay ? "bottom-36 sm:bottom-24" : "bottom-16 sm:bottom-4"
+          }`}
+        >
           <div className="mb-2 font-display text-sm font-extrabold text-grass-deep">
             {snapshot.teams[snapshot.fieldingSide].abbrev} in the field
           </div>

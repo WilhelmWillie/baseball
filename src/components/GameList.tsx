@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { GameSummary } from "@/lib/game/schedule";
+import { summarizeRecording, type GameSummary } from "@/lib/game/schedule";
+import { loadRecordingIndex } from "@/lib/replay/source";
 import { Ball } from "@/components/brand/Ball";
 
 interface SchedulePayload {
@@ -24,6 +25,13 @@ function StatusPill({ game }: { game: GameSummary }) {
       <span className="flex items-center gap-1.5 rounded-full bg-grass px-2.5 py-1 text-[11px] font-bold text-white">
         <span className="h-1.5 w-1.5 animate-[blink_1.4s_ease-in-out_infinite] rounded-full bg-card" />
         {game.isTopInning ? "Top" : "Bot"} {game.inningOrdinal ?? ""} · {game.outs ?? 0} out
+      </span>
+    );
+  }
+  if (game.isReplay) {
+    return (
+      <span className="rounded-full bg-grass-mist px-2.5 py-1 text-[11px] font-bold text-grass-deep">
+        ⏺ Recording
       </span>
     );
   }
@@ -77,11 +85,16 @@ function TeamLine({
 
 function GameCard({ game }: { game: GameSummary }) {
   const isLive = game.state === "live";
-  const href = game.isDemo ? "/watch/demo" : `/watch/${game.gamePk}`;
+  const href = game.isDemo
+    ? "/watch/demo"
+    : game.isReplay
+      ? `/watch/${game.gamePk}?replay=1`
+      : `/watch/${game.gamePk}`;
   // There is nothing to watch in a game that has not started or has finished:
   // the feed carries no lineup before first pitch and nothing moves after the
-  // last out, so those cards do not open.
-  const watchable = isLive || game.isDemo;
+  // last out, so those cards do not open. A recording is the exception - it
+  // carries the whole game, so it opens however long ago it was played.
+  const watchable = isLive || game.isDemo || game.isReplay;
 
   const shell =
     "group block rounded-3xl border-2 bg-card p-4 transition-all duration-200 sm:p-5";
@@ -103,7 +116,11 @@ function GameCard({ game }: { game: GameSummary }) {
 
       <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
         <span className="truncate text-bark-soft">
-          {game.isDemo ? "A game we made up, always ready" : game.statusText}
+          {game.isDemo
+            ? "A game we made up, always ready"
+            : game.isReplay
+              ? `Recorded ${game.statusText}`
+              : game.statusText}
         </span>
         <span
           className={`shrink-0 font-bold ${watchable ? "text-grass" : "text-bark-soft/70"}`}
@@ -155,6 +172,23 @@ export function GameList() {
   const [data, setData] = useState<SchedulePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState<string | null>(null);
+  const [recordings, setRecordings] = useState<GameSummary[]>([]);
+
+  // Recordings are static files and never change under us, so they load once
+  // and are not polled with the schedule. Having none is normal, not an error.
+  useEffect(() => {
+    let cancelled = false;
+    loadRecordingIndex()
+      .then((entries) => {
+        if (!cancelled) setRecordings(entries.map(summarizeRecording));
+      })
+      .catch(() => {
+        if (!cancelled) setRecordings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +250,21 @@ export function GameList() {
               </div>
             )}
           </section>
+
+          {recordings.length > 0 && (
+            <section className="mt-10">
+              <SectionTitle count={recordings.length}>Recorded games</SectionTitle>
+              <p className="-mt-1 mb-3 text-sm text-bark-soft">
+                Real games, captured pitch by pitch. Skip around them however you
+                like.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {recordings.map((game) => (
+                  <GameCard key={game.gamePk} game={game} />
+                ))}
+              </div>
+            </section>
+          )}
 
           {data?.demo && (
             <section className="mt-10">

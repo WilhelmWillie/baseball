@@ -1,6 +1,7 @@
 import { paletteFor, type TeamPalette } from "@/lib/mlb/teams";
 import type { MlbScheduleGame } from "@/lib/mlb/types";
 import { isFinalStatus, isLiveStatus } from "@/lib/mlb/client";
+import type { RecordingIndexEntry } from "@/lib/replay/format";
 
 export interface GameSummary {
   gamePk: number;
@@ -15,6 +16,8 @@ export interface GameSummary {
   isTopInning: boolean | null;
   outs: number | null;
   isDemo?: boolean;
+  /** A finished game we recorded. Watchable however long ago it was played. */
+  isReplay?: boolean;
 }
 
 type ScheduleTeamEntry = NonNullable<NonNullable<MlbScheduleGame["teams"]>["home"]>;
@@ -32,6 +35,35 @@ function summarizeTeam(entry: ScheduleTeamEntry | undefined) {
     score: entry?.score ?? null,
     record,
     palette,
+  };
+}
+
+/**
+ * A recorded game as the home page's card wants it. Club colours come from the
+ * same `paletteFor` the live schedule uses, keyed off the ids the recorder
+ * stored, so a recording looks like any other game on the shelf.
+ */
+export function summarizeRecording(entry: RecordingIndexEntry): GameSummary {
+  const side = (team: RecordingIndexEntry["home"]) => ({
+    id: team.id,
+    name: team.name,
+    abbrev: team.abbrev,
+    score: team.score,
+    palette: paletteFor(team.id, team.abbrev),
+  });
+  return {
+    gamePk: entry.gamePk,
+    state: "final",
+    statusText: entry.date,
+    startTime: entry.date,
+    venue: entry.venue,
+    home: side(entry.home),
+    away: side(entry.away),
+    inning: null,
+    inningOrdinal: null,
+    isTopInning: null,
+    outs: null,
+    isReplay: true,
   };
 }
 

@@ -75,6 +75,7 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 | `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate. Only in-progress games are clickable. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. |
 | `/watch/demo` | same | `gamePk === "demo"` routes to the simulator. `?at=`, `?hour=`, `?wx=`, `?wind=` are read here. |
+| `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<seconds>` seeks into its play-time. |
 | `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
 | `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. `demo` is intercepted here and served from `lib/sim/`. |
 
@@ -237,9 +238,9 @@ real game does. `DEMO_GAME_PK = 747001`.
 
 ### Recording
 
-Capturing a real game so it can be replayed. Design and rationale live in
-[RECORDING.md](./RECORDING.md); playback (`lib/replay/source.ts`, the timeline,
-the `/api/replay` routes) is not built yet.
+Capturing a real game so it can be replayed, and playing it back. Design and
+rationale live in [RECORDING.md](./RECORDING.md). Two real games are committed
+under `public/recordings/`; `/watch/[gamePk]?replay=1` plays them.
 
 **`lib/replay/format.ts`** — *read this first.* The on-disk contract shared by
 the recorder and, later, the player: `FrameLine` (one keyframe then RFC-6902
@@ -269,6 +270,30 @@ as a fixture.
 **`scripts/record-game.ts`** — the CLI (`npm run record`). Lists a day's games,
 records one, or re-records from a saved feed with `--from`. Needs outbound
 access to `statsapi.mlb.com`.
+
+### Playback
+
+**`lib/replay/source.ts`** — `loadRecording(gamePk)` → a `RecordingPlayer`.
+Materializing every frame would be most of a gigabyte, so it keeps **one
+document** and walks it with `applyPatch`, plus a checkpoint every 50 frames to
+bound how far a backward seek has to rewind. Recordings live behind a base URL
+and nothing else: `public/recordings/` is served at `/recordings`, and
+`NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a bucket without a code change.
+
+**`lib/replay/timeline.ts`** — the second time base. Real games are mostly a
+pitcher standing still, so gaps are clamped to ceilings drawn from the
+director's own animation lengths. Pure functions; the place to change pacing.
+
+**`hooks/useReplay.ts`** — the mirror of `useLiveFeed`: same `ingest`, different
+clock. Advances on wall-clock deltas and calls `ingest` once per tick with the
+frame the clock has reached, which is exactly a slow poller — precisely what
+`extractEvents` is built to absorb.
+
+**`components/hud/Transport.tsx`** — play/pause, scrub, speed, true-timing.
+
+The store gains one action for this: `seek(feed)`, which is `reset()` then
+`ingest()`. A seek is a cut, and `ingest`'s first-read branch already jumps to
+an arbitrary moment via `seedCursor` without replaying what came before.
 
 ## Conventions
 
@@ -306,6 +331,8 @@ access to `statsapi.mlb.com`.
 | What a recording stores | `lib/replay/format.ts` |
 | How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
 | What makes a recording valid | `lib/replay/validate.ts` |
+| How fast a recording plays | `DEFAULT_PACING` in `lib/replay/timeline.ts` |
+| Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
 
 ## Notes
 

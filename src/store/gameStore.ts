@@ -33,6 +33,8 @@ interface GameStore {
 
   reset(): void;
   ingest(feed: MlbLiveFeed): void;
+  /** Jump the world to an arbitrary feed, discarding anything in flight. */
+  seek(feed: MlbLiveFeed): void;
   failed(message: string): void;
   setCameraView(view: CameraView): void;
   /** Promote pending state once the animation queue has drained. */
@@ -162,6 +164,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
       error: null,
       lastUpdate: Date.now(),
     });
+  },
+
+  /**
+   * A seek is a cut, not a transition. Tearing the world down and reading the
+   * target frame as a first read is exactly what `ingest` already does when a
+   * viewer joins a game in progress: `seedCursor` puts the cursor at that
+   * moment without replaying anything before it. `reset()` builds a fresh
+   * director - which clears the animation queue and its particles - and
+   * zustand's `set` is synchronous, so `ingest` sees the cleared state and
+   * takes its first-read branch.
+   */
+  seek(feed) {
+    get().reset();
+    get().ingest(feed);
   },
 
   settle() {

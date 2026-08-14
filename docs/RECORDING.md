@@ -3,9 +3,9 @@
 A design for capturing real MLB games off the Stats API, storing them, and
 replaying them in the ballpark with a scrubbable timeline.
 
-Status: **Phase 1 shipped** — the format and the recorder exist and produce
-validated recordings. Playback (Phases 2–3) is not built yet, so a recording
-cannot be watched in the ballpark until then.
+Status: **Phases 1–2 shipped.** Real games are recorded, and they play in the
+ballpark: `/watch/824561?replay=1`. Play/pause, seek and speed all work. The
+labelled scrub bar — half-inning ticks and scoring-play markers — is Phase 3.
 
 ## Context
 
@@ -40,7 +40,8 @@ timeline you can scrub to any half-inning or scoring play.
 - Replay through the **existing** `buildSnapshot` / `extractEvents` / `Director`
   path — the whole point is to exercise production code, not a parallel one.
 - **Seek** to any half-inning or scoring play; play/pause; speed control.
-- Default to **compressed dead air** so a 3-hour game is watchable in ~25 min.
+- Default to **compressed dead air**. Measured: a 3h06m game plays in 48 minutes
+  at 1×, and the speed control takes it under ten.
 
 ## Non-goals
 
@@ -67,19 +68,14 @@ timeline you can scrub to any half-inning or scoring play.
         │           │    fetch → frames → keyframe + JSON patches    │
         └──────────▶│    → manifest.json + frames.ndjson.gz          │
                     └────────────────────┬───────────────────────────┘
-                                         │ upload (AWS SDK, dev-only)
                                          ▼
-                              S3 / R2  recordings/v1/{gamePk}/
-                                         │
+                    public/recordings/v1/{gamePk}/   (or a bucket, via
+                                         │            NEXT_PUBLIC_RECORDINGS_BASE_URL)
                     ┌─ REPLAY (runtime) ─┴───────────────────────────┐
-                    │  GET /api/replay            index of games     │
-                    │  GET /api/replay/[gamePk]   manifest           │
-                    │  GET .../frames             (redirect to CDN)  │
+                    │  lib/replay/source    one document + patches   │
+                    │  lib/replay/timeline  play-time, seek index    │
+                    │  hooks/useReplay      the virtual clock        │
                     └────────────────────┬───────────────────────────┘
-                                         ▼
-                    lib/replay/  materialize patches → MlbLiveFeed[]
-                                 virtual clock, compression, seek index
-                                         │
                                          ▼  ingest(feed)   ← unchanged
                     store/gameStore ▶ lib/game ▶ lib/anim ▶ components/scene
 ```
@@ -322,8 +318,8 @@ Uploaded with `Cache-Control: public, max-age=31536000, immutable` and
 | `reconstruct.ts` | `reconstructFrames(finalFeed)` → the Tier-1 rebuild: plays and pitches revealed in order, linescore rolled back to match. | done |
 | `encode.ts` | `dedupeFrames`, `encodeFrames`, `buildManifest`, `verifyEncoding`. | done |
 | `validate.ts` | `validateFrames()` — walks a recording through the real normalizer the way the store does. | done |
-| `source.ts` | `loadRecording(gamePk)` → fetch manifest + frames, apply patches, return `MlbLiveFeed[]` materialized in memory. Handles gzip and version checks. | Phase 2 |
-| `timeline.ts` | `compressTimeline(frames, policy)` → the play-time mapping; `frameAt(t)`; `seekTargets(manifest)`. Pure, unit-testable, no React. | Phase 2 |
+| `source.ts` | `loadRecording(gamePk)` → `RecordingPlayer`, which walks one document forward with patches. Handles gzip and version checks. | done |
+| `timeline.ts` | `buildPlayTimeline(manifest, policy)`, `frameAtPlayTime`, `remapMarkers`, `formatClock`. Pure, no React, no fetch. | done |
 
 ### New: `src/hooks/useReplay.ts`
 
@@ -337,19 +333,24 @@ the `hold` logic, the director queue and the snapshot-promotion rule all run
 exactly as in production.
 
 **Pacing.** Recordings store real time; the driver builds a play-time mapping at
-load. The default policy clamps inter-frame gaps to the values `lib/sim/feed.ts`
-already proved comfortable for the animation timings — the director needs room
-or animations get clipped:
+load. Gaps are clamped, with the ceilings set from what the director actually
+needs rather than from the feed's own cadence:
 
 ```
-pitch → pitch          clamp to  7s   (SECONDS_PER_PITCH)
-play complete → next   clamp to 15s   (SECONDS_AFTER_PLAY)
-half-inning change     clamp to 25s   (break + the intermission card)
+pitch → pitch          clamp to  4s   (a pitch compiles to ~2.1s, 2.9s on a foul)
+play complete → next   clamp to 15s   (a home-run trot is four bases at 3.4s)
+half-inning change     clamp to 15s   (beam-out and hold need under 3s)
 ```
 
-A ~3h 10m game compresses to roughly **20–25 minutes**. A `trueTiming` toggle
-swaps the mapping for raw `t` values — a remap, not a reload. Speed multipliers
-(1x / 2x / 4x / 8x) scale on top of either.
+Under-provisioning does not clip an animation — the store holds `pending` until
+the queue drains — it backs the queue up, and past fourteen events the director
+starts dropping pitches. The headroom is what keeps it clear.
+
+Measured on the committed recordings: 3h06m → **48 minutes**, and 2h47m → **38
+minutes**, both about 4×. Speed multipliers (1× / 2× / 4× / 8×) scale on top,
+so a game is watchable end to end in ten minutes. A `trueTiming` toggle swaps
+the mapping for raw recorded times — a remap, not a reload, and it holds
+position by frame so the playhead does not jump to a different moment.
 
 **Seeking** falls out of the existing design. The store's `ingest()` already has
 a "first read" branch that jumps straight to the live edge via `seedCursor(feed)`
@@ -388,33 +389,40 @@ Plain DOM over the canvas, matching the existing HUD idiom.
 
 | Route | Behaviour |
 | --- | --- |
-| `GET /api/replay` | The recorded-games index. Fetches `index.json` from `RECORDINGS_BASE_URL`, short revalidate. Never 500s — returns `{ games: [], error }` on failure, matching `api/games/route.ts`. |
-| `GET /api/replay/[gamePk]` | The manifest, proxied so the browser needs no bucket URL. |
-| `GET /api/replay/[gamePk]/frames` | 307 to the CDN object (or proxies it, for the private-bucket case). |
-| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<seconds>` deep-links into the game, reusing the demo's existing seek param. |
+| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<seconds>` deep-links into the game's play-time, reusing the demo's existing seek param. |
 
 A recorded game is by definition finished, so `?replay=1` can never collide with
-the same `gamePk` being live. `watch/[gamePk]/page.tsx` already awaits
-`searchParams` and passes plain props down — this is a one-line addition there
-and a `mode` prop on `Viewer`.
+the same `gamePk` being live. `Viewer` takes a `mode` of `"live" | "demo" |
+"replay"` and picks a driver; both hooks are always called, with the inactive
+one disabled, since a hook cannot be conditional.
 
-`GameList.tsx` grows a **Recordings** section below today's slate, fed by
-`/api/replay`. Recorded games are always clickable, unlike finished live games.
+`GameList.tsx` grows a **Recorded games** section, fed by
+`loadRecordingIndex()`. `summarizeRecording()` in `lib/game/schedule.ts` maps an
+index entry onto the same `GameSummary` the schedule uses, so club colours come
+from the same `paletteFor` and the existing `GameCard` renders it. Recorded
+games are always clickable, unlike finished live games.
+
+**No API routes.** The design originally called for `/api/replay`,
+`/api/replay/[gamePk]` and `.../frames`. They would be pure pass-throughs:
+`public/recordings/` is already served at `/recordings`, and a *public* bucket
+or CDN is reached by pointing `NEXT_PUBLIC_RECORDINGS_BASE_URL` at it, with no
+code change. Only a **private** bucket needs a route, to presign — so the routes
+are deferred to Phase 4, and only if that is the shape chosen.
 
 ### Files touched
 
 | File | Change |
 | --- | --- |
 | `src/lib/replay/{format,reconstruct,encode,validate}.ts` | New. Done in Phase 1. |
-| `src/lib/replay/{source,timeline}.ts` | New. Phase 2. |
-| `src/hooks/useReplay.ts` | New — mirrors `useLiveFeed.ts`. |
-| `src/components/hud/Timeline.tsx` | New. |
-| `src/app/api/replay/**` | New — three routes. |
+| `src/lib/replay/{source,timeline}.ts` | New. Done in Phase 2. |
+| `src/hooks/useReplay.ts` | New — mirrors `useLiveFeed.ts`. Done in Phase 2. |
+| `src/components/hud/Transport.tsx` | New — play/pause, scrub, speed. The labelled bar grows on top of it in Phase 3. |
+| `src/app/api/replay/**` | Not built; see "No API routes" above. |
 | `scripts/record-game.ts` | New — the recorder and validator. Done in Phase 1; `--upload` lands in Phase 4. |
-| `src/store/gameStore.ts` | Add `seek(feed)`; composes the existing `reset` + `ingest`. |
-| `src/components/Viewer.tsx` | Accept `mode: "live" \| "demo" \| "replay"`; pick the driver hook; render `<Timeline/>` in replay. |
-| `src/app/watch/[gamePk]/page.tsx` | Read `?replay=1`, pass `mode`. |
-| `src/components/GameList.tsx` | Recordings section from `/api/replay`. |
+| `src/store/gameStore.ts` | `seek(feed)` — composes the existing `reset` + `ingest`. Done in Phase 2. |
+| `src/components/Viewer.tsx` | Takes `mode: "live" \| "demo" \| "replay"`, picks the driver, renders `<Transport/>` in replay. |
+| `src/app/watch/[gamePk]/page.tsx` | Reads `?replay=1` and `?at=`, passes `mode`. |
+| `src/components/GameList.tsx` | Recorded-games section, via `loadRecordingIndex()` and `summarizeRecording()`. |
 | `package.json` | `+ tsx` (dev) and `+ fast-json-patch` (runtime, ~10 KB) — both done in Phase 1, along with the `record` script. `+ @aws-sdk/client-s3` (dev) in Phase 4. |
 | `docs/ARCHITECTURE.md`, `README.md` | Document `lib/replay/`, the format, the recorder. |
 
@@ -437,14 +445,16 @@ to apply by hand — worth doing only if the dependency is genuinely objectionab
 validated keyframe-plus-patches stream with a manifest, and the run prints a
 size and frame report. No app changes; nothing plays back yet.
 
-**Phase 2 — Replay.** `source.ts`, `timeline.ts`, `useReplay.ts`, the `seek`
-store action, the `Viewer` mode switch, the `/api/replay` routes reading from
-`public/recordings/`. Deliverable: a real recorded game plays end to end in the
-ballpark, locally, with play/pause and speed. **This is the milestone that
-retires the demo game as the primary test fixture.**
+**Phase 2 — Replay. ✅ Done.** `source.ts`, `timeline.ts`, `useReplay.ts`, the
+`seek` store action, the `Viewer` mode switch, `hud/Transport.tsx` and the
+`GameList` section. A real recorded game plays end to end with play/pause, seek
+and speed. **This is the milestone that retires the demo game as the primary
+test fixture.**
 
-**Phase 3 — Timeline.** `Timeline.tsx`, markers, keyboard shortcuts, `?at=`
-deep links, the `GameList` recordings section.
+**Phase 3 — Timeline.** The labelled scrub bar on top of `Transport.tsx`:
+half-inning ticks and scoring-play markers from `manifest.markers` (already
+written by the recorder, already remapped by `remapMarkers`), hover labels, and
+keyboard shortcuts — space, ±at-bat, ±half-inning.
 
 **Phase 4 — S3/R2.** Bucket, `--upload`, `RECORDINGS_BASE_URL`, `index.json`,
 `.env.example`, docs. Deliverable: recordings shared across devs and deploys.

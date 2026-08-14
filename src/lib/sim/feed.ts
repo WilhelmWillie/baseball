@@ -17,6 +17,7 @@ import {
   pitchesFor,
   type PitchCode,
   type ScriptedAtBat,
+  type ScriptedResult,
   type SimRosterEntry,
 } from "./script";
 
@@ -28,6 +29,38 @@ const SECONDS_PER_PITCH = 7;
 // up. Real games leave ~20s between pitches, so this stays inside what a live
 // feed would give us.
 const SECONDS_AFTER_PLAY = 15;
+
+/**
+ * How long after the deciding pitch MLB publishes the outcome, by result.
+ *
+ * This used to be a flat 1.2s for everything, which meant the demo never once
+ * exercised what happens when a result is slow - and that is the whole reason a
+ * home run once animated as a strike followed, seconds later, by a home run.
+ * A real feed takes longest on the plays with the most to reconcile: the ball
+ * is up for four seconds on a home run, then the trot, then the runs and RBI.
+ *
+ * `home_run` at 16s deliberately crosses `HOLD_TIMEOUT_MS` (15s) and lands
+ * inside the director's `FUSE_GRACE_MS` (5s), so every homer in the demo
+ * exercises the late-fusion recovery rather than the happy path.
+ */
+const RESULT_LAG: Partial<Record<ScriptedResult, number>> = {
+  home_run: 16,
+  triple: 7,
+  double: 4.5,
+  error: 5,
+  single: 3,
+  sac_fly: 3,
+  double_play: 2.5,
+};
+const DEFAULT_RESULT_LAG = 1.2;
+
+/**
+ * Ceiling on the `?lag=` override. Beyond the gap the demo leaves after a play,
+ * the next at-bat's pitches start arriving before this one has resolved - which
+ * the normalizer handles (it stops at the held pitch) but which makes what you
+ * are looking at hard to reason about.
+ */
+const MAX_LAG_OVERRIDE = 30;
 
 /** Inverse of the Gameday hit-coordinate mapping, so the demo feed carries
  *  the same raw coordinate space a real game does. */
@@ -65,6 +98,17 @@ const PITCH_PRESENTATION: Record<PitchCode, PitchPresentation> = {
   F: { callCode: "F", callDescription: "Foul", description: "Foul", isStrike: true, isBall: false, isInPlay: false },
   X: { callCode: "X", callDescription: "In play", description: "In play, no out", isStrike: false, isBall: false, isInPlay: true },
 };
+
+/**
+ * GUMBO gives a ball in play one of three call codes depending on what came of
+ * it, and the demo emitted "X" for all of them. Getting this right is what lets
+ * the demo exercise the code-based half of `pitchOutcome`.
+ */
+function inPlayCall(result: ScriptedResult, isOut: boolean): { code: string; description: string } {
+  if (isOut) return { code: "X", description: "In play, out(s)" };
+  if (result === "home_run") return { code: "E", description: "In play, run(s)" };
+  return { code: "D", description: "In play, no out" };
+}
 
 /** Deterministic pseudo-random in [0,1) so every replay looks identical. */
 function rand(seed: number): number {
@@ -124,6 +168,8 @@ interface BuiltPlay {
   /** Wall-clock offset (seconds) at which each play event becomes visible. */
   eventTimes: number[];
   completeTime: number;
+  /** When the deciding pitch landed - what `?lag=` measures its override from. */
+  lastPitchTime: number;
   /** State captured after the play, used to rebuild the linescore. */
   after: SimState;
   /** This play recorded the third out - the half-inning ends on it. */
@@ -441,6 +487,12 @@ function buildPlayEvents(
     const presentation = PITCH_PRESENTATION[code];
     const loc = plateLocation(code, seed);
     const countBefore = { balls, strikes, outs: 0 };
+    const inPlay = code === "X" ? inPlayCall(atBat.result, EVENT_META[atBat.result].isOut) : null;
+    // A permanent canary: half the demo's batted balls omit `isInPlay`, so the
+    // call-code path in `pitchOutcome` is exercised every game rather than
+    // sitting untested until a real feed leaves the field out. Mis-reading a
+    // ball in play as a strike is what made a home run animate as one.
+    const declareInPlay = !inPlay || seedBase % 2 === 0;
 
     const event: MlbPlayEvent = {
       index: i,
@@ -450,10 +502,13 @@ function buildPlayEvents(
       type: "pitch",
       count: countBefore,
       details: {
-        call: { code: presentation.callCode, description: presentation.callDescription },
-        description: presentation.description,
-        code: presentation.callCode,
-        isInPlay: presentation.isInPlay,
+        call: {
+          code: inPlay?.code ?? presentation.callCode,
+          description: inPlay?.description ?? presentation.callDescription,
+        },
+        description: inPlay?.description ?? presentation.description,
+        code: inPlay?.code ?? presentation.callCode,
+        ...(declareInPlay ? { isInPlay: presentation.isInPlay } : {}),
         isStrike: presentation.isStrike,
         isBall: presentation.isBall,
         type: { code: pitchType.code, description: pitchType.description },
@@ -560,7 +615,8 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
     recordStats(state, batter, pitcher, atBat, rbi, outsRecorded);
 
     const meta = EVENT_META[atBat.result];
-    const completeTime = (times[times.length - 1] ?? startTime) + 1.2;
+    const lastPitchTime = times[times.length - 1] ?? startTime;
+    const completeTime = lastPitchTime + (RESULT_LAG[atBat.result] ?? DEFAULT_RESULT_LAG);
 
     const play: MlbPlay = {
       result: {
@@ -617,6 +673,7 @@ function buildGame(): { plays: BuiltPlay[]; totalSeconds: number } {
       play,
       eventTimes: times,
       completeTime,
+      lastPitchTime,
       after: cloneState(state),
       endsHalf,
     });
@@ -738,8 +795,21 @@ function clockLabel(hour: number): { time: string; ampm: string } {
   return { time: `${display}:${String(minutes).padStart(2, "0")}`, ampm };
 }
 
-export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {}): MlbLiveFeed {
+export function buildDemoFeed(
+  elapsedSeconds: number,
+  weather: DemoWeather = {},
+  /**
+   * Seconds between the deciding pitch and the published result, overriding
+   * `RESULT_LAG` for every play. `?lag=` on the viewer. This is how the slow
+   * paths are reached on demand: past `HOLD_TIMEOUT_MS` the normalizer gives up
+   * and the director's grace catches it, and past both the pitch has to animate
+   * on its own - which should still read as contact, never as a strike.
+   */
+  resultLag?: number,
+): MlbLiveFeed {
   const t = Math.max(0, elapsedSeconds);
+  const lag =
+    resultLag === undefined ? null : Math.min(Math.max(0, resultLag), MAX_LAG_OVERRIDE);
   const allPlays: MlbPlay[] = [];
   let state = initialState();
   let currentPlay: MlbPlay | undefined;
@@ -752,7 +822,7 @@ export function buildDemoFeed(elapsedSeconds: number, weather: DemoWeather = {})
     if (t < firstTime) break;
 
     const visibleCount = built.eventTimes.filter((time) => time <= t).length;
-    const isComplete = t >= built.completeTime;
+    const isComplete = t >= (lag === null ? built.completeTime : built.lastPitchTime + lag);
     const events = (built.play.playEvents ?? []).slice(0, visibleCount);
 
     const play: MlbPlay = {

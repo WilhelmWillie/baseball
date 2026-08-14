@@ -8,10 +8,16 @@ const LIVE_INTERVAL = 5000;
 const IDLE_INTERVAL = 15000;
 const DEMO_INTERVAL = 1800;
 /**
- * While a pitch is held waiting on its result, the field is standing still and
+ * While a struck ball is waiting on its result, the field is standing still and
  * every poll is a chance to release it - so chase the result rather than
- * waiting out the normal interval. Bounded by the hold timeout in `events.ts`,
- * this costs a few extra requests at the end of an at-bat and nothing else.
+ * waiting out the normal interval. This costs a few extra requests at the end
+ * of an at-bat and nothing else.
+ *
+ * Two things wait on a result and both have to be chased: the normalizer's hold
+ * (`HOLD_TIMEOUT_MS` in `events.ts`) and, once that expires, the director's
+ * grace window (`FUSE_GRACE_MS`). Keying this off the hold alone dropped the
+ * loop back to the 5s live interval for the whole of the second phase, and a
+ * grace window that no fresh read lands inside cannot fuse anything.
  */
 const CHASE_INTERVAL = 1500;
 
@@ -52,8 +58,8 @@ export function useLiveFeed(gamePk: string, isDemo: boolean, demoOffset = 0, dem
         }
       } finally {
         if (cancelled) return;
-        const { snapshot, cursor } = useGameStore.getState();
-        const base = cursor.hold
+        const { snapshot, cursor, director } = useGameStore.getState();
+        const base = cursor.hold || director.awaitingResult
           ? CHASE_INTERVAL
           : isDemo
             ? DEMO_INTERVAL

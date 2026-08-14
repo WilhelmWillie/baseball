@@ -241,7 +241,12 @@ export function Scorebug({
             {arrow} {snapshot.inningOrdinal}
           </div>
           <Diamond snapshot={snapshot} />
-          <Outs count={count.outs} />
+          <div className="flex flex-col items-center gap-1">
+            <span className="font-display text-sm font-extrabold leading-none text-bark">
+              {count.balls}-{count.strikes}
+            </span>
+            <Outs count={count.outs} />
+          </div>
           {controls && <div className="ml-auto pl-1 sm:ml-1">{controls}</div>}
         </div>
       </div>

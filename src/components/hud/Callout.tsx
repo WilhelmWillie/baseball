@@ -38,13 +38,14 @@ export function Callout() {
   if (!call) return null;
 
   return (
-    // A full-width banner along the bottom edge. On a phone it floats just
-    // above the thumb controls so it never covers them; on a larger screen the
-    // bottom is empty, so it sits flush against it, edge to edge.
-    <div className="pointer-events-none absolute inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-10 px-2 sm:bottom-0 sm:px-0">
+    // A wide banner near the bottom of the frame. On a phone it floats just
+    // above the thumb controls so it never covers them; on a larger screen it
+    // sits above the venue status in the corner, capped in width and centered
+    // so it never stretches edge to edge.
+    <div className="pointer-events-none absolute inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-10 flex justify-center px-2 sm:bottom-14 sm:px-4">
       <div
         key={call.at}
-        className={`flex animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:gap-1 sm:rounded-b-none sm:border-x-0 sm:border-b-0 sm:py-4 ${TONE[call.tone]}`}
+        className={`flex w-full max-w-[800px] animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:gap-1 sm:py-4 ${TONE[call.tone]}`}
       >
         <span className="font-display text-xl font-extrabold leading-tight sm:text-3xl">
           {call.text}

@@ -86,11 +86,15 @@ function Diamond({ snapshot }: { snapshot: GameSnapshot }) {
     `h-3 w-3 rotate-45 rounded-[3px] border-2 transition-colors ${
       active ? "border-grass bg-grass" : "border-bark/25 bg-transparent"
     }`;
+  // The box hugs the three bases exactly - second at the top, first and third
+  // at the bottom corners - with no empty home-plate row beneath. That lets the
+  // parent's `items-center` line the diamond up with the score and count, which
+  // an h-10 box (weighted toward its top half) could not.
   return (
-    <div className="relative h-10 w-10 shrink-0">
+    <div className="relative h-[26px] w-10 shrink-0">
       <div className={`absolute left-1/2 top-0 -translate-x-1/2 ${cell(on("second"))}`} />
-      <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${cell(on("first"))}`} />
-      <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${cell(on("third"))}`} />
+      <div className={`absolute bottom-0 right-0 ${cell(on("first"))}`} />
+      <div className={`absolute bottom-0 left-0 ${cell(on("third"))}`} />
     </div>
   );
 }
@@ -241,7 +245,12 @@ export function Scorebug({
             {arrow} {snapshot.inningOrdinal}
           </div>
           <Diamond snapshot={snapshot} />
-          <Outs count={count.outs} />
+          <div className="flex flex-col items-center gap-1">
+            <span className="font-display text-sm font-extrabold leading-none text-bark">
+              {count.balls}-{count.strikes}
+            </span>
+            <Outs count={count.outs} />
+          </div>
           {controls && <div className="ml-auto pl-1 sm:ml-1">{controls}</div>}
         </div>
       </div>

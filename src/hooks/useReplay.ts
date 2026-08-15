@@ -6,6 +6,7 @@ import type { RecordingManifest } from "@/lib/replay/format";
 import { loadRecording, type RecordingPlayer } from "@/lib/replay/source";
 import {
   atBatAtFrame,
+  beatAfter,
   buildAtBats,
   buildMarkers,
   stepHalfInning as stepHalf,
@@ -135,34 +136,55 @@ export function useReplay(
   }, [player, atBats, startAtBat, seekAtBat]);
 
   /**
-   * Advance when the ballpark is ready for more.
+   * Advance when the ballpark is ready for more, then rest a beat.
    *
-   * Polled on an animation frame, but nothing here reads the clock: the only
-   * question asked is whether the director has drained. A held pitch is the one
-   * case where the store is deliberately parked - `settle` refuses to promote a
-   * snapshot while a pitch is waiting on its result - and advancing is exactly
-   * what releases it, so it does not count as being busy.
+   * Two gates, and neither is a schedule. The first is the director: a frame is
+   * only handed over once it has nothing left to animate, so a play can never be
+   * interrupted by the one behind it. The second is `beatAfter`, a floor on the
+   * space between plays - without it the next pitch begins the instant the last
+   * one lands, which reads as a highlight reel rather than a game.
+   *
+   * A held pitch is the one case where the store is deliberately parked -
+   * `settle` refuses to promote a snapshot while a pitch waits on its result -
+   * and advancing is exactly what releases it, so it neither counts as busy nor
+   * earns a rest.
    */
+  const idleSince = useRef<number | null>(null);
   useEffect(() => {
     if (!enabled || !player) return;
+    const frames = player.manifest.frames;
     let raf = 0;
+
     const tick = () => {
       raf = requestAnimationFrame(tick);
       if (!playingRef.current) return;
 
       const { director, pending, cursor } = useGameStore.getState();
-      if (!director.isIdle()) return;
+      if (!director.isIdle()) {
+        idleSince.current = null;
+        return;
+      }
+      // Let `settle` promote the snapshot first, unless a hold is what is
+      // keeping it back - then advancing is the only way forward.
       if (pending !== null && cursor.hold === null) return;
+
+      const now = performance.now();
+      if (idleSince.current === null) idleSince.current = now;
+      if (now - idleSince.current < beatAfter(frames[position.current], cursor.hold !== null)) {
+        return;
+      }
 
       const next = position.current + 1;
       if (next >= player.frameCount) {
         setPlaying(false);
         return;
       }
+      idleSince.current = null;
       position.current = next;
       setFrame(next);
       ingest(player.feedAt(next));
     };
+
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [enabled, player, ingest]);

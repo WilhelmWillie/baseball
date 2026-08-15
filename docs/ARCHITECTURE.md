@@ -74,7 +74,7 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 | --- | --- | --- |
 | `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate. Only in-progress games are clickable. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. |
-| `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<seconds>` seeks into its play-time. |
+| `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<n>` opens on the nth plate appearance. |
 | `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
 | `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. |
 
@@ -273,14 +273,17 @@ and nothing else: `public/recordings/` is served at `/recordings`, and
 `NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a bucket without a code change.
 
 **`lib/replay/timeline.ts`** — indexes a recording by plate appearance:
-`buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Pure functions;
-the place to change what the scrub bar can land on.
+`buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Also
+`REPLAY_BEATS` — how long the park rests between plays. Pure functions; the
+place to change pacing, or what the scrub bar can land on.
 
 **`hooks/useReplay.ts`** — the mirror of `useLiveFeed`: same `ingest`, no
-network and **no clock**. It hands over the next frame only once
-`director.isIdle()`, so an animation is never interrupted by the one behind it
-and pacing is whatever the animation needs. A held pitch is the one deliberate
-park that still counts as ready, since advancing is what releases it.
+network and **no clock**. Two gates: the next frame goes over only once
+`director.isIdle()`, so an animation is never interrupted by the one behind it,
+and then only after `beatAfter` has elapsed, which is a floor on the space
+between plays rather than a schedule. A held pitch is the one deliberate park
+that counts as ready and skips the beat, since advancing is what releases it and
+the hold exists to fuse a pitch to its outcome.
 
 **`components/hud/Transport.tsx`** — play/pause, at-bat and half-inning
 stepping, and a scrub bar ticked with half-innings and scoring plays.
@@ -324,7 +327,7 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | What a recording stores | `lib/replay/format.ts` |
 | How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
 | What makes a recording valid | `lib/replay/validate.ts` |
-| How a recording is paced | the idle gate in `hooks/useReplay.ts` |
+| How a recording is paced | `REPLAY_BEATS` in `lib/replay/timeline.ts` |
 | What the scrub bar can land on | `lib/replay/timeline.ts` |
 | Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
 

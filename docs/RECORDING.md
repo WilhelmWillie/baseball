@@ -59,7 +59,7 @@ timeline you can scrub to any half-inning or scoring play.
 | --- | --- | --- |
 | Storage | S3 / R2 object storage | Shared across devs, CI and prod; repo stays clean; recordings are large-ish and immutable, which is exactly what object storage is for. |
 | Capture | Retroactive, from finished games | Any game from any season, captured in one batch run. No waiting three hours for a live game. |
-| Pacing | No clock at all — advance when the ballpark is ready | A clock advanced whether or not the director had finished, so long animations were cut off mid-celebration. Waiting on `director.isIdle()` paces playback at exactly what the animation needs. |
+| Pacing | No clock — advance when the ballpark is ready, then rest a beat | A clock advanced whether or not the director had finished, so long animations were cut off mid-celebration. Waiting on `director.isIdle()` fixes that; a beat between plays keeps it from reading as a highlight reel. ~35 min for a nine-inning game. |
 | Timeline | Plate appearances, with half-inning and scoring markers | "Show me the 7th", "jump to the home run" — and seeking always lands on the start of an at-bat. |
 
 ## Architecture
@@ -75,8 +75,8 @@ timeline you can scrub to any half-inning or scoring play.
                                          │            NEXT_PUBLIC_RECORDINGS_BASE_URL)
                     ┌─ REPLAY (runtime) ─┴───────────────────────────┐
                     │  lib/replay/source    one document + patches   │
-                    │  lib/replay/timeline  play-time, seek index    │
-                    │  hooks/useReplay      the virtual clock        │
+                    │  lib/replay/timeline  at-bat index, pacing    │
+                    │  hooks/useReplay      idle gate + beat         │
                     └────────────────────┬───────────────────────────┘
                                          ▼  ingest(feed)   ← unchanged
                     store/gameStore ▶ lib/game ▶ lib/anim ▶ components/scene
@@ -85,9 +85,9 @@ timeline you can scrub to any half-inning or scoring play.
 **The load-bearing insight:** `gameStore.ingest(feed)` takes a whole
 `MlbLiveFeed` and figures out what is new by walking a `FeedCursor`. It does not
 care whether that feed came from `statsapi.mlb.com` or from a file recorded last
-October. A recording is just a **time-indexed sequence
-of `MlbLiveFeed` values**, and replay is a driver that hands them to `ingest()`
-on a clock we control. Nothing downstream of the store changes at all.
+October. A recording is just an **ordered sequence of `MlbLiveFeed` values**, and
+replay is a driver that hands them to `ingest()` as the ballpark becomes ready
+for them. Nothing downstream of the store changes at all.
 
 The retired simulator proved this contract end to end before it was removed: it
 was a pure `(elapsedSeconds) → MlbLiveFeed`. Replay is the same shape, backed by
@@ -125,8 +125,8 @@ lands at **210–235 KB gzipped for a whole game**, about a quarter the size of
 one raw feed.
 
 `t` is **milliseconds since the first pitch**, derived from real recorded
-timestamps. Recordings store *only* real time — no compression is baked in, so
-pacing policy stays tunable without re-recording.
+timestamps. Playback ignores it — pacing comes from the animations, not the
+file — but it is what the game actually did, so it is kept.
 
 ### What counts as a frame
 
@@ -320,14 +320,14 @@ Uploaded with `Cache-Control: public, max-age=31536000, immutable` and
 | `encode.ts` | `dedupeFrames`, `encodeFrames`, `buildManifest`, `verifyEncoding`. | done |
 | `validate.ts` | `validateFrames()` — walks a recording through the real normalizer the way the store does. | done |
 | `source.ts` | `loadRecording(gamePk)` → `RecordingPlayer`, which walks one document forward with patches. Handles gzip and version checks. | done |
-| `timeline.ts` | `buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Indexes a recording by plate appearance. Pure, no React, no fetch. | done |
+| `timeline.ts` | `buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`, and `REPLAY_BEATS` / `beatAfter` — the pacing floor. Pure, no React, no fetch. | done |
 
 ### New: `src/hooks/useReplay.ts`
 
-The mirror of `useLiveFeed`, same job, different clock. It loads the recording,
-then on a tick advances a virtual clock and calls `ingest(feed)` for each frame
-the clock has passed. Exposes
-`{ status, playing, t, duration, play, pause, seek, setSpeed }`.
+The mirror of `useLiveFeed`, same job, no network. It loads the recording and
+hands frames to `ingest(feed)` one at a time as the ballpark becomes ready.
+Exposes `{ status, playing, frame, atBat, atBats, markers, play, pause, toggle,
+seekAtBat, stepAtBat, stepHalfInning }`.
 
 Critically it calls the **same `ingest`** the live path does, so `extractEvents`,
 the `hold` logic, the director queue and the snapshot-promotion rule all run
@@ -340,19 +340,33 @@ principle and visibly wrong in practice: a home run's trot and celebration run
 past four seconds, MLB's gap to the next pitch is often shorter, and the next
 play would land on top of the one still finishing.
 
-Now the recording waits for the ballpark. A frame is handed to `ingest` only
-once `director.isIdle()`, so every animation finishes and the pacing *is*
-whatever the animation needs. No ceilings to tune, no speed multipliers, no
+Now the recording waits for the ballpark, through two gates, neither of which is
+a schedule:
+
+1. **The director.** A frame is handed to `ingest` only once `director.isIdle()`,
+   so a play can never be interrupted by the one behind it.
+2. **A beat.** `beatAfter` in `timeline.ts` is a floor on the space between
+   plays — 2.4s after a pitch, 2.0s after a completed play (which already has
+   2.4–4.2s of hold inside its own animation), 4.0s across a half-inning break
+   so the intermission card can be read.
+
+The second gate exists because the first alone is too brisk: with nothing but
+idle-gating the next pitch begins the instant the last one lands, which reads as
+a highlight reel rather than a game. A beat can only ever make playback wait
+longer, never cut an animation short, which is what separates it from the clock
+it replaced. Measured: ~24s per plate appearance, so a 88-at-bat game runs about
+35 minutes.
+
+No ceilings to tune against animation lengths, no speed multipliers, no
 true-timing toggle — "faster" could only mean cutting plays short again.
 
-Nothing extra is needed to stop it feeling rushed, because the animations
-already carry their own trailing hold: `compileResult` keeps 4.2s after a home
-run, "long enough after the call for the beam-out to finish playing".
+One case is deliberately neither busy nor owed a beat: while `cursor.hold` is
+set the store parks a snapshot on purpose, waiting on a pitch's result.
+Advancing is exactly what releases it, and resting there would pull apart the
+pitch and its outcome that the hold exists to fuse into one motion.
 
-One case is deliberately not "busy": while `cursor.hold` is set the store parks
-a snapshot on purpose, waiting on a pitch's result, and advancing is exactly
-what releases it. Recordings still store real timestamps — they are what the
-game did — and playback simply ignores them.
+Recordings still store real timestamps — they are what the game did — and
+playback simply ignores them.
 
 **Seeking** falls out of the existing design. The store's `ingest()` already has
 a "first read" branch that jumps straight to the live edge via `seedCursor(feed)`

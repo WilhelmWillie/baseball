@@ -1,5 +1,5 @@
 import { inningLabel } from "@/lib/game/normalize";
-import type { RecordingManifest } from "./format";
+import type { ManifestFrame, RecordingManifest } from "./format";
 
 /**
  * The shape of a recording, as something to navigate.
@@ -14,6 +14,43 @@ import type { RecordingManifest } from "./format";
  * below indexes frames by at-bat and half-inning so the transport can step and
  * scrub in those terms.
  */
+
+/**
+ * How long the ballpark rests after finishing an animation, before the next
+ * frame is handed over.
+ *
+ * This is a floor on the space between plays, not a schedule: it can only ever
+ * make playback wait longer, never cut an animation short. Without it the next
+ * pitch begins the instant the last one lands, which reads as a highlight reel
+ * rather than a game — real ones leave about twenty seconds between pitches.
+ *
+ * A play already carries its own trailing hold inside the animation
+ * (`compileResult` keeps 2.4s, or 4.2s on a home run), which is why the beat
+ * after one is shorter than the beat after a pitch rather than longer.
+ */
+export const REPLAY_BEATS = {
+  /** Between pitches of the same plate appearance. */
+  pitch: 2400,
+  /** After a completed play, on top of the animation's own hold. */
+  play: 2000,
+  /** Across the half-inning break, so the intermission card can be read. */
+  between: 4000,
+} as const;
+
+/**
+ * The rest owed after the frame currently on screen.
+ *
+ * A held pitch is the exception: the store is parked waiting on the result, and
+ * the whole point of the hold is that the pitch and its outcome animate as one
+ * motion. Resting there would pull them apart.
+ */
+export function beatAfter(frame: ManifestFrame | undefined, held: boolean): number {
+  if (held) return 0;
+  if (!frame) return REPLAY_BEATS.pitch;
+  if (frame.between) return REPLAY_BEATS.between;
+  if (frame.playComplete) return REPLAY_BEATS.play;
+  return REPLAY_BEATS.pitch;
+}
 
 /** One plate appearance, as somewhere you can jump to. */
 export interface AtBat {

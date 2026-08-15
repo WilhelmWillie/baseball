@@ -5,20 +5,29 @@ import { useGameStore } from "@/store/gameStore";
 import type { RecordingManifest } from "@/lib/replay/format";
 import { loadRecording, type RecordingPlayer } from "@/lib/replay/source";
 import {
-  buildPlayTimeline,
-  frameAtPlayTime,
-  timelineDuration,
-  trueTimeline,
+  atBatAtFrame,
+  buildAtBats,
+  buildMarkers,
+  stepHalfInning as stepHalf,
+  type AtBat,
+  type TimelineMarker,
 } from "@/lib/replay/timeline";
 
 /**
- * Plays a recorded game into the store.
+ * Plays a recorded game into the store, one frame at a time.
  *
- * The mirror of `useLiveFeed`: same destination, different clock. Where the
- * poller asks the network what is true now, this walks a recording on a virtual
- * clock. Both end at the same `ingest`, so everything downstream - the cursor,
- * the hold, the director queue, the snapshot-promotion rule - runs exactly as
- * it does on a live game.
+ * The mirror of `useLiveFeed`: same destination, no network. What it does *not*
+ * have is a clock. An earlier version advanced a virtual clock and pushed
+ * whatever frame that clock had reached, which meant a long animation could be
+ * interrupted by the next one - a home run's trot and celebration run past four
+ * seconds, and MLB's own gap to the next pitch is shorter than that.
+ *
+ * Instead the recording waits for the ballpark. A frame is handed to `ingest`
+ * only once the director has nothing left to animate, so every play gets to
+ * finish and the pacing is whatever the animation actually needs. The
+ * animations already carry their own trailing hold - `compileResult` keeps 4.2s
+ * after a home run "long enough after the call for the beam-out to finish
+ * playing" - so nothing extra is needed to stop it feeling rushed.
  */
 
 export type ReplayStatus = "loading" | "ready" | "error";
@@ -28,34 +37,30 @@ export interface ReplayControls {
   error: string | null;
   manifest: RecordingManifest | null;
   playing: boolean;
-  /** Position on the active time base, in milliseconds. */
-  playT: number;
-  durationMs: number;
-  speed: number;
-  trueTiming: boolean;
+  /** Position in the frame stream. */
+  frame: number;
+  frameCount: number;
+  atBats: AtBat[];
+  markers: TimelineMarker[];
+  /** Index into `atBats` of the plate appearance on screen. */
+  atBat: number;
+  /** True once the last frame has been played. */
+  ended: boolean;
   play(): void;
   pause(): void;
   toggle(): void;
-  seek(t: number): void;
-  setSpeed(speed: number): void;
-  setTrueTiming(on: boolean): void;
+  /** Jump to a plate appearance by index, resetting the world to that moment. */
+  seekAtBat(index: number): void;
+  /** Step by plate appearance: -1 back, +1 forward. */
+  stepAtBat(delta: number): void;
+  /** Step by half-inning. */
+  stepHalfInning(delta: number): void;
 }
-
-export const REPLAY_SPEEDS = [1, 2, 4, 8] as const;
-
-/**
- * How often the playhead is published to React.
- *
- * The clock itself advances every animation frame, but the readout only shows
- * seconds and the scrub bar is hundreds of pixels wide. Re-rendering the HUD
- * sixty times a second to move either would be pure waste.
- */
-const PUBLISH_EVERY_MS = 250;
 
 export function useReplay(
   gamePk: string,
   enabled: boolean,
-  startSeconds = 0,
+  startAtBat = 0,
 ): ReplayControls {
   const ingest = useGameStore((s) => s.ingest);
   const seekStore = useGameStore((s) => s.seek);
@@ -65,33 +70,19 @@ export function useReplay(
   const [status, setStatus] = useState<ReplayStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState(1);
-  const [trueTiming, setTrueTiming] = useState(false);
-  const [playT, setPlayT] = useState(0);
+  const [frame, setFrame] = useState(0);
 
   const manifest = player?.manifest ?? null;
+  const atBats = useMemo(() => (manifest ? buildAtBats(manifest) : []), [manifest]);
+  const markers = useMemo(() => (manifest ? buildMarkers(manifest) : []), [manifest]);
+  const frameCount = player?.frameCount ?? 0;
 
-  const timeline = useMemo(() => {
-    if (!manifest) return [] as number[];
-    return trueTiming ? trueTimeline(manifest) : buildPlayTimeline(manifest);
-  }, [manifest, trueTiming]);
-
-  const durationMs = useMemo(() => timelineDuration(timeline), [timeline]);
-
-  // The clock lives in refs: it moves every animation frame, and only its
-  // rounded position ever reaches React.
-  const clock = useRef(0);
-  const frame = useRef(-1);
-  const published = useRef(0);
+  const position = useRef(0);
   const playingRef = useRef(true);
-  const speedRef = useRef(1);
 
   useEffect(() => {
     playingRef.current = playing;
   }, [playing]);
-  useEffect(() => {
-    speedRef.current = speed;
-  }, [speed]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -114,94 +105,101 @@ export function useReplay(
     };
   }, [gamePk, enabled, reset]);
 
-  /** Put the world at `t` immediately, as a cut. */
-  const seek = useCallback(
-    (t: number) => {
-      if (!player || timeline.length === 0) return;
-      const clamped = Math.max(0, Math.min(t, timelineDuration(timeline)));
-      const index = frameAtPlayTime(timeline, clamped);
-      clock.current = clamped;
-      frame.current = index;
-      published.current = clamped;
-      setPlayT(clamped);
+  /** Put the world at a frame immediately, as a cut. */
+  const seekFrame = useCallback(
+    (target: number) => {
+      if (!player) return;
+      const index = Math.max(0, Math.min(target, player.frameCount - 1));
+      position.current = index;
+      setFrame(index);
       seekStore(player.feedAt(index));
     },
-    [player, timeline, seekStore],
+    [player, seekStore],
   );
 
-  // Opening position, and holding place when the time base changes underneath
-  // us. `?at=` deep-links into the game; otherwise it opens on the first pitch.
+  const seekAtBat = useCallback(
+    (index: number) => {
+      if (atBats.length === 0) return;
+      const clamped = Math.max(0, Math.min(index, atBats.length - 1));
+      seekFrame(atBats[clamped].frame);
+    },
+    [atBats, seekFrame],
+  );
+
+  // Opening position. `?at=` deep-links to a plate appearance.
   const opened = useRef<RecordingPlayer | null>(null);
   useEffect(() => {
-    if (!player || timeline.length === 0) return;
-    if (opened.current !== player) {
-      opened.current = player;
-      seek(startSeconds * 1000);
-      return;
-    }
-    // True timing was toggled: keep pointing at the same frame, not the same
-    // millisecond, so the playhead does not jump to a different moment.
-    const at = timeline[Math.max(0, frame.current)] ?? 0;
-    clock.current = at;
-    published.current = at;
-    setPlayT(at);
-  }, [player, timeline, startSeconds, seek]);
+    if (!player || atBats.length === 0 || opened.current === player) return;
+    opened.current = player;
+    seekAtBat(startAtBat);
+  }, [player, atBats, startAtBat, seekAtBat]);
 
-  // The clock. Wall-clock deltas rather than accumulated frame time, matching
-  // the director's convention: a slow or backgrounded tab costs smoothness, not
-  // sync. The delta is clamped so returning to a hidden tab does not
-  // fast-forward through half the game.
+  /**
+   * Advance when the ballpark is ready for more.
+   *
+   * Polled on an animation frame, but nothing here reads the clock: the only
+   * question asked is whether the director has drained. A held pitch is the one
+   * case where the store is deliberately parked - `settle` refuses to promote a
+   * snapshot while a pitch is waiting on its result - and advancing is exactly
+   * what releases it, so it does not count as being busy.
+   */
   useEffect(() => {
-    if (!enabled || !player || timeline.length === 0) return;
-    const end = timelineDuration(timeline);
+    if (!enabled || !player) return;
     let raf = 0;
-    let previous = performance.now();
-
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const now = performance.now();
-      const delta = Math.min(now - previous, 250);
-      previous = now;
       if (!playingRef.current) return;
 
-      const next = Math.min(clock.current + delta * speedRef.current, end);
-      clock.current = next;
+      const { director, pending, cursor } = useGameStore.getState();
+      if (!director.isIdle()) return;
+      if (pending !== null && cursor.hold === null) return;
 
-      const index = frameAtPlayTime(timeline, next);
-      if (index !== frame.current) {
-        frame.current = index;
-        // One ingest with the frame the clock has reached, rather than one per
-        // frame stepped over. That is precisely a slow poller, which is what
-        // `extractEvents` is built to absorb: it walks the cursor forward and
-        // emits everything new in a single pass.
-        ingest(player.feedAt(index));
+      const next = position.current + 1;
+      if (next >= player.frameCount) {
+        setPlaying(false);
+        return;
       }
-
-      if (Math.abs(next - published.current) >= PUBLISH_EVERY_MS || next >= end) {
-        published.current = next;
-        setPlayT(next);
-      }
-      if (next >= end) setPlaying(false);
+      position.current = next;
+      setFrame(next);
+      ingest(player.feedAt(next));
     };
-
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [enabled, player, timeline, ingest]);
+  }, [enabled, player, ingest]);
+
+  const atBat = useMemo(() => atBatAtFrame(atBats, frame), [atBats, frame]);
+
+  const stepAtBat = useCallback(
+    (delta: number) => {
+      // Stepping back from mid-at-bat restarts the one on screen first, which
+      // is what a viewer means by "back" when a play has already run.
+      const target = delta < 0 && frame > atBats[atBat]?.frame ? atBat : atBat + delta;
+      seekAtBat(target);
+    },
+    [atBat, atBats, frame, seekAtBat],
+  );
+
+  const stepHalfInning = useCallback(
+    (delta: number) => seekAtBat(stepHalf(atBats, atBat, delta)),
+    [atBats, atBat, seekAtBat],
+  );
 
   return {
     status,
     error,
     manifest,
     playing,
-    playT,
-    durationMs,
-    speed,
-    trueTiming,
+    frame,
+    frameCount,
+    atBats,
+    markers,
+    atBat,
+    ended: frameCount > 0 && frame >= frameCount - 1,
     play: useCallback(() => setPlaying(true), []),
     pause: useCallback(() => setPlaying(false), []),
     toggle: useCallback(() => setPlaying((on) => !on), []),
-    seek,
-    setSpeed,
-    setTrueTiming,
+    seekAtBat,
+    stepAtBat,
+    stepHalfInning,
   };
 }

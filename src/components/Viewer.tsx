@@ -59,19 +59,19 @@ export type ViewerMode = "live" | "replay";
 export function Viewer({
   gamePk,
   mode = "live",
-  startSeconds = 0,
+  startAtBat = 0,
 }: {
   gamePk: string;
   mode?: ViewerMode;
-  /** Start a recording this many seconds into its play-time. */
-  startSeconds?: number;
+  /** Open a recording on this plate appearance. */
+  startAtBat?: number;
 }) {
   const isReplay = mode === "replay";
 
   // Both drivers are always called - a hook cannot be conditional - and the one
   // that is not in charge sits inert.
   useLiveFeed(gamePk, !isReplay);
-  const replay = useReplay(gamePk, isReplay, startSeconds);
+  const replay = useReplay(gamePk, isReplay, startAtBat);
 
   const snapshot = useGameStore((s) => s.snapshot);
   const history = useGameStore((s) => s.history);

@@ -1,117 +1,139 @@
-import type { ManifestFrame, ManifestMarker, RecordingManifest } from "./format";
+import { inningLabel } from "@/lib/game/normalize";
+import type { RecordingManifest } from "./format";
 
 /**
- * Turning a recording's real timing into something watchable.
+ * The shape of a recording, as something to navigate.
  *
- * Recordings store only real time. A nine-inning game is a little over three
- * hours, and most of that is a pitcher standing on the mound: ~20s between
- * pitches, longer between at-bats, minutes for a pitching change. Playback
- * therefore builds a second time base at load, clamping every gap to a ceiling.
- * Nothing is baked into the file, so the policy can change without re-recording
- * and the true timing is always one remap away.
+ * Playback has no clock. A recording stores real timestamps and they are worth
+ * keeping - they are what the game actually did - but replay ignores them
+ * entirely, because a clock is what cut the celebrations short: it advanced
+ * whether or not the director had finished, and a home-run trot with its
+ * four-second hold does not fit in the gap MLB left before the next pitch.
+ *
+ * So the unit here is the **plate appearance**, not the second. Everything
+ * below indexes frames by at-bat and half-inning so the transport can step and
+ * scrub in those terms.
  */
 
-export interface PacingPolicy {
-  /** Between pitches within an at-bat. */
-  pitchGapMs: number;
-  /** From a completed play to whatever comes next. */
-  playGapMs: number;
-  /** Across the half-inning break, which the intermission card holds through. */
-  breakGapMs: number;
+/** One plate appearance, as somewhere you can jump to. */
+export interface AtBat {
+  /** Where this plate appearance starts, as an index into `manifest.frames`. */
+  frame: number;
+  /** MLB's own index for the at-bat. */
+  atBatIndex: number;
+  inning: number;
+  isTop: boolean;
+  /** 1-based position in the game, for "42 of 99". */
+  ordinal: number;
+  /** True when a run scored on it. */
+  scoring: boolean;
+}
+
+/** A tick on the scrub bar. */
+export interface TimelineMarker {
+  frame: number;
+  kind: "half" | "scoring";
+  label: string;
 }
 
 /**
- * Ceilings are set from what the director actually needs, with headroom.
+ * Every plate appearance in the game, in order.
  *
- * A pitch compiles to `plateTime + tail` - about 2.1s, or 2.9s when a foul
- * extends the tail - so 4s leaves better than a second spare. A play is the
- * expensive one: a home-run trot is four bases at `TROT_PER_BASE`, near 14s
- * before the celebration, which is why that gap keeps 15s. A half-inning break
- * only needs `INNING_BEAM_OUT + INNING_HOLD`, under 3s, but is left long enough
- * for the intermission card to read as a break rather than a stutter.
- *
- * Under-provisioning does not clip an animation - the store holds `pending`
- * until the queue drains - it backs the queue up, and past fourteen events the
- * director starts dropping pitches. The headroom is what keeps it clear.
+ * Between-innings frames belong to no at-bat and are skipped, so seeking never
+ * lands on an empty park.
  */
-export const DEFAULT_PACING: PacingPolicy = {
-  pitchGapMs: 4000,
-  playGapMs: 15000,
-  breakGapMs: 15000,
-};
-
-function capFor(previous: ManifestFrame, policy: PacingPolicy): number {
-  if (previous.between) return policy.breakGapMs;
-  if (previous.playComplete) return policy.playGapMs;
-  return policy.pitchGapMs;
-}
-
-/**
- * Play-time for each frame, in milliseconds.
- *
- * Gaps shorter than their ceiling are left alone, which matters: the ~1.5s
- * between a pitch and its published result is the lag the renderer's hold logic
- * exists to absorb, and compressing it would flatten the thing that makes an
- * at-bat animate as one motion.
- */
-export function buildPlayTimeline(
-  manifest: RecordingManifest,
-  policy: PacingPolicy = DEFAULT_PACING,
-): number[] {
+export function buildAtBats(manifest: RecordingManifest): AtBat[] {
   const frames = manifest.frames;
-  const times = new Array<number>(frames.length);
-  times[0] = 0;
-  for (let i = 1; i < frames.length; i++) {
-    const real = Math.max(0, frames[i].t - frames[i - 1].t);
-    times[i] = times[i - 1] + Math.min(real, capFor(frames[i - 1], policy));
+  const atBats: AtBat[] = [];
+  let key = "";
+
+  for (let i = 0; i < frames.length; i++) {
+    const frame = frames[i];
+    if (frame.between) continue;
+    const next = `${frame.inning}-${frame.isTop}-${frame.atBatIndex}`;
+    if (next === key) {
+      if (frame.scoring) atBats[atBats.length - 1].scoring = true;
+      continue;
+    }
+    key = next;
+    atBats.push({
+      frame: i,
+      atBatIndex: frame.atBatIndex,
+      inning: frame.inning,
+      isTop: frame.isTop,
+      ordinal: atBats.length + 1,
+      scoring: frame.scoring,
+    });
   }
-  return times;
+  return atBats;
 }
 
-/** Real recorded time, for the "true timing" toggle. */
-export function trueTimeline(manifest: RecordingManifest): number[] {
-  const base = manifest.frames[0]?.t ?? 0;
-  return manifest.frames.map((frame) => frame.t - base);
+/**
+ * Half-inning starts and scoring plays, placed on frames.
+ *
+ * The recorder writes markers against the same `t` values it writes on frames,
+ * so they line up exactly; matching on that is what turns a stored time back
+ * into a position.
+ */
+export function buildMarkers(manifest: RecordingManifest): TimelineMarker[] {
+  const byTime = new Map<number, RecordingManifest["markers"]>();
+  for (const marker of manifest.markers) {
+    const at = byTime.get(marker.t);
+    if (at) at.push(marker);
+    else byTime.set(marker.t, [marker]);
+  }
+
+  const markers: TimelineMarker[] = [];
+  manifest.frames.forEach((frame, i) => {
+    for (const marker of byTime.get(frame.t) ?? []) {
+      markers.push({ frame: i, kind: marker.kind, label: marker.label });
+    }
+  });
+  return markers;
 }
 
-export function timelineDuration(timeline: number[]): number {
-  return timeline[timeline.length - 1] ?? 0;
-}
-
-/** The last frame at or before `t`. */
-export function frameAtPlayTime(timeline: number[], t: number): number {
-  if (timeline.length === 0) return 0;
+/** The at-bat a frame belongs to - the last one starting at or before it. */
+export function atBatAtFrame(atBats: AtBat[], frame: number): number {
+  if (atBats.length === 0) return 0;
   let low = 0;
-  let high = timeline.length - 1;
-  if (t <= timeline[0]) return 0;
-  if (t >= timeline[high]) return high;
+  let high = atBats.length - 1;
+  if (frame <= atBats[0].frame) return 0;
+  if (frame >= atBats[high].frame) return high;
   while (low < high) {
     const mid = (low + high + 1) >> 1;
-    if (timeline[mid] <= t) low = mid;
+    if (atBats[mid].frame <= frame) low = mid;
     else high = mid - 1;
   }
   return low;
 }
 
-/** Markers carry recorded times; the scrub bar needs them on the same base. */
-export function remapMarkers(
-  manifest: RecordingManifest,
-  timeline: number[],
-): ManifestMarker[] {
-  const base = manifest.frames[0]?.t ?? 0;
-  const realTimes = manifest.frames.map((frame) => frame.t - base);
-  return manifest.markers.map((marker) => ({
-    ...marker,
-    t: timeline[frameAtPlayTime(realTimes, marker.t)] ?? 0,
-  }));
+/** The first at-bat of the half-inning `delta` half-innings away. */
+export function stepHalfInning(atBats: AtBat[], from: number, delta: number): number {
+  const here = atBats[from];
+  if (!here) return from;
+  const sameHalf = (a: AtBat) => a.inning === here.inning && a.isTop === here.isTop;
+
+  if (delta < 0) {
+    // Back to the top of this half first; only then to the previous one.
+    let start = from;
+    while (start > 0 && sameHalf(atBats[start - 1])) start -= 1;
+    if (start < from) return start;
+    if (start === 0) return 0;
+    const previous = atBats[start - 1];
+    let back = start - 1;
+    while (back > 0 && atBats[back - 1].inning === previous.inning && atBats[back - 1].isTop === previous.isTop) {
+      back -= 1;
+    }
+    return back;
+  }
+
+  let forward = from;
+  while (forward < atBats.length - 1 && sameHalf(atBats[forward + 1])) forward += 1;
+  return Math.min(forward + 1, atBats.length - 1);
 }
 
-/** `1:04:12`, or `4:07` for anything under an hour. */
-export function formatClock(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+/** "Top 7th", for the transport's readout. */
+export function halfLabel(atBat: AtBat | undefined): string {
+  if (!atBat) return "";
+  return inningLabel(atBat.inning, atBat.isTop);
 }

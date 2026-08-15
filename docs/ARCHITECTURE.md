@@ -272,16 +272,18 @@ bound how far a backward seek has to rewind. Recordings live behind a base URL
 and nothing else: `public/recordings/` is served at `/recordings`, and
 `NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a bucket without a code change.
 
-**`lib/replay/timeline.ts`** — the second time base. Real games are mostly a
-pitcher standing still, so gaps are clamped to ceilings drawn from the
-director's own animation lengths. Pure functions; the place to change pacing.
+**`lib/replay/timeline.ts`** — indexes a recording by plate appearance:
+`buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Pure functions;
+the place to change what the scrub bar can land on.
 
-**`hooks/useReplay.ts`** — the mirror of `useLiveFeed`: same `ingest`, different
-clock. Advances on wall-clock deltas and calls `ingest` once per tick with the
-frame the clock has reached, which is exactly a slow poller — precisely what
-`extractEvents` is built to absorb.
+**`hooks/useReplay.ts`** — the mirror of `useLiveFeed`: same `ingest`, no
+network and **no clock**. It hands over the next frame only once
+`director.isIdle()`, so an animation is never interrupted by the one behind it
+and pacing is whatever the animation needs. A held pitch is the one deliberate
+park that still counts as ready, since advancing is what releases it.
 
-**`components/hud/Transport.tsx`** — play/pause, scrub, speed, true-timing.
+**`components/hud/Transport.tsx`** — play/pause, at-bat and half-inning
+stepping, and a scrub bar ticked with half-innings and scoring plays.
 
 The store gains one action for this: `seek(feed)`, which is `reset()` then
 `ingest()`. A seek is a cut, and `ingest`'s first-read branch already jumps to
@@ -322,7 +324,8 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | What a recording stores | `lib/replay/format.ts` |
 | How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
 | What makes a recording valid | `lib/replay/validate.ts` |
-| How fast a recording plays | `DEFAULT_PACING` in `lib/replay/timeline.ts` |
+| How a recording is paced | the idle gate in `hooks/useReplay.ts` |
+| What the scrub bar can land on | `lib/replay/timeline.ts` |
 | Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
 
 ## Notes

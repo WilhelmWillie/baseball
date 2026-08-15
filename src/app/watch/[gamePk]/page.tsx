@@ -21,8 +21,8 @@ export default async function WatchPage({
   const isReplay = replay === "1" || replay === "true";
   const mode: ViewerMode = isReplay ? "replay" : "live";
 
-  // ?at=<seconds> jumps part-way into a recording's play-time.
-  const offset = Math.max(0, Number(at ?? 0) || 0);
+  // ?at=<n> opens a recording on the nth plate appearance, 1-based.
+  const openAt = Math.max(0, (Number(at ?? 0) || 0) - 1);
 
-  return <Viewer gamePk={gamePk} mode={mode} startSeconds={isReplay ? offset : 0} />;
+  return <Viewer gamePk={gamePk} mode={mode} startAtBat={isReplay ? openAt : 0} />;
 }

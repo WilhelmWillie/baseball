@@ -85,11 +85,13 @@ behind the catcher with the pitch arriving at the lens, and **Sky** near enough
 straight down on the park from a few hundred feet up. Your choice is remembered.
 
 **Recorded games** (`/watch/[gamePk]?replay=1`) — real games captured off the
-Stats API and replayed pitch by pitch, dead air between pitches compressed so a
-three-hour game runs in under an hour. Play, pause, scrub and change speed;
-`?at=<seconds>` jumps part-way in. This is how the animation work is exercised
-in the off-hours, and how it is verified: a recording is the same GUMBO the live
-game speaks, so it runs the same adapter and animation path. See
+Stats API and replayed pitch by pitch. Playback has no clock: the next pitch is
+handed over when the ballpark has finished animating the last one, so a home
+run's trot and celebration always play out in full. Step by plate appearance or
+half-inning, or scrub a bar ticked with innings and scoring plays; `?at=<n>`
+opens on the nth at-bat. This is how the animation work is exercised in the
+off-hours, and how it is verified: a recording is the same GUMBO the live game
+speaks, so it runs the same adapter and animation path. See
 [docs/RECORDING.md](docs/RECORDING.md).
 
 ## Architecture
@@ -438,8 +440,8 @@ Runners cover a base in 2.6s (3.4s on a home-run trot). A double that is over
 before you have found the ball has not communicated anything.
 
 Real games leave ~20s between pitches, which is plenty of room. Recorded
-playback clamps that gap rather than removing it, keeping enough headroom that
-the animations are never clipped.
+playback ignores that gap entirely and waits on the animation instead, so the
+pacing is whatever the ballpark needs rather than whatever the clock allowed.
 
 ### Walks, strikeouts and who is actually running
 

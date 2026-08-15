@@ -3,10 +3,11 @@
 A design for capturing real MLB games off the Stats API, storing them, and
 replaying them in the ballpark with a scrubbable timeline.
 
-Status: **Phases 1–2 shipped, and the demo game is gone.** Real games are
-recorded and play in the ballpark: `/watch/813024?replay=1`. Play/pause, seek and
-speed all work. The labelled scrub bar — half-inning ticks and scoring-play
-markers — is Phase 3.
+Status: **Phases 1–3 shipped, and the demo game is gone.** Real games are
+recorded and play in the ballpark: `/watch/813024?replay=1`. Play/pause, stepping
+by plate appearance and half-inning, and a scrub bar marked with half-innings and
+scoring plays. Playback has no clock — it advances when the ballpark has finished
+animating.
 
 ## Context
 
@@ -42,9 +43,8 @@ timeline you can scrub to any half-inning or scoring play.
 - Store recordings in **S3 / R2** so they are shared across devs, CI and deploys.
 - Replay through the **existing** `buildSnapshot` / `extractEvents` / `Director`
   path — the whole point is to exercise production code, not a parallel one.
-- **Seek** to any half-inning or scoring play; play/pause; speed control.
-- Default to **compressed dead air**. Measured: a 3h06m game plays in 48 minutes
-  at 1×, and the speed control takes it under ten.
+- **Seek** to any plate appearance, half-inning or scoring play; play/pause.
+- Never cut an animation short. Playback is paced by the ballpark, not a clock.
 
 ## Non-goals
 
@@ -59,8 +59,8 @@ timeline you can scrub to any half-inning or scoring play.
 | --- | --- | --- |
 | Storage | S3 / R2 object storage | Shared across devs, CI and prod; repo stays clean; recordings are large-ish and immutable, which is exactly what object storage is for. |
 | Capture | Retroactive, from finished games | Any game from any season, captured in one batch run. No waiting three hours for a live game. |
-| Pacing | Compressed dead air by default | Real games leave ~20s between pitches and minutes for pitching changes. Clamping gaps makes a game testable end to end; true timing stays available as a toggle. |
-| Timeline | Half-innings + scoring plays | Readable scrub bar: "show me the 7th", "jump to the home run". |
+| Pacing | No clock at all — advance when the ballpark is ready | A clock advanced whether or not the director had finished, so long animations were cut off mid-celebration. Waiting on `director.isIdle()` paces playback at exactly what the animation needs. |
+| Timeline | Plate appearances, with half-inning and scoring markers | "Show me the 7th", "jump to the home run" — and seeking always lands on the start of an at-bat. |
 
 ## Architecture
 
@@ -320,7 +320,7 @@ Uploaded with `Cache-Control: public, max-age=31536000, immutable` and
 | `encode.ts` | `dedupeFrames`, `encodeFrames`, `buildManifest`, `verifyEncoding`. | done |
 | `validate.ts` | `validateFrames()` — walks a recording through the real normalizer the way the store does. | done |
 | `source.ts` | `loadRecording(gamePk)` → `RecordingPlayer`, which walks one document forward with patches. Handles gzip and version checks. | done |
-| `timeline.ts` | `buildPlayTimeline(manifest, policy)`, `frameAtPlayTime`, `remapMarkers`, `formatClock`. Pure, no React, no fetch. | done |
+| `timeline.ts` | `buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Indexes a recording by plate appearance. Pure, no React, no fetch. | done |
 
 ### New: `src/hooks/useReplay.ts`
 
@@ -333,25 +333,26 @@ Critically it calls the **same `ingest`** the live path does, so `extractEvents`
 the `hold` logic, the director queue and the snapshot-promotion rule all run
 exactly as in production.
 
-**Pacing.** Recordings store real time; the driver builds a play-time mapping at
-load. Gaps are clamped, with the ceilings set from what the director actually
-needs rather than from the feed's own cadence:
+**Pacing: there is no clock.** The first version of this drove a virtual clock
+and pushed whichever frame the clock had reached. Gaps were clamped to ceilings
+picked from the director's animation lengths, which was close but wrong in
+principle and visibly wrong in practice: a home run's trot and celebration run
+past four seconds, MLB's gap to the next pitch is often shorter, and the next
+play would land on top of the one still finishing.
 
-```
-pitch → pitch          clamp to  4s   (a pitch compiles to ~2.1s, 2.9s on a foul)
-play complete → next   clamp to 15s   (a home-run trot is four bases at 3.4s)
-half-inning change     clamp to 15s   (beam-out and hold need under 3s)
-```
+Now the recording waits for the ballpark. A frame is handed to `ingest` only
+once `director.isIdle()`, so every animation finishes and the pacing *is*
+whatever the animation needs. No ceilings to tune, no speed multipliers, no
+true-timing toggle — "faster" could only mean cutting plays short again.
 
-Under-provisioning does not clip an animation — the store holds `pending` until
-the queue drains — it backs the queue up, and past fourteen events the director
-starts dropping pitches. The headroom is what keeps it clear.
+Nothing extra is needed to stop it feeling rushed, because the animations
+already carry their own trailing hold: `compileResult` keeps 4.2s after a home
+run, "long enough after the call for the beam-out to finish playing".
 
-Measured on the committed recordings: 3h06m → **48 minutes**, and 2h47m → **38
-minutes**, both about 4×. Speed multipliers (1× / 2× / 4× / 8×) scale on top,
-so a game is watchable end to end in ten minutes. A `trueTiming` toggle swaps
-the mapping for raw recorded times — a remap, not a reload, and it holds
-position by frame so the playhead does not jump to a different moment.
+One case is deliberately not "busy": while `cursor.hold` is set the store parks
+a snapshot on purpose, waiting on a pitch's result, and advancing is exactly
+what releases it. Recordings still store real timestamps — they are what the
+game did — and playback simply ignores them.
 
 **Seeking** falls out of the existing design. The store's `ingest()` already has
 a "first read" branch that jumps straight to the live edge via `seedCursor(feed)`
@@ -378,11 +379,11 @@ than two.
 
 Rendered only in replay mode, along the bottom above the existing controls:
 
-- **Scrub bar** in play-time, with half-inning boundaries as ticks and scoring
-  plays as accented markers, both straight from `manifest.markers[]`.
-- Hover a marker → its label ("Betts homers (2)", "Top 7").
-- Play/pause, speed chip, `1:04:12 / 3:11:40`, a "true timing" toggle.
-- Keyboard: `space` play/pause, `←`/`→` ±1 at-bat, `[`/`]` ±half-inning.
+- **Scrub bar** over plate appearances, with half-inning boundaries as ticks and
+  scoring plays as accented dots, both from `manifest.markers[]`. Hover a marker
+  for its label. Dragging lands on the start of an at-bat, never mid-play.
+- Play/pause, labelled **◀ At-bat / At-bat ▶** and **⏮ Inning / Inning ⏭**.
+- A readout of the half-inning and "At-bat 42 / 88".
 
 Plain DOM over the canvas, matching the existing HUD idiom.
 
@@ -390,7 +391,7 @@ Plain DOM over the canvas, matching the existing HUD idiom.
 
 | Route | Behaviour |
 | --- | --- |
-| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<seconds>` deep-links into the game's play-time. |
+| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<n>` opens on the nth plate appearance, 1-based. |
 
 A recorded game is by definition finished, so `?replay=1` can never collide with
 the same `gamePk` being live. `Viewer` takes a `mode` of `"live" | "replay"` and
@@ -417,7 +418,7 @@ are deferred to Phase 4, and only if that is the shape chosen.
 | `src/lib/replay/{format,reconstruct,encode,validate}.ts` | New. Done in Phase 1. |
 | `src/lib/replay/{source,timeline}.ts` | New. Done in Phase 2. |
 | `src/hooks/useReplay.ts` | New — mirrors `useLiveFeed.ts`. Done in Phase 2. |
-| `src/components/hud/Transport.tsx` | New — play/pause, scrub, speed. The labelled bar grows on top of it in Phase 3. |
+| `src/components/hud/Transport.tsx` | New — play/pause, at-bat and inning stepping, marked scrub bar. |
 | `src/app/api/replay/**` | Not built; see "No API routes" above. |
 | `scripts/record-game.ts` | New — the recorder and validator. Done in Phase 1; `--upload` lands in Phase 4. |
 | `src/store/gameStore.ts` | `seek(feed)` — composes the existing `reset` + `ingest`. Done in Phase 2. |
@@ -449,12 +450,13 @@ size and frame report. No app changes; nothing plays back yet.
 `seek` store action, the `Viewer` mode switch, `hud/Transport.tsx` and the
 `GameList` section. A real recorded game plays end to end with play/pause, seek
 and speed. **This is the milestone that retired the demo game**, which has since
-been deleted along with `lib/sim/`.
+been deleted along with `lib/sim/`. The clock it shipped with was replaced in
+Phase 3.
 
-**Phase 3 — Timeline.** The labelled scrub bar on top of `Transport.tsx`:
-half-inning ticks and scoring-play markers from `manifest.markers` (already
-written by the recorder, already remapped by `remapMarkers`), hover labels, and
-keyboard shortcuts — space, ±at-bat, ±half-inning.
+**Phase 3 — Timeline. ✅ Done.** The marked scrub bar, at-bat and half-inning
+stepping, and the removal of the clock: playback is paced by `director.isIdle()`
+rather than by time, which is what stopped celebrations being cut off. Speed
+multipliers and the true-timing toggle went with it.
 
 **Phase 4 — S3/R2.** Bucket, `--upload`, `RECORDINGS_BASE_URL`, `index.json`,
 `.env.example`, docs. Deliverable: recordings shared across devs and deploys.
@@ -505,7 +507,8 @@ Check, in order:
 3. Scorebug, play log and lineup track the field; the count advances with the
    pitch, not ahead of it.
 4. Scrub to the bottom of the 7th → the field cuts, and HUD, lineup and play log
-   all agree with that moment. Scrub backward → same.
+   all agree with that moment. Scrub backward → same. Stepping by at-bat and by
+   half-inning both land on the start of a plate appearance.
 5. Click a scoring marker → the play animates from its start, not from its
    aftermath.
 6. Speed 4x → animations still complete; nothing clips.

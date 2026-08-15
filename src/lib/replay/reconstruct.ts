@@ -295,6 +295,8 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
   let lastT = -MIN_STEP_MS;
   /** The recording opens on the first pitch, not on the feed's first entry. */
   let seenFirstPitch = false;
+  /** A side is due to take the field: emit a set frame before the next pitch. */
+  let needsSet = true;
 
   const push = (absoluteMs: number | null, feed: MlbLiveFeed, meta: FrameMeta) => {
     if (originMs == null) originMs = absoluteMs ?? Date.now();
@@ -452,6 +454,9 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
         },
       );
       outs = 0;
+      // Coming out of the break, the new side has to be shown taking the field
+      // before anybody pitches.
+      needsSet = true;
     }
 
     prevInning = inning;
@@ -467,16 +472,31 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
       // MLB hangs pregame `game_advisory` events off the first play, stamped
       // when the lineups went up - hours before anyone threw anything. They are
       // real feed entries and stay in the document, but they must not open the
-      // recording: the clock is anchored on the first pitch, and a poller
-      // arriving then would have seen them already bundled into it.
+      // recording: it is anchored on the first pitch, and a poller arriving
+      // then would have seen them already bundled into it.
       if (!seenFirstPitch) {
         if (!event.isPitch) continue;
         seenFirstPitch = true;
-        // Open on the state just *before* that pitch - batter in the box,
-        // nothing thrown. The store seeds its cursor off the first frame it
-        // sees without animating it, so opening on the pitch itself would
-        // swallow the first pitch of the game. `about.startTime` is when MLB
-        // says the plate appearance began, a beat ahead of the delivery.
+      }
+
+      /**
+       * A frame for the side taking the field, before anyone pitches.
+       *
+       * The park has to be given a moment to fill. Coming out of a break the
+       * store is holding an empty field, and the snapshot that brings the new
+       * nine on is only applied once the director's queue drains - so a frame
+       * carrying the first pitch would animate the delivery before the fielders
+       * had beamed in and set. A real feed publishes the new half with its
+       * lineup well before the pitch; this frame is that moment. The same
+       * applies at the top of the game, where the alternative was swallowing
+       * the first pitch entirely, since the store seeds its cursor off the
+       * first frame it sees without animating it.
+       *
+       * `about.startTime` is when MLB says the plate appearance began, a beat
+       * ahead of the delivery.
+       */
+      if (needsSet && event.isPitch) {
+        needsSet = false;
         push(
           parseTime(play.about?.startTime) ?? (at ?? 0) - OPENING_LEAD_MS,
           buildFeed({

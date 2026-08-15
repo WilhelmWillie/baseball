@@ -165,8 +165,9 @@ export function buildManifest(options: {
   final: MlbLiveFeed;
   frames: RecordedFrame[];
   source: RecordingSource;
+  label?: string;
 }): RecordingManifest {
-  const { final, frames, source } = options;
+  const { final, frames, source, label } = options;
   const gamePk = final.gamePk ?? final.gameData?.game?.pk ?? 0;
   const base = frames[0]?.t ?? 0;
 
@@ -224,6 +225,7 @@ export function buildManifest(options: {
       home: teamOf(last, "home"),
       away: teamOf(last, "away"),
       description: GAME_TYPES[final.gameData?.game?.type ?? ""] ?? final.gameData?.game?.type,
+      label,
     },
     frameCount: frames.length,
     durationMs: (frames[frames.length - 1]?.t ?? 0) - base,

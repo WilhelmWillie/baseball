@@ -89,6 +89,11 @@ export interface RecordingManifest {
     away: RecordingTeam;
     /** MLB's own description, e.g. "Regular Season". */
     description?: string;
+    /**
+     * What to call this recording, when the teams and the date do not say it.
+     * "2025 World Series Game 7" is worth more on a card than "2025-11-01".
+     */
+    label?: string;
   };
   frameCount: number;
   /** Real elapsed milliseconds from the first frame to the last. */
@@ -102,6 +107,8 @@ export interface RecordingIndexEntry {
   gamePk: number;
   date: string;
   venue: string;
+  /** Mirrors `manifest.game.label`, so the index alone can name a recording. */
+  label?: string;
   home: RecordingTeam;
   away: RecordingTeam;
   frameCount: number;

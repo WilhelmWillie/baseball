@@ -3,26 +3,29 @@
 A design for capturing real MLB games off the Stats API, storing them, and
 replaying them in the ballpark with a scrubbable timeline.
 
-Status: **Phases 1–2 shipped.** Real games are recorded, and they play in the
-ballpark: `/watch/824561?replay=1`. Play/pause, seek and speed all work. The
-labelled scrub bar — half-inning ticks and scoring-play markers — is Phase 3.
+Status: **Phases 1–2 shipped, and the demo game is gone.** Real games are
+recorded and play in the ballpark: `/watch/813024?replay=1`. Play/pause, seek and
+speed all work. The labelled scrub bar — half-inning ticks and scoring-play
+markers — is Phase 3.
 
 ## Context
 
 Pocket Ballpark animates a live MLB game by polling the Stats API's GUMBO feed
-and interpreting it. Today there are exactly two ways to exercise that pipeline:
+and interpreting it. There used to be exactly two ways to exercise that pipeline:
 
 1. **A real live game** — only available a few hours a day, in season, and
    unrepeatable. You cannot re-run the play that broke the animation.
-2. **`/watch/demo`** — `lib/sim/feed.ts`, a procedurally generated Giants-at-
-   Dodgers game built from a hand-written 20-at-bat script (`lib/sim/script.ts`).
+2. **`/watch/demo`** — a procedurally generated Giants-at-Dodgers game built from
+   a hand-written 20-at-bat script.
 
-The demo is the problem this feature exists to fix. It is synthesized, not
+The demo was the problem this feature exists to fix. It was synthesized, not
 observed: fictional players, invented Statcast coordinates, a metronomic
-7s-per-pitch cadence, two innings and then it stops. It does not carry the
+7s-per-pitch cadence, two innings and then it stopped. It did not carry the
 things that actually break the renderer — pitching changes, pinch hitters,
 replay reviews, defensive substitutions, a `hitData` block with a missing
 `trajectory`, an at-bat whose result publishes six seconds after the pitch.
+
+Recordings replaced it, and `lib/sim/` has been deleted.
 
 We want to **record real games** — capture the actual feed stream, store it, and
 replay it in the ballpark on demand, with the ability to skip to any part of the
@@ -48,7 +51,6 @@ timeline you can scrub to any half-inning or scoring play.
 - Recording a game *while* it is in progress. Retroactive capture covers every
   game ever played and needs no long-running process; live tailing can be added
   later if the true feed-arrival cadence turns out to matter.
-- Replacing `/watch/demo`. It stays as the zero-network, zero-config path.
 - Editing recordings, or synthesizing games that never happened.
 
 ## Decisions
@@ -82,13 +84,13 @@ timeline you can scrub to any half-inning or scoring play.
 
 **The load-bearing insight:** `gameStore.ingest(feed)` takes a whole
 `MlbLiveFeed` and figures out what is new by walking a `FeedCursor`. It does not
-care whether that feed came from `statsapi.mlb.com`, from `buildDemoFeed(t)`, or
-from a file recorded last October. A recording is just a **time-indexed sequence
+care whether that feed came from `statsapi.mlb.com` or from a file recorded last
+October. A recording is just a **time-indexed sequence
 of `MlbLiveFeed` values**, and replay is a driver that hands them to `ingest()`
 on a clock we control. Nothing downstream of the store changes at all.
 
-`lib/sim/feed.ts` already proves this contract end to end — `buildDemoFeed(t)` is
-a pure `(elapsedSeconds) → MlbLiveFeed`. Replay is the same shape, backed by
+The retired simulator proved this contract end to end before it was removed: it
+was a pure `(elapsedSeconds) → MlbLiveFeed`. Replay is the same shape, backed by
 recorded bytes instead of a script.
 
 ## The recording format
@@ -96,13 +98,13 @@ recorded bytes instead of a script.
 Two objects per game, under a versioned prefix:
 
 ```
-recordings/v1/{gamePk}/manifest.json       ~50-60 KB  metadata + seek index
-recordings/v1/{gamePk}/frames.ndjson.gz    ~180-215 KB  keyframe + patches
+recordings/v1/{gamePk}/manifest.json       ~60-65 KB   metadata + seek index
+recordings/v1/{gamePk}/frames.ndjson.gz    ~210-235 KB  keyframe + patches
 recordings/v1/index.json                              list of recorded games
 ```
 
-Measured, not estimated: two real nine-inning games in `public/recordings/`
-come to 532 KB together — see [Recorded games](#recorded-games).
+Measured, not estimated: three real games in `public/recordings/` come to 884 KB
+together — see [Recorded games](#recorded-games).
 
 ### `frames.ndjson.gz`
 
@@ -116,10 +118,10 @@ Every subsequent line is an RFC-6902 JSON Patch against the previous frame.
 ```
 
 Why patches: a full GUMBO feed for a finished game is roughly 750 KB–900 KB, and
-a game produces ~420–510 frames worth keeping. Storing them whole would be
-300–450 MB. The delta between two adjacent pitches is a new `playEvent`, a count
+a game produces ~500–545 frames worth keeping. Storing them whole would be
+400–500 MB. The delta between two adjacent pitches is a new `playEvent`, a count
 change and a few boxscore counters — single-digit KB. Keyframe plus patches
-lands at **180–215 KB gzipped for a whole game**, about a quarter the size of
+lands at **210–235 KB gzipped for a whole game**, about a quarter the size of
 one raw feed.
 
 `t` is **milliseconds since the first pitch**, derived from real recorded
@@ -175,6 +177,7 @@ npm run record -- --date 2025-10-01 --list   # find a finished game's gamePk
 npm run record -- 775302                     # record + validate, write locally
 npm run record -- 775302 --out /tmp/rec      # write somewhere else
 npm run record -- --from feed.json           # re-record from a saved feed
+npm run record -- 813024 --label "2025 World Series Game 7"   # name it
 ```
 
 Output lands in `public/recordings/v1/<gamePk>/` by default, which is where the
@@ -199,9 +202,7 @@ The recorder walks the final feed forward and re-derives what the feed looked
 like at each moment: truncate `allPlays` to the plays that had started, truncate
 the last play's `playEvents` to the pitches that had been thrown, blank
 `result`/`runners` on the in-flight play (`{ type: "atBat" }`), and roll the
-linescore and score back to that point. This is exactly the slicing
-`buildDemoFeed()` already performs on `BuiltPlay[]` — the same technique applied
-to real data instead of a script.
+linescore and score back to that point.
 
 To keep the animation path honest, it also **synthesizes the publication lag**
 the renderer's `hold` logic exists to absorb: the pitch that ends an at-bat gets
@@ -209,8 +210,8 @@ a frame of its own, and the play's result appears in the *next* frame, ~1.5s
 later — mirroring what MLB actually does and what `deciderIndex()` /
 `HOLD_TIMEOUT_MS` in `lib/game/events.ts` are written against.
 
-Cheap, reliable, works for any game ever played, and already delivers everything
-the demo game lacks: real players, real Statcast coordinates, real substitutions,
+Cheap, reliable, works for any game ever played, and delivers everything the
+demo game lacked: real players, real Statcast coordinates, real substitutions,
 real spray charts, real pacing.
 
 One wrinkle real feeds carry: MLB hangs pregame `game_advisory` events off the
@@ -389,12 +390,12 @@ Plain DOM over the canvas, matching the existing HUD idiom.
 
 | Route | Behaviour |
 | --- | --- |
-| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<seconds>` deep-links into the game's play-time, reusing the demo's existing seek param. |
+| `/watch/[gamePk]?replay=1` | Replay mode. `?at=<seconds>` deep-links into the game's play-time. |
 
 A recorded game is by definition finished, so `?replay=1` can never collide with
-the same `gamePk` being live. `Viewer` takes a `mode` of `"live" | "demo" |
-"replay"` and picks a driver; both hooks are always called, with the inactive
-one disabled, since a hook cannot be conditional.
+the same `gamePk` being live. `Viewer` takes a `mode` of `"live" | "replay"` and
+picks a driver; both hooks are always called, with the inactive one disabled,
+since a hook cannot be conditional.
 
 `GameList.tsx` grows a **Recorded games** section, fed by
 `loadRecordingIndex()`. `summarizeRecording()` in `lib/game/schedule.ts` maps an
@@ -420,7 +421,7 @@ are deferred to Phase 4, and only if that is the shape chosen.
 | `src/app/api/replay/**` | Not built; see "No API routes" above. |
 | `scripts/record-game.ts` | New — the recorder and validator. Done in Phase 1; `--upload` lands in Phase 4. |
 | `src/store/gameStore.ts` | `seek(feed)` — composes the existing `reset` + `ingest`. Done in Phase 2. |
-| `src/components/Viewer.tsx` | Takes `mode: "live" \| "demo" \| "replay"`, picks the driver, renders `<Transport/>` in replay. |
+| `src/components/Viewer.tsx` | Takes `mode: "live" \| "replay"`, picks the driver, renders `<Transport/>` in replay. |
 | `src/app/watch/[gamePk]/page.tsx` | Reads `?replay=1` and `?at=`, passes `mode`. |
 | `src/components/GameList.tsx` | Recorded-games section, via `loadRecordingIndex()` and `summarizeRecording()`. |
 | `package.json` | `+ tsx` (dev) and `+ fast-json-patch` (runtime, ~10 KB) — both done in Phase 1, along with the `record` script. `+ @aws-sdk/client-s3` (dev) in Phase 4. |
@@ -429,9 +430,8 @@ are deferred to Phase 4, and only if that is the shape chosen.
 **Reused, not rebuilt:** `buildSnapshot` / `buildHistory` (`lib/game/normalize.ts`),
 `extractEvents` / `seedCursor` (`lib/game/events.ts`), `Director.applySnapshot` /
 `clearQueue` (`lib/anim/director.ts`), `summarizeGame` / `sortGames`
-(`lib/game/schedule.ts`), `isFinalStatus` / `fetchLiveFeed` / `fetchSchedule`
-(`lib/mlb/client.ts`), and the `?t=`-parameterized playback contract that
-`lib/sim/feed.ts` established.
+(`lib/game/schedule.ts`), and `isFinalStatus` / `fetchLiveFeed` /
+`fetchSchedule` (`lib/mlb/client.ts`).
 
 On dependencies: this repo is deliberately lean (7 runtime deps). The one runtime
 addition is `fast-json-patch` for `applyPatch`. If even that is unwanted, the
@@ -448,8 +448,8 @@ size and frame report. No app changes; nothing plays back yet.
 **Phase 2 — Replay. ✅ Done.** `source.ts`, `timeline.ts`, `useReplay.ts`, the
 `seek` store action, the `Viewer` mode switch, `hud/Transport.tsx` and the
 `GameList` section. A real recorded game plays end to end with play/pause, seek
-and speed. **This is the milestone that retires the demo game as the primary
-test fixture.**
+and speed. **This is the milestone that retired the demo game**, which has since
+been deleted along with `lib/sim/`.
 
 **Phase 3 — Timeline.** The labelled scrub bar on top of `Transport.tsx`:
 half-inning ticks and scoring-play markers from `manifest.markers` (already
@@ -475,7 +475,7 @@ npm run record -- 775302
 ```
 
 Expect: validation passes, the final score matches the feed, and a size report
-around 180–215 KB gzipped for ~420–510 frames. A nine-inning game should report a
+around 210–235 KB gzipped for ~500–545 frames. A nine-inning game should report a
 real duration near 3 hours — a much larger number means the clock is anchored
 somewhere other than the first pitch. Record a game with a known-awkward event
 too — extra innings, a rain delay, a position player pitching — and confirm it
@@ -483,12 +483,13 @@ validates.
 
 ### Recorded games
 
-Committed under `public/recordings/v1/`, both from 2026-08-13:
+Committed under `public/recordings/v1/`:
 
 | gamePk | Game | Why it's here |
 | --- | --- | --- |
-| `824561` | CIN 9 @ CWS 8 | High-scoring one-run game: 88 at-bats, 343 pitches, 12 pitchers, 30 markers. The busiest substitution path available. |
-| `823508` | SEA 1 @ NYY 0 | Shutout: 66 at-bats, 286 pitches, few runs and long quiet stretches. The opposite shape. |
+| `813024` | LAD 5 @ TOR 4 | **2025 World Series Game 7**, labelled as such in the manifest. Eleven innings — 545 frames, 99 at-bats, 364 pitches — so it exercises extra innings, which nothing else here does. |
+| `824561` | CIN 9 @ CWS 8 | High-scoring one-run game: 88 at-bats, 343 pitches, 12 pitchers. The busiest substitution path available. |
+| `823215` | WSH 10 @ SF 11 | A slugfest at Oracle Park: 84 at-bats, 344 pitches, 33 markers — the most scoring plays of the three. |
 
 **Replay:**
 
@@ -500,8 +501,7 @@ open 'http://localhost:3000/watch/775302?replay=1'
 Check, in order:
 
 1. The game starts from the top of the 1st and plays continuously.
-2. Pitches, hits and runners animate — the same motions the demo produces, with
-   real spray angles and real pitch types.
+2. Pitches, hits and runners animate, with real spray angles and pitch types.
 3. Scorebug, play log and lineup track the field; the count advances with the
    pitch, not ahead of it.
 4. Scrub to the bottom of the 7th → the field cuts, and HUD, lineup and play log
@@ -512,8 +512,8 @@ Check, in order:
 7. `?replay=1&at=3600` deep-links an hour in.
 8. Play to the final out → the `GameOver` card shows the real final score.
 
-**Regression:** `/watch/demo` and a live game (in season) must behave exactly as
-before — the live path is untouched.
+**Regression:** a live game (in season) must behave exactly as before — the live
+path is untouched apart from `useLiveFeed`'s `enabled` flag.
 
 **Checks:** `npm run lint` and `npm run build` clean. The repo has no test suite;
 the recorder's validation pass is the closest thing this feature has to one, and
@@ -525,7 +525,7 @@ without restructuring.
 | Risk | Mitigation |
 | --- | --- |
 | Timecode endpoints undocumented and quirky | Tier 1 needs none of them; Tier 2 is Phase 5, gated on hand-verification. |
-| ~~Recording sizes larger than estimated~~ | Settled: 180–215 KB gzipped per game, roughly a tenth of the estimate. Committing recordings to the repo is comfortable at this size. |
+| ~~Recording sizes larger than estimated~~ | Settled: 210–235 KB gzipped per game, roughly a tenth of the estimate. Committing recordings to the repo is comfortable at this size. |
 | Materializing ~500 frames janks the browser | Measure in Phase 2. If it hurts: materialize lazily around the playhead and keep periodic keyframes in the file (every 100th frame) so seeking never walks far. Design the format with room for keyframes now. |
 | A `reset()` per seek flashes an empty field | One frame, reads as a cut. If objectionable, the lighter `clearQueue()` + `applySnapshot()` path is available without a format change. |
 | MLB rate-limits a 2,000-request Tier-2 run | Sequential with delay, resumable, and it only ever runs offline against finished games. |
@@ -536,8 +536,8 @@ Open questions:
 - Bucket public or private? Public + CDN is assumed above; private costs one
   presign route.
 - With recordings this small, is S3/R2 still wanted at all, or is committing
-  them to `public/recordings/` enough? Phase 4 is cheap either way, but two
-  games cost 532 KB — the repo-bloat argument for object storage is weaker than
+  them to `public/recordings/` enough? Phase 4 is cheap either way, but three
+  games cost 884 KB — the repo-bloat argument for object storage is weaker than
   it looked when the size was assumed to be 1–2 MB per game.
 - An extra-inning game and one with a rain delay are still worth recording as
   fixtures; neither shape has been exercised yet.

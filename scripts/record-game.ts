@@ -40,6 +40,7 @@ interface Args {
   gamePk?: number;
   date?: string;
   from?: string;
+  label?: string;
   list: boolean;
   out: string;
   force: boolean;
@@ -56,6 +57,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--date") args.date = requireValue(arg, argv[++i]);
     else if (arg === "--out") args.out = requireValue(arg, argv[++i]);
     else if (arg === "--from") args.from = requireValue(arg, argv[++i]);
+    else if (arg === "--label") args.label = requireValue(arg, argv[++i]);
     else if (/^\d+$/.test(arg)) args.gamePk = Number(arg);
     else throw new Error(`Unrecognized argument: ${arg}`);
   }
@@ -80,6 +82,7 @@ function usage(): void {
       "  --list               list games instead of recording",
       `  --out <dir>          output directory (default: ${DEFAULT_OUT})`,
       "  --from <file.json>   record from a saved live feed instead of fetching",
+      '  --label "<name>"     what to call it, e.g. "2025 World Series Game 7"',
       "  --force              record even if the game is not final",
     ].join("\n"),
   );
@@ -139,6 +142,7 @@ function writeIndex(outDir: string): number {
       gamePk: manifest.gamePk,
       date: manifest.game.date,
       venue: manifest.game.venue,
+      label: manifest.game.label,
       home: manifest.game.home,
       away: manifest.game.away,
       frameCount: manifest.frameCount,
@@ -157,6 +161,7 @@ async function record(
   outDir: string,
   force: boolean,
   from?: string,
+  label?: string,
 ): Promise<void> {
   let final: MlbLiveFeed;
   if (from) {
@@ -182,7 +187,10 @@ async function record(
 
   const away = final.gameData?.teams?.away?.abbreviation ?? "AWAY";
   const home = final.gameData?.teams?.home?.abbreviation ?? "HOME";
-  console.log(`  ${away} @ ${home} — ${final.gameData?.datetime?.officialDate ?? "?"}`);
+  console.log(
+    `  ${away} @ ${home} — ${final.gameData?.datetime?.officialDate ?? "?"}` +
+      (label ? ` — "${label}"` : ""),
+  );
 
   console.log("Reconstructing the feed stream…");
   const all = reconstructFrames(final);
@@ -204,7 +212,7 @@ async function record(
     return;
   }
 
-  const manifest = buildManifest({ final, frames, source: "reconstructed" });
+  const manifest = buildManifest({ final, frames, source: "reconstructed", label });
   console.log("Encoding…");
   const lines = encodeFrames(manifest.gamePk, frames);
 
@@ -274,7 +282,7 @@ async function main(): Promise<void> {
     usage();
     return;
   }
-  await record(args.gamePk, args.out, args.force, args.from);
+  await record(args.gamePk, args.out, args.force, args.from, args.label);
 }
 
 main().catch((error) => {

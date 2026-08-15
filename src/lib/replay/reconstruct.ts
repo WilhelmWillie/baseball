@@ -24,9 +24,6 @@ import type {
  * like at every moment of the game, by revealing plays and pitches in order and
  * rolling the linescore back to match.
  *
- * This is the same slicing `lib/sim/feed.ts` performs on its scripted game,
- * applied to real data instead.
- *
  * The one thing that cannot be sliced is the boxscore: MLB publishes it only in
  * its final state, so per-player stat lines read as end-of-game throughout. The
  * linescore is what the renderer actually stands the players on, and that *is*

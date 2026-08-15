@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { fetchLiveFeed } from "@/lib/mlb/client";
-import { buildDemoFeed, DEMO_GAME_PK } from "@/lib/sim/feed";
 
 export const dynamic = "force-dynamic";
 
@@ -12,27 +11,10 @@ const CACHE_MS = 3000;
 const cache = new Map<number, { at: number; body: unknown }>();
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ gamePk: string }> },
 ) {
   const { gamePk: raw } = await params;
-
-  if (raw === "demo" || Number(raw) === DEMO_GAME_PK) {
-    const query = new URL(request.url).searchParams;
-    const elapsed = Number(query.get("t") ?? "0");
-    // Time of day and weather are overridable so the lighting can be seen
-    // without waiting for a real game to be played at dusk in the rain.
-    const hour = Number(query.get("hour"));
-    return NextResponse.json(
-      buildDemoFeed(Number.isFinite(elapsed) ? elapsed : 0, {
-        hour: Number.isFinite(hour) && query.has("hour") ? hour : undefined,
-        condition: query.get("wx") ?? undefined,
-        wind: query.get("wind") ?? undefined,
-      }),
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  }
-
   const gamePk = Number(raw);
   if (!Number.isInteger(gamePk) || gamePk <= 0) {
     return NextResponse.json({ error: "Invalid gamePk" }, { status: 400 });

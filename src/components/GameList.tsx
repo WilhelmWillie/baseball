@@ -10,7 +10,6 @@ interface SchedulePayload {
   date: string;
   games: GameSummary[];
   liveCount: number;
-  demo: GameSummary;
   error?: string;
 }
 
@@ -85,16 +84,14 @@ function TeamLine({
 
 function GameCard({ game }: { game: GameSummary }) {
   const isLive = game.state === "live";
-  const href = game.isDemo
-    ? "/watch/demo"
-    : game.isReplay
-      ? `/watch/${game.gamePk}?replay=1`
-      : `/watch/${game.gamePk}`;
+  const href = game.isReplay
+    ? `/watch/${game.gamePk}?replay=1`
+    : `/watch/${game.gamePk}`;
   // There is nothing to watch in a game that has not started or has finished:
   // the feed carries no lineup before first pitch and nothing moves after the
   // last out, so those cards do not open. A recording is the exception - it
   // carries the whole game, so it opens however long ago it was played.
-  const watchable = isLive || game.isDemo || game.isReplay;
+  const watchable = isLive || game.isReplay;
 
   const shell =
     "group block rounded-3xl border-2 bg-card p-4 transition-all duration-200 sm:p-5";
@@ -116,11 +113,7 @@ function GameCard({ game }: { game: GameSummary }) {
 
       <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
         <span className="truncate text-bark-soft">
-          {game.isDemo
-            ? "A game we made up, always ready"
-            : game.isReplay
-              ? `Recorded ${game.statusText}`
-              : game.statusText}
+          {game.statusText}
         </span>
         <span
           className={`shrink-0 font-bold ${watchable ? "text-grass" : "text-bark-soft/70"}`}
@@ -244,8 +237,8 @@ export function GameList() {
                 </p>
                 <p className="mt-1">
                   {failed
-                    ? "We couldn't reach the schedule from here — the simulated game below still works."
-                    : "Nothing is in progress. Come back around first pitch, or take the game below for a spin."}
+                    ? "We couldn't reach the schedule from here — the recorded games below still play."
+                    : "Nothing is in progress. Come back around first pitch, or put on one of the recorded games below."}
                 </p>
               </div>
             )}
@@ -262,15 +255,6 @@ export function GameList() {
                 {recordings.map((game) => (
                   <GameCard key={game.gamePk} game={game} />
                 ))}
-              </div>
-            </section>
-          )}
-
-          {data?.demo && (
-            <section className="mt-10">
-              <SectionTitle>Always open</SectionTitle>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <GameCard game={{ ...data.demo, isDemo: true }} />
               </div>
             </section>
           )}

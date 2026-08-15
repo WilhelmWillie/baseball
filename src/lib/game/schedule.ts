@@ -15,7 +15,6 @@ export interface GameSummary {
   inningOrdinal: string | null;
   isTopInning: boolean | null;
   outs: number | null;
-  isDemo?: boolean;
   /** A finished game we recorded. Watchable however long ago it was played. */
   isReplay?: boolean;
 }
@@ -54,7 +53,9 @@ export function summarizeRecording(entry: RecordingIndexEntry): GameSummary {
   return {
     gamePk: entry.gamePk,
     state: "final",
-    statusText: entry.date,
+    // A label earns its place over the date: "2025 World Series Game 7" says
+    // more about why a recording is on the shelf than "2025-11-01" does.
+    statusText: entry.label ?? entry.date,
     startTime: entry.date,
     venue: entry.venue,
     home: side(entry.home),

@@ -53,31 +53,24 @@ function ControlButton({
   );
 }
 
-/** Where the feed comes from: the API, the simulator, or a recording on disk. */
-export type ViewerMode = "live" | "demo" | "replay";
+/** Where the feed comes from: the live API, or a recording on disk. */
+export type ViewerMode = "live" | "replay";
 
 export function Viewer({
   gamePk,
   mode = "live",
-  demoOffset = 0,
-  demoQuery = "",
   startSeconds = 0,
 }: {
   gamePk: string;
   mode?: ViewerMode;
-  /** Start the simulated game this many seconds in. */
-  demoOffset?: number;
-  /** Extra query passed through to the simulated feed (time of day, weather). */
-  demoQuery?: string;
   /** Start a recording this many seconds into its play-time. */
   startSeconds?: number;
 }) {
-  const isDemo = mode === "demo";
   const isReplay = mode === "replay";
 
   // Both drivers are always called - a hook cannot be conditional - and the one
   // that is not in charge sits inert.
-  useLiveFeed(gamePk, isDemo, demoOffset, demoQuery, !isReplay);
+  useLiveFeed(gamePk, !isReplay);
   const replay = useReplay(gamePk, isReplay, startSeconds);
 
   const snapshot = useGameStore((s) => s.snapshot);
@@ -258,13 +251,7 @@ export function Viewer({
                     : "bg-clay-soft"
             }`}
           />
-          {isReplay
-            ? "Recording"
-            : isDemo
-              ? "Simulated game"
-              : connection === "live"
-                ? "Live"
-                : connection}
+          {isReplay ? "Recording" : connection === "live" ? "Live" : connection}
         </div>
       </div>
 

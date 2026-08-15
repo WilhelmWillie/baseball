@@ -255,19 +255,19 @@ export function Viewer({
         </div>
       </div>
 
-      {/* Transport for a recording. Sits above the thumb controls on a phone;
-          on anything larger those move to the top corner and the bottom is
-          free. */}
-      {isReplay && (
-        <div className="absolute inset-x-2 bottom-16 z-20 flex justify-center sm:inset-x-0 sm:bottom-4">
+      {/* Bottom: the play banner, and the transport when a recording is
+          playing. Both want the bottom edge, so in replay they share one
+          column and stack - offsetting them against each other by hand only
+          holds until one of them changes height. Above the thumb controls on a
+          phone; on anything larger those move to the top corner. */}
+      {isReplay ? (
+        <div className="absolute inset-x-2 bottom-16 z-20 flex flex-col items-center gap-2 sm:inset-x-0 sm:bottom-4">
+          <Callout inline />
           <Transport replay={replay} />
         </div>
+      ) : (
+        <Callout />
       )}
-
-      {/* Bottom: full-width play banner. It positions itself along the bottom
-          edge - above the thumb controls on a phone, flush on a wider screen -
-          so it has to be told when the replay transport is parked under it. */}
-      <Callout lifted={isReplay} />
 
       {/* Between-innings credits card, shown while the field is empty. */}
       <Intermission />
@@ -276,7 +276,7 @@ export function Viewer({
       {showRoster && snapshot && (
         <div
           className={`absolute left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-3.5 text-xs text-bark lip-float sm:left-4 sm:max-h-[46vh] ${
-            isReplay ? "bottom-36 sm:bottom-24" : "bottom-16 sm:bottom-4"
+            isReplay ? "bottom-40 sm:bottom-28" : "bottom-16 sm:bottom-4"
           }`}
         >
           <div className="mb-2 font-display text-sm font-extrabold text-grass-deep">

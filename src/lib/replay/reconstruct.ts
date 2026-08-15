@@ -313,17 +313,29 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
     return line;
   };
 
-  /** The batter due up after this play, within the same half-inning. */
-  const onDeckAfter = (index: number): MlbPersonRef | undefined => {
+  /**
+   * The batters due up after this play, in order, within the same half-inning.
+   *
+   * Two of them, because a completed play needs both: the offense moves on to
+   * the next hitter the moment the at-bat ends, and whoever follows him is then
+   * on deck.
+   */
+  const upcoming = (index: number, count: number): Array<MlbPersonRef | undefined> => {
     const here = plays[index]?.about;
-    for (let i = index + 1; i < plays.length; i++) {
+    const out: Array<MlbPersonRef | undefined> = [];
+    for (let i = index + 1; i < plays.length && out.length < count; i++) {
       const about = plays[i].about;
-      if (about?.inning !== here?.inning || about?.isTopInning !== here?.isTopInning) return undefined;
+      // A new half-inning brings the other club to the plate; nobody here is up.
+      if (about?.inning !== here?.inning || about?.isTopInning !== here?.isTopInning) break;
       const batter = plays[i].matchup?.batter;
-      if (batter) return batter;
+      if (batter && batter.id !== out[out.length - 1]?.id) out.push(batter);
     }
-    return undefined;
+    while (out.length < count) out.push(undefined);
+    return out;
   };
+
+  /** The batter on deck while `index` is still at the plate. */
+  const onDeckAfter = (index: number): MlbPersonRef | undefined => upcoming(index, 1)[0];
 
   const buildFeed = (opts: {
     current: MlbPlay;
@@ -541,6 +553,12 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
     completed.push(play);
 
     const isLastPlay = i === plays.length - 1;
+    // The at-bat is over, so the offense has moved on. Naming the batter who
+    // just hit would seat him back in the box the moment his own play finishes
+    // animating - he grounds out, gets beamed off, and then reappears at the
+    // plate for a beat until the next frame arrives. A real feed advances
+    // `offense.batter` as soon as the play completes, and so does this.
+    const [nextBatter, nextOnDeck] = upcoming(i, 2);
     push(
       resultAt,
       buildFeed({
@@ -550,8 +568,8 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
         inningState: isTop ? "Top" : "Bottom",
         balls: 0,
         strikes: 0,
-        batter: play.matchup?.batter,
-        onDeck: onDeckAfter(i),
+        batter: nextBatter,
+        onDeck: nextOnDeck,
         pitcher: play.matchup?.pitcher,
         fielding,
         isFinal: isLastPlay,

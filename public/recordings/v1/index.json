@@ -19,7 +19,7 @@
       "frameCount": 508,
       "durationMs": 11187503,
       "source": "reconstructed",
-      "recordedAt": "2026-08-14T22:43:44.940Z"
+      "recordedAt": "2026-08-15T21:28:17.242Z"
     },
     {
       "gamePk": 823215,
@@ -40,7 +40,7 @@
       "frameCount": 503,
       "durationMs": 10968962,
       "source": "reconstructed",
-      "recordedAt": "2026-08-15T18:35:47.326Z"
+      "recordedAt": "2026-08-15T21:28:22.521Z"
     },
     {
       "gamePk": 813024,
@@ -62,7 +62,7 @@
       "frameCount": 545,
       "durationMs": 14819980,
       "source": "reconstructed",
-      "recordedAt": "2026-08-15T18:35:33.849Z"
+      "recordedAt": "2026-08-15T21:28:05.407Z"
     }
   ]
 }

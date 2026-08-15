@@ -316,8 +316,14 @@ export function Viewer({
         </div>
       )}
 
-      {/* Bottom-right: status */}
-      <div className="absolute bottom-2 right-2 z-10 hidden max-w-[46vw] rounded-full bg-card/80 px-3 py-1 text-right text-[11px] font-semibold text-bark-soft sm:bottom-4 sm:right-4 sm:block">
+      {/* Bottom-right: status. It shares the bottom edge with the transport,
+          which is wide enough to reach it on a narrow desktop window, so in
+          replay it moves up out of the way. */}
+      <div
+        className={`absolute right-2 z-10 hidden max-w-[46vw] rounded-full bg-card/80 px-3 py-1 text-right text-[11px] font-semibold text-bark-soft sm:right-4 sm:block ${
+          isReplay ? "bottom-28 sm:bottom-28" : "bottom-2 sm:bottom-4"
+        }`}
+      >
         {snapshot ? `${snapshot.venue} · ${snapshot.status.detailed}` : ""}
       </div>
 

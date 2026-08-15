@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ReplayControls } from "@/hooks/useReplay";
 import { halfLabel } from "@/lib/replay/timeline";
 
@@ -13,6 +14,9 @@ import { halfLabel } from "@/lib/replay/timeline";
  */
 export function Transport({ replay }: { replay: ReplayControls }) {
   const { status, error, playing, atBats, markers, atBat, frameCount, frame, ended } = replay;
+  // Folded away, the bar is a chip that says where the game is. The park is
+  // the thing worth looking at, and on a phone this is a third of the screen.
+  const [open, setOpen] = useState(true);
 
   if (status === "loading") {
     return (
@@ -33,6 +37,22 @@ export function Transport({ replay }: { replay: ReplayControls }) {
   const total = atBats.length;
   const span = Math.max(frameCount - 1, 1);
   const progress = (frame / span) * 100;
+  const where = `${ended ? "Final" : halfLabel(current)} · At-bat ${Math.min(atBat + 1, total)} / ${total}`;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Show the timeline"
+        className="pointer-events-auto flex items-center gap-2 rounded-full border-2 border-grass-deep/12 bg-card/95 px-3 py-1.5 text-[11px] font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep lip-float"
+      >
+        <span className={`h-2 w-2 rounded-full ${playing ? "bg-grass" : "bg-clay-soft"}`} />
+        {where}
+        <span className="text-bark-soft">▴</span>
+      </button>
+    );
+  }
 
   return (
     <div className="flex w-full max-w-[min(760px,calc(100vw-1rem))] flex-col gap-2 rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-3 py-2.5 lip-float">
@@ -111,13 +131,21 @@ export function Transport({ replay }: { replay: ReplayControls }) {
           Inning ⏭
         </button>
 
-        <div className="ml-auto flex items-baseline gap-2 pr-1 text-[11px] font-semibold text-bark-soft">
+        <div className="ml-auto flex items-center gap-2 text-[11px] font-semibold text-bark-soft">
           <span className="font-display text-sm font-extrabold text-grass-deep">
             {ended ? "Final" : halfLabel(current)}
           </span>
-          <span className="tabular-nums">
+          <span className="hidden tabular-nums sm:inline">
             At-bat {Math.min(atBat + 1, total)} / {total}
           </span>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            title="Hide the timeline"
+            className="rounded-full border-2 border-grass-deep/12 bg-card/95 px-2 py-1 text-[11px] font-bold text-bark-soft transition-colors hover:border-grass/60 hover:text-grass-deep"
+          >
+            ▾
+          </button>
         </div>
       </div>
     </div>

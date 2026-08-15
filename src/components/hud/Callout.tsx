@@ -51,13 +51,15 @@ export function Callout({
   const banner = (
     <div
       key={call.at}
-      className={`pointer-events-none flex w-full max-w-[800px] animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:gap-1 sm:py-4 ${TONE[call.tone]}`}
+      // Full width on a phone, where there is nothing else to look at; on a
+      // desktop it only needs to be read, not to dominate the park.
+      className={`pointer-events-none flex w-full max-w-[800px] animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:max-w-[420px] sm:gap-0.5 sm:py-2.5 ${TONE[call.tone]}`}
     >
-      <span className="font-display text-xl font-extrabold leading-tight sm:text-3xl">
+      <span className="font-display text-xl font-extrabold leading-tight sm:text-xl">
         {call.text}
       </span>
       {call.detail && (
-        <span className="text-[11px] font-semibold leading-snug opacity-90 sm:text-sm">
+        <span className="text-[11px] font-semibold leading-snug opacity-90 sm:text-[11px]">
           {call.detail}
         </span>
       )}

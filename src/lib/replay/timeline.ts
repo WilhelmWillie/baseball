@@ -30,11 +30,11 @@ import type { ManifestFrame, RecordingManifest } from "./format";
  */
 export const REPLAY_BEATS = {
   /** Between pitches of the same plate appearance. */
-  pitch: 2400,
+  pitch: 3200,
   /** After a completed play, on top of the animation's own hold. */
-  play: 2000,
+  play: 3000,
   /** Across the half-inning break, so the intermission card can be read. */
-  between: 4000,
+  between: 5000,
 } as const;
 
 /**

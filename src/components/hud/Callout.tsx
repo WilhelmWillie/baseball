@@ -15,7 +15,12 @@ const TONE: Record<CallOut["tone"], string> = {
  * The director owns callouts on a mutable object so animation never triggers
  * React renders. This polls it at a rate the eye cannot tell from instant.
  */
-export function Callout() {
+export function Callout({
+  /** Raised clear of the replay transport, which parks on the same edge. */
+  lifted = false,
+}: {
+  lifted?: boolean;
+} = {}) {
   const director = useGameStore((s) => s.director);
   const [call, setCall] = useState<CallOut | null>(null);
 
@@ -38,18 +43,31 @@ export function Callout() {
   if (!call) return null;
 
   return (
-    <div className="pointer-events-none flex flex-col items-center">
+    // A wide banner near the bottom of the frame. On a phone it floats just
+    // above the thumb controls so it never covers them; on a larger screen it
+    // sits above the venue status in the corner, capped in width and centered
+    // so it never stretches edge to edge. When a recording is playing it clears
+    // the transport bar as well, which is roughly 62px of the same edge.
+    <div
+      className={`pointer-events-none absolute inset-x-0 z-10 flex justify-center px-2 sm:px-4 ${
+        lifted
+          ? "bottom-[calc(10rem+env(safe-area-inset-bottom))] sm:bottom-24"
+          : "bottom-[calc(4.75rem+env(safe-area-inset-bottom))] sm:bottom-14"
+      }`}
+    >
       <div
         key={call.at}
-        className={`animate-[callout_320ms_cubic-bezier(0.34,1.56,0.64,1)] rounded-2xl border-2 px-4 py-2 font-display text-xl font-extrabold lip-float sm:px-6 sm:py-2.5 sm:text-3xl ${TONE[call.tone]}`}
+        className={`flex w-full max-w-[800px] animate-[banner_360ms_cubic-bezier(0.34,1.3,0.5,1)] flex-col items-center gap-0.5 rounded-2xl border-2 px-4 py-3 text-center lip-float sm:gap-1 sm:py-4 ${TONE[call.tone]}`}
       >
-        {call.text}
+        <span className="font-display text-xl font-extrabold leading-tight sm:text-3xl">
+          {call.text}
+        </span>
+        {call.detail && (
+          <span className="text-[11px] font-semibold leading-snug opacity-90 sm:text-sm">
+            {call.detail}
+          </span>
+        )}
       </div>
-      {call.detail && (
-        <div className="mt-1.5 max-w-md rounded-full bg-card/95 px-3 py-1 text-center text-[11px] font-semibold text-bark lip-float">
-          {call.detail}
-        </div>
-      )}
     </div>
   );
 }

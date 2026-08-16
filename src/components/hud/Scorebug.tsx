@@ -214,7 +214,7 @@ export function Scorebug({
   /** Change how much of the scoreboard is showing. */
   onMode?: (mode: ScoreMode) => void;
 }) {
-  const { teams, score, count, batter, defense, conditions } = snapshot;
+  const { teams, score, count, batter, defense, conditions, venue } = snapshot;
   const batterLine = batterSummary(snapshot.batterStats);
   const pitcherLine = pitcherSummary(snapshot.pitcherStats);
   const arrow = snapshot.isTopInning ? "▲" : "▼";
@@ -323,9 +323,12 @@ export function Scorebug({
           </div>
         </div>
 
-        {/* What the park is like - and what lit the scene. Dropped on a phone,
-            where the screen is better spent on the game than on the weather. */}
+        {/* Where the game is and what the park is like - and what lit the
+            scene. Dropped on a phone, where the screen is better spent on the
+            game than on the weather. */}
         <div className="mt-2 hidden items-center gap-2 border-t-2 border-dashed border-grass-deep/12 pt-2 text-[10px] text-bark-soft sm:flex">
+          {venue && <span className="truncate font-bold text-bark">{venue}</span>}
+          {venue && <span className="text-bark-soft/50">·</span>}
           <span className="font-bold text-bark">{conditions.condition}</span>
           {conditions.temp && <span>{conditions.temp}°</span>}
           {conditions.windLabel && <span className="truncate">{conditions.windLabel}</span>}

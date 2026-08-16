@@ -42,10 +42,10 @@ function ControlButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`rounded-full border-2 px-3 py-2 text-xs font-bold transition-colors sm:py-1.5 ${
+      className={`rounded-full px-3 py-2 text-xs font-bold transition-colors sm:py-1.5 ${
         active
-          ? "border-grass bg-grass text-card"
-          : "border-grass-deep/12 bg-card/95 text-bark hover:border-grass/60 hover:text-grass-deep"
+          ? "bg-grass text-card"
+          : "text-bark hover:bg-grass-mist hover:text-grass-deep"
       }`}
     >
       {children}
@@ -82,7 +82,6 @@ export function Viewer({
   const setCameraView = useGameStore((s) => s.setCameraView);
 
   const [soundOn, setSoundOn] = useState(true);
-  const [showRoster, setShowRoster] = useState(false);
   const [showCameras, setShowCameras] = useState(false);
 
   // How much of the scoreboard shows. A portrait phone starts minimized - the
@@ -170,13 +169,14 @@ export function Viewer({
         )}
       </div>
 
-      {/* Controls: along the bottom on a phone, where a thumb reaches; stacked
-          in the top corner on anything larger. */}
-      <div className="absolute inset-x-2 bottom-3 z-20 flex flex-row items-center justify-center gap-2 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:flex-col sm:items-end sm:gap-2">
-        <div className="flex gap-1.5 sm:gap-2">
+      {/* Controls: along the bottom on a phone, where a thumb reaches; tucked
+          into the top corner on anything larger. A single sleek row groups the
+          controls into one floating strip. */}
+      <div className="absolute inset-x-2 bottom-3 z-20 flex flex-row items-center justify-center gap-1.5 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:justify-end">
+        <div className="flex items-center gap-1 rounded-full border border-grass-deep/10 bg-card/95 p-1 backdrop-blur-[2px] lip-float">
           <Link
             href="/"
-            className="rounded-full border-2 border-grass-deep/12 bg-card/95 px-3 py-2 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep sm:py-1.5"
+            className="rounded-full px-3 py-2 text-xs font-bold text-bark transition-colors hover:bg-grass-mist hover:text-grass-deep sm:py-1.5"
           >
             ←<span className="hidden sm:inline"> Games</span>
           </Link>
@@ -220,8 +220,6 @@ export function Viewer({
               </div>
             )}
           </div>
-        </div>
-        <div className="flex gap-1.5 sm:gap-2">
           <ControlButton
             onClick={() => {
               const next = !soundOn;
@@ -235,23 +233,6 @@ export function Viewer({
             {soundOn ? "🔊" : "🔇"}
             <span className="hidden sm:inline">{soundOn ? " Sound" : " Muted"}</span>
           </ControlButton>
-          <ControlButton onClick={() => setShowRoster(!showRoster)} active={showRoster}>
-            Lineup
-          </ControlButton>
-        </div>
-        <div className="hidden items-center gap-2 rounded-full bg-card/85 px-2.5 py-1 text-[11px] font-semibold text-bark-soft sm:flex">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              isReplay
-                ? "bg-clay-soft"
-                : connection === "live"
-                  ? "animate-[blink_1.4s_ease-in-out_infinite] bg-grass"
-                  : connection === "error"
-                    ? "bg-clay"
-                    : "bg-clay-soft"
-            }`}
-          />
-          {isReplay ? "Recording" : connection === "live" ? "Live" : connection}
         </div>
       </div>
 
@@ -271,61 +252,6 @@ export function Viewer({
 
       {/* Between-innings credits card, shown while the field is empty. */}
       <Intermission />
-
-      {/* Bottom-left: lineup */}
-      {showRoster && snapshot && (
-        <div
-          className={`absolute left-2 z-10 max-h-[38dvh] w-[min(300px,calc(100vw-1rem))] overflow-auto rounded-2xl border-2 border-grass-deep/12 bg-card/97 p-3.5 text-xs text-bark lip-float sm:left-4 sm:max-h-[46vh] ${
-            isReplay ? "bottom-40 sm:bottom-28" : "bottom-16 sm:bottom-4"
-          }`}
-        >
-          <div className="mb-2 font-display text-sm font-extrabold text-grass-deep">
-            {snapshot.teams[snapshot.fieldingSide].abbrev} in the field
-          </div>
-          {(
-            [
-              ["P", snapshot.defense.pitcher],
-              ["C", snapshot.defense.catcher],
-              ["1B", snapshot.defense.first],
-              ["2B", snapshot.defense.second],
-              ["3B", snapshot.defense.third],
-              ["SS", snapshot.defense.shortstop],
-              ["LF", snapshot.defense.left],
-              ["CF", snapshot.defense.center],
-              ["RF", snapshot.defense.right],
-            ] as const
-          ).map(([label, player]) => (
-            <div key={label} className="flex justify-between gap-2 py-0.5">
-              <span className="w-8 font-bold text-bark-soft">{label}</span>
-              <span className="flex-1 truncate">{player?.name ?? "—"}</span>
-              <span className="text-bark-soft">{player?.number ?? ""}</span>
-            </div>
-          ))}
-          <div className="mb-1 mt-3 font-display text-sm font-extrabold text-grass-deep">
-            On the bench
-          </div>
-          {snapshot.bench[snapshot.fieldingSide].length === 0 && (
-            <div className="text-bark-soft">—</div>
-          )}
-          {snapshot.bench[snapshot.fieldingSide].map((player) => (
-            <div key={player.id} className="flex justify-between gap-2 py-0.5">
-              <span className="flex-1 truncate">{player.name}</span>
-              <span className="text-bark-soft">{player.position ?? ""}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Bottom-right: status. It shares the bottom edge with the transport,
-          which is wide enough to reach it on a narrow desktop window, so in
-          replay it moves up out of the way. */}
-      <div
-        className={`absolute right-2 z-10 hidden max-w-[46vw] rounded-full bg-card/80 px-3 py-1 text-right text-[11px] font-semibold text-bark-soft sm:right-4 sm:block ${
-          isReplay ? "bottom-28 sm:bottom-28" : "bottom-2 sm:bottom-4"
-        }`}
-      >
-        {snapshot ? `${snapshot.venue} · ${snapshot.status.detailed}` : ""}
-      </div>
 
       {snapshot?.status.isFinal && (
         <div className="absolute inset-0 z-30 flex items-start justify-end p-2 sm:p-4">

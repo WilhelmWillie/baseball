@@ -7,11 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "favicon": "node scripts/build-favicon.mjs"
+    "favicon": "node scripts/build-favicon.mjs",
+    "record": "tsx scripts/record-game.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "fast-json-patch": "^3.1.1",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -28,6 +30,7 @@
     "eslint-config-next": "16.3.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
+    "tsx": "^4.20.3",
     "typescript": "^5"
   }
 }

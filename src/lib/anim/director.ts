@@ -1373,6 +1373,16 @@ export class Director {
     const holdAfter = result.kind === "home_run" ? 4.2 : 2.4;
     let duration = Math.max(runnerEnd, ball ? throwEnd : 0.4) + holdAfter;
 
+    /**
+     * When every runner has stopped moving, plus a beat.
+     *
+     * The ball going dead is not the end of the play: a throw to first is over
+     * long before a man scores from second, and cutting back to the pitcher on
+     * the throw leaves the rest of the baserunning happening off camera. The
+     * returns to the pitch camera below wait for this as well.
+     */
+    const runnersClear = runnerEnd + 0.4;
+
     const cue = new Cue();
     /** Where the chasing defender and the diving one started from. */
     let chaseFrom: Vector3 | null = null;
@@ -1706,10 +1716,10 @@ export class Director {
           // An out that keeps the half alive: watch the retired man beam off,
           // let it breathe, then cut back to the pitcher for the next hitter -
           // the long lens on a strikeout, centre field otherwise.
-          cue.at("post-out", t, retireEnd + POST_OUT_PAUSE, () =>
+          cue.at("post-out", t, Math.max(retireEnd + POST_OUT_PAUSE, runnersClear), () =>
             this.setShot(retiresBatter ? "mound" : "center", { cut: true, force: true }),
           );
-        } else if (ball && t > throwEnd) {
+        } else if (ball && t > Math.max(throwEnd, runnersClear)) {
           // A hit: the throw is caught and the play is over, back to the pitch
           // camera. A cut, not a glide - centre field is three hundred feet
           // from wherever the ball was, and sliding there would take all day.

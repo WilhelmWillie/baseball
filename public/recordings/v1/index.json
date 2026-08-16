@@ -1,0 +1,68 @@
+{
+  "games": [
+    {
+      "gamePk": 824561,
+      "date": "2026-08-13",
+      "venue": "Rate Field",
+      "home": {
+        "id": 145,
+        "abbrev": "CWS",
+        "name": "Chicago White Sox",
+        "score": 8
+      },
+      "away": {
+        "id": 113,
+        "abbrev": "CIN",
+        "name": "Cincinnati Reds",
+        "score": 9
+      },
+      "frameCount": 573,
+      "durationMs": 11187503,
+      "source": "reconstructed",
+      "recordedAt": "2026-08-16T16:47:37.203Z"
+    },
+    {
+      "gamePk": 823215,
+      "date": "2026-06-10",
+      "venue": "Oracle Park",
+      "home": {
+        "id": 137,
+        "abbrev": "SF",
+        "name": "San Francisco Giants",
+        "score": 11
+      },
+      "away": {
+        "id": 120,
+        "abbrev": "WSH",
+        "name": "Washington Nationals",
+        "score": 10
+      },
+      "frameCount": 570,
+      "durationMs": 10968962,
+      "source": "reconstructed",
+      "recordedAt": "2026-08-16T16:46:56.797Z"
+    },
+    {
+      "gamePk": 813024,
+      "date": "2025-11-01",
+      "venue": "Rogers Centre",
+      "label": "2025 World Series Game 7",
+      "home": {
+        "id": 141,
+        "abbrev": "TOR",
+        "name": "Toronto Blue Jays",
+        "score": 4
+      },
+      "away": {
+        "id": 119,
+        "abbrev": "LAD",
+        "name": "Los Angeles Dodgers",
+        "score": 5
+      },
+      "frameCount": 620,
+      "durationMs": 14819980,
+      "source": "reconstructed",
+      "recordedAt": "2026-08-16T16:47:27.640Z"
+    }
+  ]
+}

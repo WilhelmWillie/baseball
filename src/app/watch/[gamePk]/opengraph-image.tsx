@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og";
 import { summarizeGame, type GameSummary } from "@/lib/game/schedule";
 import { fetchScheduleGame } from "@/lib/mlb/client";
-import { DEMO_GAME_PK, demoSummary } from "@/lib/sim/feed";
 import { BALL_SRC, BRAND, PAGE_BACKGROUND, ogFonts, teamDiscSrc } from "@/lib/brand/og";
 
 export const alt = "Watch this game in a low-poly ballpark";
@@ -18,7 +17,6 @@ export const contentType = "image/png";
 export const revalidate = 3600;
 
 async function loadGame(gamePk: string): Promise<GameSummary | null> {
-  if (gamePk === "demo" || Number(gamePk) === DEMO_GAME_PK) return demoSummary(0);
   const id = Number(gamePk);
   if (!Number.isInteger(id) || id <= 0) return null;
   try {
@@ -32,7 +30,6 @@ async function loadGame(gamePk: string): Promise<GameSummary | null> {
 
 /** First pitch, in the ballpark's own words. Fixed once the game is scheduled. */
 function firstPitch(game: GameSummary): string | null {
-  if (game.isDemo) return "Always ready";
   if (!game.startTime) return null;
   return new Date(game.startTime).toLocaleString("en-US", {
     timeZone: "America/New_York",

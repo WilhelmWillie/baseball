@@ -28,8 +28,8 @@ directly.
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games
 first. Only games actually in progress open: a game before first pitch has no
 lineup in the feed and one that has finished has nothing left to animate, so
-those cards are shown but not clickable. If nothing is in progress it says so
-plainly and offers the simulated game instead.
+those cards are shown but not clickable. Recorded games sit below the slate and
+always open, so there is something to watch whatever the schedule says.
 
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
 their positions, the batter, on-deck hitter and baserunners. The home club take
@@ -84,11 +84,15 @@ whole diamond ahead of you, **Umpire** through the umpire's own eyes in the slot
 behind the catcher with the pitch arriving at the lens, and **Sky** near enough
 straight down on the park from a few hundred feet up. Your choice is remembered.
 
-**Simulated game** (`/watch/demo`) — a scripted game emitted in the exact shape
-of MLB's GUMBO feed, so it exercises the same adapter and animation path a real
-game does. Useful in the off-hours, and it's how the animation work was
-verified. `?at=<seconds>` jumps part-way in; `?hour=`, `?wx=` and `?wind=` put
-it under any sky you like (`?hour=20.5`, `?wx=Rain&wind=14 mph, L To R`).
+**Recorded games** (`/watch/[gamePk]?replay=1`) — real games captured off the
+Stats API and replayed pitch by pitch. Playback has no clock: the next pitch is
+handed over when the ballpark has finished animating the last one, so a home
+run's trot and celebration always play out in full. Step by plate appearance or
+half-inning, or scrub a bar ticked with innings and scoring plays; `?at=<n>`
+opens on the nth at-bat. This is how the animation work is exercised in the
+off-hours, and how it is verified: a recording is the same GUMBO the live game
+speaks, so it runs the same adapter and animation path. See
+[docs/RECORDING.md](docs/RECORDING.md).
 
 ## Architecture
 
@@ -435,8 +439,9 @@ you actually read — where it is going, who is chasing it, whether it will drop
 Runners cover a base in 2.6s (3.4s on a home-run trot). A double that is over
 before you have found the ball has not communicated anything.
 
-Real games leave ~20s between pitches, which is plenty of room; the simulated
-game paces itself to match so its animations are not clipped.
+Real games leave ~20s between pitches, which is plenty of room. Recorded
+playback ignores that gap entirely and waits on the animation instead, so the
+pacing is whatever the ballpark needs rather than whatever the clock allowed.
 
 ### Walks, strikeouts and who is actually running
 
@@ -532,7 +537,6 @@ log's hint says "tap" rather than "hover".
 - Defensive shifts aren't modelled; fielders stand in standard positions.
 - There are no dugouts or bench figures in the 3D scene; the bench is listed in
   the Lineup panel instead.
-- The simulated game runs a scripted 20 at-bats, so it ends after two innings.
 - Every park uses the same generic dimensions rather than the real venue's.
 - Fielders converge on the ball and throw, but relays and rundowns are a single
   generic throw.

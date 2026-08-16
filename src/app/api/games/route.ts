@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { easternDate, fetchSchedule } from "@/lib/mlb/client";
 import { summarizeGame, sortGames, type GameSummary } from "@/lib/game/schedule";
-import { demoSummary } from "@/lib/sim/feed";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +23,6 @@ export async function GET() {
         date: today,
         games,
         liveCount: games.filter((g) => g.state === "live").length,
-        demo: demoSummary(0),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -35,7 +33,6 @@ export async function GET() {
         date: today,
         games: [] as GameSummary[],
         liveCount: 0,
-        demo: demoSummary(0),
         error: `Could not reach the MLB Stats API: ${message}`,
       },
       { status: 200, headers: { "Cache-Control": "no-store" } },

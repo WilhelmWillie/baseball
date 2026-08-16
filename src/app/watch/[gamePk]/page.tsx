@@ -1,29 +1,28 @@
-import { Viewer } from "@/components/Viewer";
-import { DEMO_GAME_PK } from "@/lib/sim/feed";
+import { notFound } from "next/navigation";
+import { Viewer, type ViewerMode } from "@/components/Viewer";
 
 export default async function WatchPage({
   params,
   searchParams,
 }: {
   params: Promise<{ gamePk: string }>;
-  searchParams: Promise<{ at?: string; hour?: string; wx?: string; wind?: string }>;
+  searchParams: Promise<{ at?: string; replay?: string }>;
 }) {
   const { gamePk } = await params;
-  const { at, hour, wx, wind } = await searchParams;
-  const isDemo = gamePk === "demo" || Number(gamePk) === DEMO_GAME_PK;
-  // ?at=<seconds> jumps into the simulated game part-way through, and
-  // ?hour= / ?wx= / ?wind= put it under any sky you like.
-  const offset = isDemo ? Math.max(0, Number(at ?? 0) || 0) : 0;
-  const demoQuery = Object.entries({ hour, wx, wind })
-    .filter(([, value]) => value)
-    .map(([key, value]) => `&${key}=${encodeURIComponent(value as string)}`)
-    .join("");
-  return (
-    <Viewer
-      gamePk={isDemo ? "demo" : gamePk}
-      isDemo={isDemo}
-      demoOffset={offset}
-      demoQuery={demoQuery}
-    />
-  );
+  const { at, replay } = await searchParams;
+
+  // Every game is a numeric gamePk now that the simulator is gone; anything
+  // else would render a viewer that can never load a feed.
+  const id = Number(gamePk);
+  if (!Number.isInteger(id) || id <= 0) notFound();
+
+  // A recorded game is finished by definition, so `?replay=1` can never collide
+  // with the same gamePk being live.
+  const isReplay = replay === "1" || replay === "true";
+  const mode: ViewerMode = isReplay ? "replay" : "live";
+
+  // ?at=<n> opens a recording on the nth plate appearance, 1-based.
+  const openAt = Math.max(0, (Number(at ?? 0) || 0) - 1);
+
+  return <Viewer gamePk={gamePk} mode={mode} startAtBat={isReplay ? openAt : 0} />;
 }

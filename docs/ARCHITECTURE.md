@@ -44,8 +44,9 @@ downstream of `lib/game/` speaks in `GameSnapshot` and `NormalizedEvent`.
 | Language | TypeScript 5, `strict` |
 
 `@/*` maps to `./src/*` (`tsconfig.json`). Scripts: `npm run dev`, `build`,
-`start`, `lint`. No test suite — the simulated game at `/watch/demo` is how the
-animation path is exercised.
+`start`, `lint`, `record`. No test suite — recorded games under
+`public/recordings/` are how the animation path is exercised, and the recorder's
+own validation pass is the closest thing to one.
 
 ## Directory map
 
@@ -53,7 +54,7 @@ animation path is exercised.
 src/
   app/          routes and API proxies (App Router)
   components/   React: HUD (DOM) and scene (R3F)
-  hooks/        useLiveFeed — the polling loop
+  hooks/        useLiveFeed and useReplay — the two feed drivers
   store/        zustand store; the snapshot-promotion rule lives here
   lib/
     mlb/        raw Stats API: client, response types, team palettes
@@ -61,11 +62,11 @@ src/
     anim/       the director, pitch shapes, particles
     field/      field math, park construction, sky and weather
     audio/      Web Audio synthesis
-    sim/        scripted demo game, emitted in GUMBO's shape
+    replay/     recording format: reconstruction, encoding, validation
 ```
 
-Roughly 11.1k lines across 43 source files. Two files dominate:
-`lib/anim/director.ts` (1515) and `components/scene/Player.tsx` (1375).
+Roughly 15.4k lines across 56 source files. Two files dominate:
+`lib/anim/director.ts` and `components/scene/Player.tsx`.
 
 ## Routes
 
@@ -73,9 +74,9 @@ Roughly 11.1k lines across 43 source files. Two files dominate:
 | --- | --- | --- |
 | `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate. Only in-progress games are clickable. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. |
-| `/watch/demo` | same | `gamePk === "demo"` routes to the simulator. `?at=`, `?hour=`, `?wx=`, `?wind=` are read here. |
+| `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<n>` opens on the nth plate appearance. |
 | `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
-| `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. `demo` is intercepted here and served from `lib/sim/`. |
+| `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. |
 
 Both API routes set `dynamic = "force-dynamic"` and `Cache-Control: no-store`.
 The browser never contacts `statsapi.mlb.com` directly; everything is proxied,
@@ -127,7 +128,7 @@ MLB publishes the result, so the pitch and its outcome can animate as one motion
 ### State and the polling loop
 
 **`hooks/useLiveFeed.ts`** — polls `/api/game/[gamePk]`. Interval varies: 5s
-live, 15s idle, 1.8s demo, 1.5s while a pitch is held waiting on its result.
+live, 15s idle, 1.5s while a pitch is held waiting on its result.
 Backs off on failure, re-polls immediately when the tab becomes visible, and
 only surfaces an error after two consecutive failures.
 
@@ -227,19 +228,76 @@ HUD components are plain DOM over the canvas: `hud/Scorebug.tsx`,
 Web Audio primitives; there are no audio files. Cued off the animation clock, so
 the crack lands with the swing rather than with the poll that reported it.
 
-### The simulator
+### Recording
 
-**`lib/sim/script.ts`** — a scripted 20 at-bats.
-**`lib/sim/feed.ts`** — renders that script as a GUMBO-shaped response for an
-elapsed time, so the demo exercises the same normalization and animation path a
-real game does. `DEMO_GAME_PK = 747001`.
+Capturing a real game so it can be replayed, and playing it back. Design and
+rationale live in [RECORDING.md](./RECORDING.md). Three real games are committed
+under `public/recordings/`; `/watch/[gamePk]?replay=1` plays them.
+
+**`lib/replay/format.ts`** — *read this first.* The on-disk contract shared by
+the recorder and, later, the player: `FrameLine` (one keyframe then RFC-6902
+patches), `RecordingManifest` (the seek index and scrub-bar markers), and
+`frameFingerprint()`, which decides what counts as a frame — a frame is kept
+only when something the renderer would react to changes.
+
+**`lib/replay/reconstruct.ts`** — `reconstructFrames(finalFeed)`. A finished
+GUMBO document carries the whole game *and* its timing, so one request is enough
+to rebuild what the feed looked like at every moment: plays and pitches are
+revealed in order and the linescore is rolled back to match. The linescore is
+the part that matters — `buildSnapshot` reads the entire defensive alignment,
+the batter and the runners off it, so a naive slice of the final feed would put
+the closer on the mound in the first inning.
+
+**`lib/replay/encode.ts`** — `dedupeFrames`, `encodeFrames`, `buildManifest`,
+and `verifyEncoding`, which replays the encoded stream back into frames so a
+recording is only ever published on the strength of the bytes that will be read,
+not the objects in memory. Patches are diffed against JSON-normalized feeds
+because `undefined` keys do not survive serialization.
+
+**`lib/replay/validate.ts`** — `validateFrames()` walks a recording through the
+real `buildSnapshot` / `extractEvents` exactly the way the store does. With no
+test suite in the repo, this is what makes a recording trustworthy enough to use
+as a fixture.
+
+**`scripts/record-game.ts`** — the CLI (`npm run record`). Lists a day's games,
+records one, or re-records from a saved feed with `--from`. Needs outbound
+access to `statsapi.mlb.com`.
+
+### Playback
+
+**`lib/replay/source.ts`** — `loadRecording(gamePk)` → a `RecordingPlayer`.
+Materializing every frame would be most of a gigabyte, so it keeps **one
+document** and walks it with `applyPatch`, plus a checkpoint every 50 frames to
+bound how far a backward seek has to rewind. Recordings live behind a base URL
+and nothing else: `public/recordings/` is served at `/recordings`, and
+`NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a bucket without a code change.
+
+**`lib/replay/timeline.ts`** — indexes a recording by plate appearance:
+`buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Also
+`REPLAY_BEATS` — how long the park rests between plays. Pure functions; the
+place to change pacing, or what the scrub bar can land on.
+
+**`hooks/useReplay.ts`** — the mirror of `useLiveFeed`: same `ingest`, no
+network and **no clock**. Two gates: the next frame goes over only once
+`director.isIdle()`, so an animation is never interrupted by the one behind it,
+and then only after `beatAfter` has elapsed, which is a floor on the space
+between plays rather than a schedule. A held pitch is the one deliberate park
+that counts as ready and skips the beat, since advancing is what releases it and
+the hold exists to fuse a pitch to its outcome.
+
+**`components/hud/Transport.tsx`** — play/pause, at-bat and half-inning
+stepping, and a scrub bar ticked with half-innings and scoring plays.
+
+The store gains one action for this: `seek(feed)`, which is `reset()` then
+`ingest()`. A seek is a cut, and `ingest`'s first-read branch already jumps to
+an arbitrary moment via `seedCursor` without replaying what came before.
 
 ## Conventions
 
 - **Field math is in feet**, in `lateral`/`depth`. Convert with `fp()`. Do not
   hand-write world-space vectors.
 - **`"use client"` starts at `Viewer`, `GameList`, the store and the hook.**
-  Everything under `lib/game/`, `lib/mlb/` and `lib/sim/` is isomorphic; the API
+  Everything under `lib/game/`, `lib/mlb/` and `lib/replay/` is isomorphic; the API
   routes and both page components are server-side.
 - **Animations run on the wall clock**, not accumulated frame deltas — a slow
   frame rate costs smoothness, not correctness. Both the director and `Fx`
@@ -266,7 +324,12 @@ real game does. `DEMO_GAME_PK = 747001`.
 | Club colors | `lib/mlb/teams.ts` |
 | Polling behaviour | `hooks/useLiveFeed.ts` |
 | When state becomes visible | `store/gameStore.ts` |
-| The demo game's script | `lib/sim/script.ts` |
+| What a recording stores | `lib/replay/format.ts` |
+| How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
+| What makes a recording valid | `lib/replay/validate.ts` |
+| How a recording is paced | `REPLAY_BEATS` in `lib/replay/timeline.ts` |
+| What the scrub bar can land on | `lib/replay/timeline.ts` |
+| Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
 
 ## Notes
 

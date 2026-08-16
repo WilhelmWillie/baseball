@@ -29,8 +29,15 @@ import type { ManifestFrame, RecordingManifest } from "./format";
  * after one is shorter than the beat after a pitch rather than longer.
  */
 export const REPLAY_BEATS = {
-  /** Between pitches of the same plate appearance. */
-  pitch: 3200,
+  /**
+   * Between pitches of the same plate appearance, and before the first one.
+   *
+   * The dominant number here: a plate appearance spends most of its time
+   * waiting on this, so it is the dial to turn if the pacing is wrong. A real
+   * game leaves about twenty seconds, which is far more than is worth watching,
+   * but the first two passes at this were still brisk enough to read as a reel.
+   */
+  pitch: 5000,
   /** After a completed play, on top of the animation's own hold. */
   play: 3000,
   /** Across the half-inning break, so the intermission card can be read. */

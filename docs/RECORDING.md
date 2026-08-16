@@ -59,7 +59,7 @@ timeline you can scrub to any half-inning or scoring play.
 | --- | --- | --- |
 | Storage | S3 / R2 object storage | Shared across devs, CI and prod; repo stays clean; recordings are large-ish and immutable, which is exactly what object storage is for. |
 | Capture | Retroactive, from finished games | Any game from any season, captured in one batch run. No waiting three hours for a live game. |
-| Pacing | No clock — advance when the ballpark is ready, then rest a beat | A clock advanced whether or not the director had finished, so long animations were cut off mid-celebration. Waiting on `director.isIdle()` fixes that; a beat between plays keeps it from reading as a highlight reel. ~35 min for a nine-inning game. |
+| Pacing | No clock — advance when the ballpark is ready, then rest a beat | A clock advanced whether or not the director had finished, so long animations were cut off mid-celebration. Waiting on `director.isIdle()` fixes that; a beat between plays keeps it from reading as a highlight reel. Roughly an hour for a nine-inning game. |
 | Timeline | Plate appearances, with half-inning and scoring markers | "Show me the 7th", "jump to the home run" — and seeking always lands on the start of an at-bat. |
 
 ## Architecture
@@ -346,16 +346,17 @@ a schedule:
 1. **The director.** A frame is handed to `ingest` only once `director.isIdle()`,
    so a play can never be interrupted by the one behind it.
 2. **A beat.** `beatAfter` in `timeline.ts` is a floor on the space between
-   plays — 2.4s after a pitch, 2.0s after a completed play (which already has
-   2.4–4.2s of hold inside its own animation), 4.0s across a half-inning break
+   plays — 5.0s after a pitch, 3.0s after a completed play (which already has
+   2.4–4.2s of hold inside its own animation), 5.0s across a half-inning break
    so the intermission card can be read.
 
 The second gate exists because the first alone is too brisk: with nothing but
 idle-gating the next pitch begins the instant the last one lands, which reads as
 a highlight reel rather than a game. A beat can only ever make playback wait
 longer, never cut an animation short, which is what separates it from the clock
-it replaced. Measured: ~24s per plate appearance, so a 88-at-bat game runs about
-35 minutes.
+it replaced. Measured: a pitch cycle — beat plus delivery — comes out around
+8s, so a game of ~340 pitches runs a little under an hour, against a real three
+hours. `REPLAY_BEATS.pitch` is the dial; nothing else depends on it.
 
 No ceilings to tune against animation lengths, no speed multipliers, no
 true-timing toggle — "faster" could only mean cutting plays short again.

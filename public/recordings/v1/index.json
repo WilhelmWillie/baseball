@@ -16,10 +16,10 @@
         "name": "Cincinnati Reds",
         "score": 9
       },
-      "frameCount": 517,
+      "frameCount": 573,
       "durationMs": 11187503,
       "source": "reconstructed",
-      "recordedAt": "2026-08-15T22:55:29.994Z"
+      "recordedAt": "2026-08-16T16:47:37.203Z"
     },
     {
       "gamePk": 823215,
@@ -37,10 +37,10 @@
         "name": "Washington Nationals",
         "score": 10
       },
-      "frameCount": 514,
+      "frameCount": 570,
       "durationMs": 10968962,
       "source": "reconstructed",
-      "recordedAt": "2026-08-15T22:55:34.655Z"
+      "recordedAt": "2026-08-16T16:46:56.797Z"
     },
     {
       "gamePk": 813024,
@@ -59,10 +59,10 @@
         "name": "Los Angeles Dodgers",
         "score": 5
       },
-      "frameCount": 559,
+      "frameCount": 620,
       "durationMs": 14819980,
       "source": "reconstructed",
-      "recordedAt": "2026-08-15T22:55:24.972Z"
+      "recordedAt": "2026-08-16T16:47:27.640Z"
     }
   ]
 }

@@ -295,7 +295,15 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
   let lastT = -MIN_STEP_MS;
   /** The recording opens on the first pitch, not on the feed's first entry. */
   let seenFirstPitch = false;
-  /** A side is due to take the field: emit a set frame before the next pitch. */
+  /**
+   * Emit a set frame before the next pitch.
+   *
+   * Every plate appearance opens with one, so that "the start of an at-bat" is
+   * always a frame where the batter is in the box and nothing has been thrown.
+   * Seeking depends on it: the store seeds its cursor off whatever frame it
+   * lands on without animating it, so anchoring an at-bat on its first pitch
+   * would swallow that pitch and open the count at 0-1.
+   */
   let needsSet = true;
 
   const push = (absoluteMs: number | null, feed: MlbLiveFeed, meta: FrameMeta) => {
@@ -603,6 +611,9 @@ export function reconstructFrames(final: MlbLiveFeed): RecordedFrame[] {
         between: false,
       },
     );
+    // The next hitter has to be shown set before he is pitched to, the same as
+    // a side coming out of a break.
+    needsSet = true;
   }
 
   return frames;

@@ -98,12 +98,12 @@ recorded bytes instead of a script.
 Two objects per game, under a versioned prefix:
 
 ```
-recordings/v1/{gamePk}/manifest.json       ~60-65 KB   metadata + seek index
-recordings/v1/{gamePk}/frames.ndjson.gz    ~215-240 KB  keyframe + patches
+recordings/v1/{gamePk}/manifest.json       ~77-83 KB   metadata + seek index
+recordings/v1/{gamePk}/frames.ndjson.gz    ~190-215 KB  keyframe + patches
 recordings/v1/index.json                              list of recorded games
 ```
 
-Measured, not estimated: three real games in `public/recordings/` come to 884 KB
+Measured, not estimated: three real games in `public/recordings/` come to 856 KB
 together — see [Recorded games](#recorded-games).
 
 ### `frames.ndjson.gz`
@@ -118,10 +118,10 @@ Every subsequent line is an RFC-6902 JSON Patch against the previous frame.
 ```
 
 Why patches: a full GUMBO feed for a finished game is roughly 750 KB–900 KB, and
-a game produces ~510–560 frames worth keeping. Storing them whole would be
-400–500 MB. The delta between two adjacent pitches is a new `playEvent`, a count
+a game produces ~570–620 frames worth keeping. Storing them whole would be
+450–550 MB. The delta between two adjacent pitches is a new `playEvent`, a count
 change and a few boxscore counters — single-digit KB. Keyframe plus patches
-lands at **215–240 KB gzipped for a whole game**, about a quarter the size of
+lands at **190–215 KB gzipped for a whole game**, under a quarter the size of
 one raw feed.
 
 `t` is **milliseconds since the first pitch**, derived from real recorded
@@ -491,7 +491,7 @@ npm run record -- 775302
 ```
 
 Expect: validation passes, the final score matches the feed, and a size report
-around 215–240 KB gzipped for ~510–560 frames. A nine-inning game should report a
+around 190–215 KB gzipped for ~570–620 frames. A nine-inning game should report a
 real duration near 3 hours — a much larger number means the clock is anchored
 somewhere other than the first pitch. Record a game with a known-awkward event
 too — extra innings, a rain delay, a position player pitching — and confirm it
@@ -503,7 +503,7 @@ Committed under `public/recordings/v1/`:
 
 | gamePk | Game | Why it's here |
 | --- | --- | --- |
-| `813024` | LAD 5 @ TOR 4 | **2025 World Series Game 7**, labelled as such in the manifest. Eleven innings — 559 frames, 99 at-bats, 364 pitches — so it exercises extra innings, which nothing else here does. |
+| `813024` | LAD 5 @ TOR 4 | **2025 World Series Game 7**, labelled as such in the manifest. Eleven innings — 620 frames, 99 at-bats, 364 pitches — so it exercises extra innings, which nothing else here does. |
 | `824561` | CIN 9 @ CWS 8 | High-scoring one-run game: 88 at-bats, 343 pitches, 12 pitchers. The busiest substitution path available. |
 | `823215` | WSH 10 @ SF 11 | A slugfest at Oracle Park: 84 at-bats, 344 pitches, 33 markers — the most scoring plays of the three. |
 
@@ -542,7 +542,7 @@ without restructuring.
 | Risk | Mitigation |
 | --- | --- |
 | Timecode endpoints undocumented and quirky | Tier 1 needs none of them; Tier 2 is Phase 5, gated on hand-verification. |
-| ~~Recording sizes larger than estimated~~ | Settled: 215–240 KB gzipped per game, roughly a tenth of the estimate. Committing recordings to the repo is comfortable at this size. |
+| ~~Recording sizes larger than estimated~~ | Settled: 190–215 KB gzipped per game, roughly a tenth of the estimate. Committing recordings to the repo is comfortable at this size. |
 | Materializing ~500 frames janks the browser | Measure in Phase 2. If it hurts: materialize lazily around the playhead and keep periodic keyframes in the file (every 100th frame) so seeking never walks far. Design the format with room for keyframes now. |
 | A `reset()` per seek flashes an empty field | One frame, reads as a cut. If objectionable, the lighter `clearQueue()` + `applySnapshot()` path is available without a format change. |
 | MLB rate-limits a 2,000-request Tier-2 run | Sequential with delay, resumable, and it only ever runs offline against finished games. |

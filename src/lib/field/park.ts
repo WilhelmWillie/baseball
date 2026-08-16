@@ -51,6 +51,12 @@ export const COLORS = {
   lamp: "#fff6c9",
   scoreboard: "#6b503a",
   scoreboardFace: "#43331f",
+  // The plain the town stands on, and the paved streets running through it. A
+  // shade duller and greener than the field's own turf so the ground reads as
+  // the world beyond the park rather than more outfield.
+  townGround: "#5c9a52",
+  street: "#cabc9f",
+  streetLine: "#e7dcc4",
 };
 
 /**
@@ -515,6 +521,78 @@ const ROOF_COLORS = ["#c4614a", "#4f8f7d", "#8a6a4e", "#d09a4c", "#7d8fb5"];
 /** Daylight glass, not lit windows - this is an afternoon game. */
 const WINDOW_GLASS = "#fff2d4";
 
+/** The two rings the town buildings sit inside, for laying ground under them. */
+const TOWN_INNER = 520;
+const TOWN_OUTER = 1560;
+/** The arc the town wraps around the bowl - everything but a wedge behind home. */
+const TOWN_ARC = Math.PI * 0.78;
+
+/**
+ * The ground the whole town stands on. Without it the outer buildings and trees
+ * sit on nothing - boxes pinned to the sky with a ragged rooftop line for a
+ * horizon. One broad plane tucked just under everything gives them a floor and
+ * turns that edge into ground meeting sky, the way a horizon is supposed to
+ * read. It is dropped a hair below the field so it never fights the turf for
+ * depth, and it runs out well past the farthest ring so its own far edge is lost
+ * behind the buildings rather than cutting across open grass.
+ */
+function townGround(blocks: Block[]) {
+  const size = 5200;
+  const thickness = 60;
+  blocks.push({
+    p: [0, -thickness / 2 - 0.6, 0],
+    s: [size, thickness, size],
+    c: COLORS.townGround,
+  });
+}
+
+/**
+ * Streets through the town. The buildings are laid out on concentric rings, so
+ * the roads follow suit: a few ring roads circling the park between the rings,
+ * crossed by radial avenues running out from the stands. Laid flat, a touch
+ * above the ground plane so they read as paved rather than z-fighting it. From a
+ * seat this is all read at a quarter mile, so it only has to give the town a
+ * grain - a suggestion of blocks and thoroughfares - not survive a close look.
+ */
+function streets(blocks: Block[]) {
+  const y = -0.35; // just above townGround's top face at -0.6
+  const width = 26; // how wide a street reads from the stands
+
+  // Ring roads, sampled as short tangential segments the way the wall is.
+  for (const radius of [660, 1000, 1360]) {
+    const steps = Math.max(40, Math.round((Math.PI * 2 * radius) / 60));
+    for (let i = 0; i < steps; i++) {
+      const theta = (i / steps) * Math.PI * 2 - Math.PI;
+      const x = Math.sin(theta) * radius;
+      const z = -Math.cos(theta) * radius;
+      const seg = (Math.PI * 2 * radius) / steps + 3;
+      blocks.push({
+        p: [x, y, z],
+        s: [seg, 0.5, width],
+        c: shade(COLORS.street, (noise(x, z, 51) - 0.5) * 0.05),
+        r: yawAt(theta),
+      });
+    }
+  }
+
+  // Radial avenues running out through the rings, on the same arc the buildings
+  // wrap around so none strike out across the empty wedge behind the plate.
+  const spokes = 13;
+  const midR = (TOWN_INNER + TOWN_OUTER) / 2;
+  const length = TOWN_OUTER - TOWN_INNER;
+  for (let k = 0; k < spokes; k++) {
+    const theta = -TOWN_ARC + (k / (spokes - 1)) * TOWN_ARC * 2;
+    const x = Math.sin(theta) * midR;
+    const z = -Math.cos(theta) * midR;
+    blocks.push({
+      p: [x, y, z],
+      s: [width, 0.5, length],
+      c: shade(COLORS.street, (noise(theta * 30, 0, 52) - 0.5) * 0.05),
+      r: yawAt(theta),
+    });
+  }
+}
+
 /**
  * A town beyond the park. Buildings sit on a wide arc well outside the bowl,
  * with the far ring paler than the near one so the depth reads as haze rather
@@ -704,6 +782,8 @@ function build(palette: CrowdPalette): { blocks: Block[]; fans: Fan[] } {
   stands(blocks, fans, palette);
   lightTowers(blocks);
   scoreboard(blocks);
+  townGround(blocks);
+  streets(blocks);
   skyline(blocks);
   parkland(blocks);
   cached = { key, blocks, fans };

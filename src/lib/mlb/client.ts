@@ -15,7 +15,13 @@ export class MlbApiError extends Error {
 async function getJson<T>(url: string, revalidateSeconds: number): Promise<T> {
   const res = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "mlb-3d-viewer" },
-    next: { revalidate: revalidateSeconds },
+    // A positive revalidate window keeps the response in Next's Data Cache;
+    // zero opts out entirely (`no-store`), so callers that must see the very
+    // latest state - live scores on the home page - never read a stale copy
+    // that a `force-dynamic` route or `no-store` response header cannot reach.
+    ...(revalidateSeconds > 0
+      ? { next: { revalidate: revalidateSeconds } }
+      : { cache: "no-store" as const }),
   });
   if (!res.ok) {
     throw new MlbApiError(`MLB API responded ${res.status} for ${url}`, res.status);
@@ -40,7 +46,9 @@ export async function fetchSchedule(startDate: string, endDate: string): Promise
   const url =
     `${BASE}/v1/schedule?sportId=1&startDate=${startDate}&endDate=${endDate}` +
     `&hydrate=team,linescore,venue,game(content(summary))`;
-  const schedule = await getJson<MlbSchedule>(url, 20);
+  // Scores drive the home page, so read them fresh on every request rather
+  // than serving whatever the Data Cache captured up to 20 seconds ago.
+  const schedule = await getJson<MlbSchedule>(url, 0);
   const games: MlbScheduleGame[] = [];
   for (const date of schedule.dates ?? []) {
     for (const game of date.games ?? []) games.push(game);

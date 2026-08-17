@@ -557,6 +557,22 @@ export class Director {
   }
 
   /**
+   * How loud the crowd should be given the situation, as a 0..1 multiplier.
+   * When the home team is losing badly late in the game the park empties out
+   * and the remaining fans go quiet, so we fade both the crowd audio and the
+   * seat energy. Blowout = home down by >= 6; late = past the 6th. Fades
+   * further as the deficit grows. Returns 1 (no change) in every other case.
+   */
+  private blowoutDamping(): number {
+    const snap = this.snapshot;
+    if (!snap) return 1;
+    const homeDeficit = snap.score.away - snap.score.home;
+    if (snap.inning <= 6 || homeDeficit < 6) return 1;
+    // 6 runs down -> 0.6; each extra run shaves 0.05, floored at 0.35.
+    return Math.max(0.35, 0.6 - (homeDeficit - 6) * 0.05);
+  }
+
+  /**
    * Translate "who did something good" into what the home crowd does about it.
    * `favorsBatter` is whether the play helped the batting side.
    */
@@ -566,12 +582,13 @@ export class Director {
   ): { sound: SoundName; intensity: number } {
     const homeIsBatting = this.snapshot?.battingSide === "home";
     const goodForHome = favorsBatter === homeIsBatting;
+    const intensity = magnitude * this.blowoutDamping();
     if (!goodForHome) {
-      return { sound: "groan", intensity: magnitude };
+      return { sound: "groan", intensity };
     }
     return {
       sound: magnitude >= 0.9 ? "bigCheer" : "cheer",
-      intensity: magnitude,
+      intensity,
     };
   }
 
@@ -587,7 +604,8 @@ export class Director {
   private stirCrowd(favorsBatter: boolean, magnitude: number, tier: ReactionTier = "short") {
     const homeIsBatting = this.snapshot?.battingSide === "home";
     const goodForHome = favorsBatter === homeIsBatting;
-    const home = goodForHome ? magnitude : -magnitude;
+    const damped = magnitude * this.blowoutDamping();
+    const home = goodForHome ? damped : -damped;
     const { sustain, decay } = REACTION_ENVELOPE[tier];
     this.crowdReaction = { home, away: -home, at: this.now(), sustain, decay };
     this.crowdReactionId += 1;

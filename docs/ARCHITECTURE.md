@@ -75,10 +75,15 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 | `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate. Only in-progress games are clickable. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. |
 | `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<n>` opens on the nth plate appearance. |
+| `/watch/[gamePk]/at/[atBatIndex]` | `app/watch/[gamePk]/at/[atBatIndex]/page.tsx` | The same recorded game, cued to one plate appearance by MLB's index for it. What the transport's share button hands out. |
+| `/clip/[gamePk]/[atBatIndex]` | `app/clip/[gamePk]/[atBatIndex]/page.tsx` → `components/ClipViewer.tsx` | One play, on its own, ending on a share card. Works for live games as well as finished ones. |
 | `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
 | `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. |
+| `GET /api/clip/[gamePk]/[atBatIndex]` | `app/api/clip/[gamePk]/[atBatIndex]/route.ts` | Cuts one plate appearance out of a game's feed and returns it in the recording format. 404 for a play that is missing or still in progress. |
 
-Both API routes set `dynamic = "force-dynamic"` and `Cache-Control: no-store`.
+The feed routes set `dynamic = "force-dynamic"` and `Cache-Control: no-store`.
+`/api/clip` is the exception and caches hard, because a finished play never
+changes again.
 The browser never contacts `statsapi.mlb.com` directly; everything is proxied,
 and no API key is involved.
 
@@ -286,7 +291,41 @@ that counts as ready and skips the beat, since advancing is what releases it and
 the hold exists to fuse a pitch to its outcome.
 
 **`components/hud/Transport.tsx`** — play/pause, at-bat and half-inning
-stepping, and a scrub bar ticked with half-innings and scoring plays.
+stepping, a scrub bar ticked with half-innings and scoring plays, and the share
+button that hands out the plate appearance on screen.
+
+### Sharing
+
+Every play in the app has a permanent URL, and none of it is stored. A play is
+`(gamePk, atBatIndex)` — MLB's own numbering, which `HistoryEntry.id` and
+`AtBat.atBatIndex` already speak — so both share surfaces rebuild what they need
+from the feed on request. There is no database, no publish step and no link rot.
+
+**`lib/replay/clip.ts`** — `buildClip(feed, atBatIndex)`. The idea the whole
+feature rests on: `reconstructFrames` works on a *live* feed as well as a final
+one, and each plate appearance falls out of it as a contiguous run of frames
+tagged with its `atBatIndex` — a set frame, one per pitch, then the result. That
+run is the clip. It is trimmed so every frame carries only its own play (a
+ninth-inning clip would otherwise haul ~690 KB of completed plays around) and
+encoded with the ordinary `dedupeFrames`/`encodeFrames` path, so the client
+plays it as a very short recording rather than down a second code path. Returns
+null for a play still in progress: a clip has to know where it ends.
+
+**`lib/share/atbat.ts`** — `fetchAtBatCard(gamePk, atBatIndex)`, everything a
+share card or a clip page needs to describe one plate appearance. Reads
+`/v1/game/{gamePk}/playByPlay` rather than the live feed, an order of magnitude
+smaller, because a scraper is waiting on it. Carries the score both before and
+after the play; the two cards want different ones.
+
+**`lib/brand/playcard.tsx`** — the card both share links draw. Unlike the
+whole-game card it carries the score, and the comment there explains why that is
+not a contradiction: a plate appearance is a fixed historical fact, so it can be
+cached hard *and* say more.
+
+**`components/ClipViewer.tsx`** — a sibling of `Viewer`, not a mode of it. Keys
+its ending card off `useReplay`'s `settled` rather than `ended`: the frame
+carrying a home run is handed over as the pitch is released, and the swing,
+flight, trot and celebration all happen after it.
 
 The store gains one action for this: `seek(feed)`, which is `reset()` then
 `ingest()`. A seek is a cut, and `ingest`'s first-read branch already jumps to
@@ -330,6 +369,9 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | How a recording is paced | `REPLAY_BEATS` in `lib/replay/timeline.ts` |
 | What the scrub bar can land on | `lib/replay/timeline.ts` |
 | Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
+| Where a clip starts and stops | `lib/replay/clip.ts` |
+| How a clip is paced | `CLIP_BEATS` in `lib/replay/timeline.ts` |
+| What a share card says | `lib/share/atbat.ts`, `lib/brand/playcard.tsx` |
 
 ## Notes
 

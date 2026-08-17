@@ -318,6 +318,19 @@ export interface MlbLiveFeed {
   liveData?: MlbLiveData;
 }
 
+/**
+ * The play-by-play endpoint: `liveData.plays` on its own.
+ *
+ * The same plays the live feed carries, without the boxscore, the player
+ * dictionary or the linescore - a fraction of the bytes, which is what a share
+ * card wants when a scraper is waiting on it.
+ */
+export interface MlbPlayByPlay {
+  allPlays?: MlbPlay[];
+  currentPlay?: MlbPlay;
+  scoringPlays?: number[];
+}
+
 export interface MlbScheduleGame {
   gamePk: number;
   gameDate?: string;

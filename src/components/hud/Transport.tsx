@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReplayControls } from "@/hooks/useReplay";
 import { halfLabel } from "@/lib/replay/timeline";
+import { ShareButton } from "@/components/ShareButton";
 
 /**
  * Transport for a recorded game.
@@ -12,7 +13,14 @@ import { halfLabel } from "@/lib/replay/timeline";
  * finished animating, so "faster" would only mean cutting plays short, which is
  * the thing this replaced.
  */
-export function Transport({ replay }: { replay: ReplayControls }) {
+export function Transport({
+  replay,
+  gamePk,
+}: {
+  replay: ReplayControls;
+  /** Which game is on the tape, so the share link can name it. */
+  gamePk: string;
+}) {
   const { status, error, playing, atBats, markers, atBat, frameCount, frame, ended } = replay;
   // Folded away, the bar is a chip that says where the game is. The park is
   // the thing worth looking at, and on a phone this is a third of the screen.
@@ -130,6 +138,19 @@ export function Transport({ replay }: { replay: ReplayControls }) {
         >
           Inning ⏭
         </button>
+
+        {/* Shares where the tape is *now*, keyed by MLB's index for the plate
+            appearance rather than its position in this recording - the link
+            has to mean the same play to whoever opens it. */}
+        {current && (
+          <ShareButton
+            path={`/watch/${gamePk}/at/${current.atBatIndex}`}
+            title="Pocket Ballpark"
+            text={`${halfLabel(current)} — watch this at-bat`}
+            label="↗ Share"
+            className="rounded-full border-2 border-grass/40 bg-card/95 px-2.5 py-1.5 text-xs font-bold text-grass-deep transition-colors hover:bg-grass hover:text-card"
+          />
+        )}
 
         <div className="ml-auto flex items-center gap-2 text-[11px] font-semibold text-bark-soft">
           <span className="font-display text-sm font-extrabold text-grass-deep">

@@ -28,7 +28,13 @@ import type { ManifestFrame, RecordingManifest } from "./format";
  * (`compileResult` keeps 2.4s, or 4.2s on a home run), which is why the beat
  * after one is shorter than the beat after a pitch rather than longer.
  */
-export const REPLAY_BEATS = {
+export interface Beats {
+  pitch: number;
+  play: number;
+  between: number;
+}
+
+export const REPLAY_BEATS: Beats = {
   /**
    * Between pitches of the same plate appearance, and before the first one.
    *
@@ -42,7 +48,22 @@ export const REPLAY_BEATS = {
   play: 3000,
   /** Across the half-inning break, so the intermission card can be read. */
   between: 5000,
-} as const;
+};
+
+/**
+ * How a single play is paced when it is the whole thing being watched.
+ *
+ * A clip opens on the set frame and someone has followed a link to get there,
+ * so the five seconds a game leaves between pitches is dead air rather than
+ * atmosphere - they came for the swing. Tightened rather than removed: the gap
+ * is what makes a plate appearance read as pitches instead of a stutter, and
+ * the animations still finish in their own time either way.
+ */
+export const CLIP_BEATS: Beats = {
+  pitch: 2200,
+  play: 1200,
+  between: 0,
+};
 
 /**
  * The rest owed after the frame currently on screen.
@@ -51,12 +72,16 @@ export const REPLAY_BEATS = {
  * the whole point of the hold is that the pitch and its outcome animate as one
  * motion. Resting there would pull them apart.
  */
-export function beatAfter(frame: ManifestFrame | undefined, held: boolean): number {
+export function beatAfter(
+  frame: ManifestFrame | undefined,
+  held: boolean,
+  beats: Beats = REPLAY_BEATS,
+): number {
   if (held) return 0;
-  if (!frame) return REPLAY_BEATS.pitch;
-  if (frame.between) return REPLAY_BEATS.between;
-  if (frame.playComplete) return REPLAY_BEATS.play;
-  return REPLAY_BEATS.pitch;
+  if (!frame) return beats.pitch;
+  if (frame.between) return beats.between;
+  if (frame.playComplete) return beats.play;
+  return beats.pitch;
 }
 
 /** One plate appearance, as somewhere you can jump to. */

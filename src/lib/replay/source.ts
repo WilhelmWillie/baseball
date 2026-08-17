@@ -154,6 +154,26 @@ export async function loadRecording(gamePk: number | string): Promise<RecordingP
   return new RecordingPlayer(manifest, lines);
 }
 
+/**
+ * One plate appearance, cut out of a game by `/api/clip`.
+ *
+ * The route hands back the ordinary recording format, so a clip is a
+ * `RecordingPlayer` like any other and everything downstream - the frame pump,
+ * seeking, the store - treats it as a very short recording. Unlike a recording
+ * it comes from an API route rather than `BASE`, because it is cut on demand
+ * from the live feed rather than published ahead of time.
+ */
+export async function loadClip(
+  gamePk: number | string,
+  atBatIndex: number,
+): Promise<RecordingPlayer> {
+  const res = await fetch(`/api/clip/${gamePk}/${atBatIndex}`, { cache: "force-cache" });
+  if (res.status === 404) throw new Error("That play isn't available to watch");
+  if (!res.ok) throw new Error(`Clip responded ${res.status}`);
+  const bundle = (await res.json()) as { manifest: RecordingManifest; lines: FrameLine[] };
+  return new RecordingPlayer(bundle.manifest, bundle.lines);
+}
+
 /** The recorded-games index, for the home page. Absent is not an error. */
 export async function loadRecordingIndex(): Promise<RecordingIndexEntry[]> {
   const res = await fetch(`${BASE}/v${FRAME_FORMAT_VERSION}/${INDEX_FILE}`, {

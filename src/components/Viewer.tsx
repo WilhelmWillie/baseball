@@ -60,18 +60,21 @@ export function Viewer({
   gamePk,
   mode = "live",
   startAtBat = 0,
+  startAtBatIndex,
 }: {
   gamePk: string;
   mode?: ViewerMode;
-  /** Open a recording on this plate appearance. */
+  /** Open a recording on this plate appearance, by position in the game. */
   startAtBat?: number;
+  /** Open a recording on this plate appearance, by MLB's index for it. */
+  startAtBatIndex?: number;
 }) {
   const isReplay = mode === "replay";
 
   // Both drivers are always called - a hook cannot be conditional - and the one
   // that is not in charge sits inert.
   useLiveFeed(gamePk, !isReplay);
-  const replay = useReplay(gamePk, isReplay, startAtBat);
+  const replay = useReplay(gamePk, isReplay, { startAtBat, startAtBatIndex });
 
   const snapshot = useGameStore((s) => s.snapshot);
   const history = useGameStore((s) => s.history);
@@ -153,7 +156,9 @@ export function Viewer({
           ) : (
             <>
               <Scorebug snapshot={snapshot} mode={scoreMode} onMode={chooseScoreMode} />
-              {scoreMode === "full" && <History history={history} snapshot={snapshot} />}
+              {scoreMode === "full" && (
+                <History history={history} snapshot={snapshot} gamePk={gamePk} />
+              )}
             </>
           )
         ) : (
@@ -244,7 +249,7 @@ export function Viewer({
       {isReplay ? (
         <div className="absolute inset-x-2 bottom-16 z-20 flex flex-col items-center gap-2 sm:inset-x-0 sm:bottom-4">
           <Callout inline />
-          <Transport replay={replay} />
+          <Transport replay={replay} gamePk={gamePk} />
         </div>
       ) : (
         <Callout />

@@ -1,4 +1,4 @@
-import type { MlbLiveFeed, MlbSchedule, MlbScheduleGame } from "./types";
+import type { MlbLiveFeed, MlbPlayByPlay, MlbSchedule, MlbScheduleGame } from "./types";
 
 const BASE = "https://statsapi.mlb.com/api";
 
@@ -73,6 +73,22 @@ export async function fetchScheduleGame(gamePk: number): Promise<MlbScheduleGame
 
 export async function fetchLiveFeed(gamePk: number): Promise<MlbLiveFeed> {
   return getJson<MlbLiveFeed>(`${BASE}/v1.1/game/${gamePk}/feed/live`, 0);
+}
+
+/**
+ * Just the plays, for share cards.
+ *
+ * A share card needs one plate appearance - who batted, what happened, what the
+ * score was - and nothing else. The live feed carries the boxscore and the
+ * player dictionary along with it and runs to several megabytes; this endpoint
+ * is under a tenth of that. The difference is felt by a scraper waiting on the
+ * image, so anything rendering a card reads this rather than the whole feed.
+ *
+ * A completed plate appearance never changes again short of a replay review,
+ * which is why this can be cached where `fetchLiveFeed` cannot.
+ */
+export async function fetchPlayByPlay(gamePk: number): Promise<MlbPlayByPlay> {
+  return getJson<MlbPlayByPlay>(`${BASE}/v1/game/${gamePk}/playByPlay`, 60);
 }
 
 export function isLiveStatus(game: MlbScheduleGame): boolean {

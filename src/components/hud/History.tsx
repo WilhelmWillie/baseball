@@ -10,9 +10,12 @@ import type { GameSnapshot, HistoryEntry } from "@/lib/game/types";
 export function History({
   history,
   snapshot,
+  gamePk,
 }: {
   history: HistoryEntry[];
   snapshot: GameSnapshot;
+  /** Which game these plays belong to, so a row can link to its clip. */
+  gamePk: string;
 }) {
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -83,18 +86,32 @@ export function History({
               {group.entries.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`border-b border-bark/8 px-3.5 py-2 text-[11px] leading-snug ${
+                  className={`flex items-start gap-2 border-b border-bark/8 px-3.5 py-2 text-[11px] leading-snug ${
                     entry.isScoring ? "bg-grass-mist/60 text-bark" : "text-bark-soft"
                   }`}
                 >
-                  <span
-                    className={`mr-1.5 text-[10px] font-bold ${
-                      entry.isScoring ? "text-grass" : "text-bark-soft/70"
-                    }`}
-                  >
-                    {entry.event}
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`mr-1.5 text-[10px] font-bold ${
+                        entry.isScoring ? "text-grass" : "text-bark-soft/70"
+                      }`}
+                    >
+                      {entry.event}
+                    </span>
+                    {entry.description}
                   </span>
-                  {entry.description}
+                  {/* A plain anchor rather than `next/link`: this opens a new
+                      tab, and prefetching a clip would reconstruct the game
+                      server-side for every play the log happens to show. */}
+                  <a
+                    href={`/clip/${gamePk}/${entry.id}`}
+                    target="_blank"
+                    rel="noopener"
+                    title="Watch just this play"
+                    className="mt-px shrink-0 rounded-full border border-grass/40 px-2 py-0.5 text-[10px] font-bold text-grass-deep transition-colors hover:bg-grass hover:text-card"
+                  >
+                    Clip
+                  </a>
                 </div>
               ))}
             </div>

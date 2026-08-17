@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGameStore } from "@/store/gameStore";
 import type { RecordingManifest } from "@/lib/replay/format";
-import { loadRecording, type RecordingPlayer } from "@/lib/replay/source";
+import { loadClip, loadRecording, type RecordingPlayer } from "@/lib/replay/source";
 import {
   atBatAtFrame,
   beatAfter,
   buildAtBats,
   buildMarkers,
   stepHalfInning as stepHalf,
+  REPLAY_BEATS,
   type AtBat,
+  type Beats,
   type TimelineMarker,
 } from "@/lib/replay/timeline";
 
@@ -45,8 +47,19 @@ export interface ReplayControls {
   markers: TimelineMarker[];
   /** Index into `atBats` of the plate appearance on screen. */
   atBat: number;
-  /** True once the last frame has been played. */
+  /** True once the last frame has been handed to the ballpark. */
   ended: boolean;
+  /**
+   * True once the last frame has been handed over *and the ballpark has
+   * finished playing it*.
+   *
+   * Not the same moment as `ended`, and the gap between them is most of what
+   * anyone came to see: the frame carrying a home run is ingested the instant
+   * the pitch is released, and the swing, the flight, the trot and the
+   * celebration all happen afterwards. Anything that puts something on screen
+   * when a recording finishes wants this one.
+   */
+  settled: boolean;
   play(): void;
   pause(): void;
   toggle(): void;
@@ -58,11 +71,45 @@ export interface ReplayControls {
   stepHalfInning(delta: number): void;
 }
 
+/**
+ * Where the frames come from: a published recording of a whole game, or one
+ * plate appearance cut out of a game's feed on demand.
+ *
+ * The distinction ends at the load. Both arrive as the same format and are
+ * played by the same pump below, which is the point - a clip is a very short
+ * recording, not a second playback path.
+ */
+export type ReplaySource = { kind: "recording" } | { kind: "clip"; atBatIndex: number };
+
+export interface ReplayOptions {
+  /** Open on this plate appearance, by position in the game. */
+  startAtBat?: number;
+  /**
+   * Open on this plate appearance, by MLB's own index for it. Takes precedence
+   * over `startAtBat`, and is what a shared link carries: an ordinal only means
+   * anything against the recording it was counted from, while an `atBatIndex`
+   * is the play itself.
+   */
+  startAtBatIndex?: number;
+  source?: ReplaySource;
+  /** How long to rest between frames. See `REPLAY_BEATS` / `CLIP_BEATS`. */
+  beats?: Beats;
+}
+
 export function useReplay(
   gamePk: string,
   enabled: boolean,
-  startAtBat = 0,
+  options: ReplayOptions = {},
 ): ReplayControls {
+  const {
+    startAtBat = 0,
+    startAtBatIndex,
+    source = { kind: "recording" },
+    beats = REPLAY_BEATS,
+  } = options;
+  const sourceKind = source.kind;
+  const clipAtBat = source.kind === "clip" ? source.atBatIndex : -1;
+
   const ingest = useGameStore((s) => s.ingest);
   const seekStore = useGameStore((s) => s.seek);
   const reset = useGameStore((s) => s.reset);
@@ -72,6 +119,7 @@ export function useReplay(
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(true);
   const [frame, setFrame] = useState(0);
+  const [settled, setSettled] = useState(false);
 
   const manifest = player?.manifest ?? null;
   const atBats = useMemo(() => (manifest ? buildAtBats(manifest) : []), [manifest]);
@@ -89,7 +137,9 @@ export function useReplay(
     if (!enabled) return;
     let cancelled = false;
     reset();
-    loadRecording(gamePk)
+    const loading =
+      sourceKind === "clip" ? loadClip(gamePk, clipAtBat) : loadRecording(gamePk);
+    loading
       .then((loaded) => {
         if (cancelled) return;
         setPlayer(loaded);
@@ -104,7 +154,7 @@ export function useReplay(
     return () => {
       cancelled = true;
     };
-  }, [gamePk, enabled, reset]);
+  }, [gamePk, enabled, reset, sourceKind, clipAtBat]);
 
   /** Put the world at a frame immediately, as a cut. */
   const seekFrame = useCallback(
@@ -113,6 +163,7 @@ export function useReplay(
       const index = Math.max(0, Math.min(target, player.frameCount - 1));
       position.current = index;
       setFrame(index);
+      setSettled(false);
       seekStore(player.feedAt(index));
     },
     [player, seekStore],
@@ -127,13 +178,21 @@ export function useReplay(
     [atBats, seekFrame],
   );
 
-  // Opening position. `?at=` deep-links to a plate appearance.
+  // Opening position. A shared link deep-links to a plate appearance, either by
+  // MLB's index for it or by its position in the game.
   const opened = useRef<RecordingPlayer | null>(null);
   useEffect(() => {
     if (!player || atBats.length === 0 || opened.current === player) return;
     opened.current = player;
-    seekAtBat(startAtBat);
-  }, [player, atBats, startAtBat, seekAtBat]);
+    // An index the recording does not contain is a link to a play this tape
+    // never had; `findIndex` gives -1 and opening at the top beats opening on
+    // nothing.
+    const target =
+      startAtBatIndex == null
+        ? startAtBat
+        : Math.max(0, atBats.findIndex((a) => a.atBatIndex === startAtBatIndex));
+    seekAtBat(target);
+  }, [player, atBats, startAtBat, startAtBatIndex, seekAtBat]);
 
   /**
    * Advance when the ballpark is ready for more, then rest a beat.
@@ -157,9 +216,20 @@ export function useReplay(
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
+      const { director, pending, cursor } = useGameStore.getState();
+
+      // Out of frames. The last one is still being played - a result frame is
+      // handed over when the pitch leaves the hand, and everything worth
+      // watching happens after that - so the loop stays up until the ballpark
+      // goes quiet rather than declaring the recording over on the spot.
+      if (position.current >= player.frameCount - 1) {
+        if (playingRef.current) setPlaying(false);
+        if (director.isIdle() && pending === null) setSettled(true);
+        return;
+      }
+
       if (!playingRef.current) return;
 
-      const { director, pending, cursor } = useGameStore.getState();
       if (!director.isIdle()) {
         idleSince.current = null;
         return;
@@ -170,15 +240,15 @@ export function useReplay(
 
       const now = performance.now();
       if (idleSince.current === null) idleSince.current = now;
-      if (now - idleSince.current < beatAfter(frames[position.current], cursor.hold !== null)) {
+      if (
+        now - idleSince.current <
+        beatAfter(frames[position.current], cursor.hold !== null, beats)
+      ) {
         return;
       }
 
+      // Never runs past the end: the guard at the top of the tick owns that.
       const next = position.current + 1;
-      if (next >= player.frameCount) {
-        setPlaying(false);
-        return;
-      }
       idleSince.current = null;
       position.current = next;
       setFrame(next);
@@ -187,7 +257,7 @@ export function useReplay(
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [enabled, player, ingest]);
+  }, [enabled, player, ingest, beats]);
 
   const atBat = useMemo(() => atBatAtFrame(atBats, frame), [atBats, frame]);
 
@@ -217,6 +287,7 @@ export function useReplay(
     markers,
     atBat,
     ended: frameCount > 0 && frame >= frameCount - 1,
+    settled,
     play: useCallback(() => setPlaying(true), []),
     pause: useCallback(() => setPlaying(false), []),
     toggle: useCallback(() => setPlaying((on) => !on), []),

@@ -1,6 +1,7 @@
 import { applyPatch, type Operation } from "fast-json-patch";
 import type { MlbLiveFeed } from "@/lib/mlb/types";
 import {
+  CLIP_SHAPE_VERSION,
   FRAMES_FILE,
   FRAME_FORMAT_VERSION,
   INDEX_FILE,
@@ -152,6 +153,31 @@ export async function loadRecording(gamePk: number | string): Promise<RecordingP
   if (!manifestRes.ok) throw new Error(`Recording manifest responded ${manifestRes.status}`);
   const manifest = (await manifestRes.json()) as RecordingManifest;
   return new RecordingPlayer(manifest, lines);
+}
+
+/**
+ * One plate appearance, cut out of a game by `/api/clip`.
+ *
+ * The route hands back the ordinary recording format, so a clip is a
+ * `RecordingPlayer` like any other and everything downstream - the frame pump,
+ * seeking, the store - treats it as a very short recording. Unlike a recording
+ * it comes from an API route rather than `BASE`, because it is cut on demand
+ * from the live feed rather than published ahead of time.
+ */
+export async function loadClip(
+  gamePk: number | string,
+  atBatIndex: number,
+): Promise<RecordingPlayer> {
+  // The shape version rides along so that a change to *which* frames a clip
+  // keeps reaches people who already have the old one: finished games are
+  // served `immutable`, and without this the URL would never change.
+  const res = await fetch(`/api/clip/${gamePk}/${atBatIndex}?v=${CLIP_SHAPE_VERSION}`, {
+    cache: "force-cache",
+  });
+  if (res.status === 404) throw new Error("That play isn't available to watch");
+  if (!res.ok) throw new Error(`Clip responded ${res.status}`);
+  const bundle = (await res.json()) as { manifest: RecordingManifest; lines: FrameLine[] };
+  return new RecordingPlayer(bundle.manifest, bundle.lines);
 }
 
 /** The recorded-games index, for the home page. Absent is not an error. */

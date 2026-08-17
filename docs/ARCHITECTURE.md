@@ -304,12 +304,24 @@ from the feed on request. There is no database, no publish step and no link rot.
 **`lib/replay/clip.ts`** — `buildClip(feed, atBatIndex)`. The idea the whole
 feature rests on: `reconstructFrames` works on a *live* feed as well as a final
 one, and each plate appearance falls out of it as a contiguous run of frames
-tagged with its `atBatIndex` — a set frame, one per pitch, then the result. That
-run is the clip. It is trimmed so every frame carries only its own play (a
-ninth-inning clip would otherwise haul ~690 KB of completed plays around) and
-encoded with the ordinary `dedupeFrames`/`encodeFrames` path, so the client
-plays it as a very short recording rather than down a second code path. Returns
-null for a play still in progress: a clip has to know where it ends.
+tagged with its `atBatIndex` — a set frame, one per pitch, then the result.
+
+Two cuts are made to that run. Every frame is trimmed to carry only its own play
+(a ninth-inning clip would otherwise haul ~690 KB of completed plays around).
+And `keepDecisivePitch` throws away the build-up, leaving three frames: the one
+before the last pitch, the one revealing it, and the result — somebody followed
+a link for the swing, not for five takes on the way to it. **Moving the opener
+is what does the skipping**, not the filtering: the store seeds its cursor off
+whatever frame it lands on, so opening one frame short of the last pitch is what
+puts the earlier ones behind the cursor. Drop the middle and keep the original
+set frame and `extractEvents` hands the animator the whole at-bat at once.
+
+Encoded with the ordinary `dedupeFrames`/`encodeFrames` path, so the client
+plays a clip as a very short recording rather than down a second code path.
+Returns null for a play still in progress: a clip has to know where it ends.
+`CLIP_SHAPE_VERSION` in `format.ts` rides in the fetch URL — finished clips are
+served `immutable`, so changing *which* frames a clip keeps needs something in
+the URL to change with it.
 
 **`lib/share/atbat.ts`** — `fetchAtBatCard(gamePk, atBatIndex)`, everything a
 share card or a clip page needs to describe one plate appearance. Reads
@@ -369,7 +381,7 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | How a recording is paced | `REPLAY_BEATS` in `lib/replay/timeline.ts` |
 | What the scrub bar can land on | `lib/replay/timeline.ts` |
 | Replay transport and seeking | `hooks/useReplay.ts`, `components/hud/Transport.tsx` |
-| Where a clip starts and stops | `lib/replay/clip.ts` |
+| Where a clip starts and stops | `keepDecisivePitch` in `lib/replay/clip.ts` |
 | How a clip is paced | `CLIP_BEATS` in `lib/replay/timeline.ts` |
 | What a share card says | `lib/share/atbat.ts`, `lib/brand/playcard.tsx` |
 

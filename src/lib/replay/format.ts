@@ -15,6 +15,22 @@ import type { MlbLiveFeed } from "@/lib/mlb/types";
  */
 export const FRAME_FORMAT_VERSION = 1;
 
+/**
+ * What a clip *contains*, as a number a cache can see.
+ *
+ * Distinct from `FRAME_FORMAT_VERSION`, which is how frames are written; this
+ * is which frames get in. A finished game's clips are served `immutable`, so
+ * without something in the URL to tell two vintages apart, a browser that
+ * already fetched one would keep it forever. Bump whenever the answer to "which
+ * frames does a clip keep" changes.
+ *
+ * Lives here rather than in `clip.ts` so the client can read it without pulling
+ * the reconstructor - `clip.ts` is server-side and heavy.
+ *
+ * 2: opens on the decisive pitch rather than the whole plate appearance.
+ */
+export const CLIP_SHAPE_VERSION = 2;
+
 /** One RFC-6902 operation. Only the subset the recorder emits. */
 export interface PatchOp {
   op: "add" | "remove" | "replace";

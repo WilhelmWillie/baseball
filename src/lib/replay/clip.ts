@@ -23,6 +23,7 @@ export interface ClipBundle {
   lines: FrameLine[];
 }
 
+
 /**
  * Cut every play but this one out of a frame's feed.
  *
@@ -62,6 +63,45 @@ function trimToPlay(frame: RecordedFrame, atBatIndex: number): RecordedFrame {
   return { ...frame, feed: trimmed };
 }
 
+/** How much of its play a frame has revealed. */
+function revealedEvents(frame: RecordedFrame): number {
+  const plays = frame.feed.liveData?.plays?.allPlays ?? [];
+  return plays[plays.length - 1]?.playEvents?.length ?? 0;
+}
+
+/**
+ * Cut the at-bat down to the pitch that decided it.
+ *
+ * A clip is something somebody followed a link to watch, and the swing is what
+ * they came for. Sitting them through five lead-up pitches to get there is the
+ * surest way to lose them, so the clip opens on the delivery immediately before
+ * the result.
+ *
+ * Three frames survive: the one just before the last pitch, the one that
+ * reveals it, and the result. **Moving the opener is the load-bearing part** -
+ * this is not a filter. The store seeds its cursor off whatever frame it lands
+ * on, reading `playEvents.length - 1` (`seedCursor`), and `extractEvents` then
+ * skips everything at or below that index. Opening on the frame before the last
+ * pitch is therefore what makes the skipped pitches *skipped*: keep the
+ * original set frame and drop the middle instead, and the cursor still starts at
+ * -1, so the next frame hands the animator every pitch of the at-bat at once.
+ *
+ * Two things fall out of it for free. The opener carries
+ * `countFrom(playEvents[0..p-1])`, so the scorebug opens on 2-2 rather than 0-0
+ * and the clip reads as a real moment. And the decisive-pitch frame still leaves
+ * the play incomplete, so `deciderIndex` holds it and the result releases it -
+ * pitch and outcome animate as one motion, exactly as before.
+ */
+function keepDecisivePitch(frames: RecordedFrame[], play: MlbPlay): RecordedFrame[] {
+  const events = play.playEvents ?? [];
+  let last = -1;
+  for (let i = 0; i < events.length; i++) if (events[i].isPitch) last = i;
+  // A play with no pitch in it at all - a runner picked off between hitters,
+  // say - has no build-up to skip.
+  if (last <= 0) return frames;
+  return frames.filter((frame) => revealedEvents(frame) >= last);
+}
+
 /**
  * Build a clip of one plate appearance, or nothing if it cannot be cut.
  *
@@ -77,9 +117,10 @@ export function buildClip(feed: MlbLiveFeed, atBatIndex: number): ClipBundle | n
 
   // Between-innings frames belong to no plate appearance; they carry the
   // atBatIndex of the play that closed the half, which is not this one's.
-  const frames = reconstructFrames(feed)
+  const all = reconstructFrames(feed)
     .filter((frame) => frame.meta.atBatIndex === atBatIndex && !frame.meta.between)
     .map((frame) => trimToPlay(frame, atBatIndex));
+  const frames = keepDecisivePitch(all, play);
   if (frames.length === 0) return null;
 
   const kept = dedupeFrames(frames);

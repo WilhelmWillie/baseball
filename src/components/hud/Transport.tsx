@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReplayControls } from "@/hooks/useReplay";
 import { halfLabel } from "@/lib/replay/timeline";
-import { ShareButton } from "@/components/ShareButton";
+import { ShareMenu } from "@/components/ShareMenu";
 
 /**
  * Transport for a recorded game.
@@ -143,11 +143,12 @@ export function Transport({
             appearance rather than its position in this recording - the link
             has to mean the same play to whoever opens it. */}
         {current && (
-          <ShareButton
+          <ShareMenu
             path={`/watch/${gamePk}/at/${current.atBatIndex}`}
-            title="Pocket Ballpark"
-            text={`${halfLabel(current)} — watch this at-bat`}
             label="↗ Share"
+            // The transport hugs the bottom edge on every screen size, so this
+            // one always opens upward rather than following the controls.
+            placement="up"
             className="rounded-full border-2 border-grass/40 bg-card/95 px-2.5 py-1.5 text-xs font-bold text-grass-deep transition-colors hover:bg-grass hover:text-card"
           />
         )}

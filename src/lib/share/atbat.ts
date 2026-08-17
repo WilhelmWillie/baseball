@@ -126,6 +126,10 @@ export const fetchAtBatCard = cache(load);
  *
  * A share card is not worth failing a request over: an OG route that throws
  * hands a scraper an error where a generic ballpark card would have done.
+ *
+ * For *pages* this is the wrong trade - swallowing an upstream hiccup turns a
+ * shared link into a permanent-looking 404. Pages call `fetchAtBatCard` and let
+ * it throw; only the image routes come through here.
  */
 export async function tryAtBatCard(
   gamePk: number,

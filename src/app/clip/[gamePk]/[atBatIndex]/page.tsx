@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ClipViewer } from "@/components/ClipViewer";
-import { hitLine, scoreLine, tryAtBatCard } from "@/lib/share/atbat";
+import { fetchAtBatCard, hitLine, scoreLine, tryAtBatCard } from "@/lib/share/atbat";
 
 /**
  * One play, on its own page.
@@ -50,7 +50,11 @@ export default async function ClipPage({ params }: { params: Params }) {
   const index = parse(atBatIndex);
   if (!Number.isInteger(id) || id <= 0 || index === null) notFound();
 
-  const card = await tryAtBatCard(id, index);
+  // `fetchAtBatCard`, not `tryAtBatCard`: null here means MLB has no such play,
+  // which is a 404. A feed that could not be reached has to throw instead, so
+  // the error page invites a retry - swallowing it would make one slow upstream
+  // call look like a dead link to everyone the clip was sent to.
+  const card = await fetchAtBatCard(id, index);
   // A play still in progress has no end to stop on, so there is no clip of it
   // yet - the same judgement `buildClip` makes when the frames are cut.
   if (!card || !card.isComplete) notFound();

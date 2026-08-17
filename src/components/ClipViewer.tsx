@@ -10,7 +10,7 @@ import { CLIP_BEATS } from "@/lib/replay/timeline";
 import { loadRecordingIndex } from "@/lib/replay/source";
 import { hitLine, type AtBatCard } from "@/lib/share/atbat";
 import { Ball } from "@/components/brand/Ball";
-import { ShareButton } from "@/components/ShareButton";
+import { ShareMenu } from "@/components/ShareMenu";
 import { Callout } from "./hud/Callout";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
@@ -91,7 +91,6 @@ export function ClipViewer({
   }, [gamePk, atBatIndex]);
 
   const statcast = hitLine(card.hit);
-  const shareText = card.description || `${card.batter} — ${card.event}`;
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-grass-mist">
@@ -153,10 +152,10 @@ export function ClipViewer({
           >
             {soundOn ? "🔊" : "🔇"}
           </button>
-          <ShareButton
+          {/* Left to follow the controls: this strip is along the bottom on a
+              phone and up in the top corner from `sm`. */}
+          <ShareMenu
             path={`/clip/${gamePk}/${atBatIndex}`}
-            title="Pocket Ballpark"
-            text={shareText}
             label="↗ Share"
             className="rounded-full px-3 py-2 text-xs font-bold text-bark transition-colors hover:bg-grass-mist hover:text-grass-deep sm:py-1.5"
           />
@@ -200,11 +199,13 @@ export function ClipViewer({
               >
                 ↺ Watch again
               </button>
-              <ShareButton
+              <ShareMenu
                 path={`/clip/${gamePk}/${atBatIndex}`}
-                title="Pocket Ballpark"
-                text={shareText}
                 label="↗ Share this play"
+                // Upward, so it lands on the description rather than on the
+                // "watch the full game" link below - a menu over static text
+                // costs nothing, a menu over a link eats the click that opens it.
+                placement="up"
                 className="rounded-full border-2 border-grass/40 px-4 py-2 text-xs font-bold text-grass-deep transition-colors hover:bg-grass hover:text-card"
               />
             </div>

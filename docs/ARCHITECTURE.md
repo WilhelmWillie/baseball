@@ -171,6 +171,18 @@ out over the whole diamond from behind the plate, `umpire` is first-person, and
 and how far its gaze pans after a ball hit away from it. Also the localStorage
 helpers that remember the choice.
 
+**`lib/anim/gait.ts`** — locomotion. Three gaits (sprint, run, walk), each
+described as the joint angles a stride passes through, and the stride length
+that falls out of those angles. `gaitFor(speed)` picks a gait from how fast the
+figure is actually travelling — in *body-scale* mph, since a figure drawn at
+2.35× life size covers that much more ground per stride — and returns the
+playback rate and cadence to run it at. Cadence is always `speed / stride`,
+which is what keeps a planted foot planted; the rate is that expressed against
+the speed the clip was authored for. `legAt()` is the cycle itself, with a
+linear stance sweep so the ground and the foot move at the same speed, and
+`pace()` is the accelerate-cruise-decelerate profile a runner covers a base
+path on. `Player.tsx` builds the limb angles from the same table.
+
 **`lib/anim/pitches.ts`** — per-pitch-type `drop` and `run`, in g, applied as
 accelerations so the shape develops over the flight the way a real pitch does.
 

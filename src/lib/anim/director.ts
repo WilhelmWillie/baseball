@@ -17,6 +17,7 @@ import {
   type PositionKey,
 } from "@/lib/field/geometry";
 import type { SoundName } from "@/lib/audio/sfx";
+import { gaitFor, pace, type Gait } from "./gait";
 import { seatCamera, type CameraView, type Shot } from "./views";
 import { Fx } from "./particles";
 import { pitchArc } from "./pitches";
@@ -40,19 +41,83 @@ import type {
 export type Pose =
   | "idle"
   | "ready"
+  /**
+   * The three gaits, fastest first. Which one an actor is in is not a choice
+   * anything makes directly - it falls out of how fast the ground is going by,
+   * see `./gait` - and neither is how fast the clip plays.
+   */
+  | "sprint"
   | "run"
+  | "walk"
   | "windup"
   | "throw"
   | "swing"
   | "catch"
-  | "walk"
+  /** Fists up, settling into a clap for the dugout. */
   | "celebrate"
+  /** The running man. */
+  | "dance"
+  /** Making it rain. */
+  | "rain"
+  /** The inflatable tube man outside a car dealership. */
+  | "wacky"
   | "dejected"
+  /** Both hands thrown up - what was that - and dropped again. */
+  | "frustrated"
+  /** Hand over the eyes, head down into it. */
+  | "facepalm"
+  /** Straight down onto the knees. Reserved for balls that landed in seats. */
+  | "collapse"
   /** Hands on hips, head down - a pitcher who has just given one up. */
   | "annoyed"
   /** Laid out full stretch at a ball going past. */
   | "dive"
   | "crouch";
+
+/**
+ * The reactions, and how a player picks one.
+ *
+ * Nine fielders and a dugout all playing the same fist pump every time a ball
+ * falls in reads as one animation rather than as ten people, so each of these
+ * is a bag to draw from. The draw is deterministic on the player and the play,
+ * which matters more than it sounds: a replay scrubbed backwards and forwards
+ * has to land on the same celebration each time, and `Math.random` would have
+ * the same man doing the running man on one pass and shrugging on the next.
+ *
+ * The showy ones are held back for plays that earned them. A running man after
+ * a routine single, every single time, is worse than no variation at all.
+ */
+const CELEBRATIONS: Pose[] = ["celebrate", "dance", "rain", "wacky"];
+const BIG_CELEBRATIONS: Pose[] = ["dance", "rain", "wacky", "celebrate", "celebrate"];
+const DEJECTIONS: Pose[] = ["dejected", "frustrated", "facepalm"];
+/** What a pitcher does about a hit. Home runs get their own, below. */
+const SULKS: Pose[] = ["annoyed", "frustrated", "facepalm", "annoyed"];
+
+/**
+ * Draw one, on a hash of who is doing it and what they are doing it about.
+ * Multiplying by a large odd constant and taking the high bits is the usual
+ * cheap way to stop consecutive ids picking consecutive entries.
+ */
+function pickPose(from: Pose[], playerId: number, salt: number): Pose {
+  const mixed = Math.imul(playerId ^ Math.imul(salt + 1, 0x9e3779b1), 0x85ebca6b);
+  return from[((mixed >>> 17) % from.length + from.length) % from.length];
+}
+
+/** Poses that are a *reaction* - worth holding on to for a few seconds. */
+const REACTIONS = new Set<Pose>([
+  "celebrate",
+  "dance",
+  "rain",
+  "wacky",
+  "dejected",
+  "frustrated",
+  "facepalm",
+  "collapse",
+  "annoyed",
+]);
+
+/** Poses that are a movement, and are over the moment the movement is. */
+const MOVEMENTS = new Set<Pose>(["sprint", "run", "walk", "throw", "swing", "dive"]);
 
 export interface Actor {
   key: string;
@@ -251,6 +316,13 @@ const SWING_LEAD = 0.27;
 /** A walk is not a race. */
 const WALK_PER_BASE = 4.2;
 
+/**
+ * Where an actor was before this frame moved it, so `stride` can measure how
+ * far it went. Reused rather than allocated: this is read once per moving
+ * figure per frame.
+ */
+const STEP_FROM = new Vector3();
+
 function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
 }
@@ -418,8 +490,14 @@ interface RunnerTrack {
   end: number;
   isOut: boolean;
   scored: boolean;
-  /** Awarded the base rather than running for it. */
-  walking: boolean;
+  /**
+   * The fastest gait this trip is allowed. A base that was awarded is walked
+   * however briskly the animation carries the man down the line, and a home run
+   * is trotted - neither is a decision the speed alone can be trusted with.
+   */
+  gait: Gait;
+  /** What they do about it once they get there. */
+  reaction: Pose | null;
 }
 
 /**
@@ -939,18 +1017,11 @@ export class Director {
     for (const actor of this.actors.values()) {
       if (!actor.visible) continue;
       actor.position.lerp(actor.home, k);
-      if (
-        actor.pose === "run" ||
-        actor.pose === "walk" ||
-        actor.pose === "throw" ||
-        actor.pose === "swing" ||
-        actor.pose === "dive" ||
-        actor.pose === "annoyed" ||
-        actor.pose === "celebrate"
-      ) {
+      if (REACTIONS.has(actor.pose) || MOVEMENTS.has(actor.pose)) {
         actor.poseT += dt;
-        // A reaction is worth holding; a movement is not.
-        const hold = actor.pose === "annoyed" || actor.pose === "celebrate" ? 3.2 : 0.6;
+        // A reaction is worth holding; a movement is not. A man on his knees
+        // takes the longest of all to get back up.
+        const hold = actor.pose === "collapse" ? 4.6 : REACTIONS.has(actor.pose) ? 3.2 : 0.6;
         if (actor.poseT > hold) {
           actor.pose =
             actor.positionKey === "catcher"
@@ -1055,6 +1126,29 @@ export class Director {
 
   private setCallout(text: string, tone: CallOut["tone"], detail?: string) {
     this.callout = { text, tone, detail, at: Date.now() };
+  }
+
+  /**
+   * Walk, run or sprint an actor, from how fast it is actually travelling.
+   *
+   * Everything that moves a figure across the grass goes through here, and the
+   * reason is that none of them agree on how. A runner is on a paced curve down
+   * the line, an outfielder is being eased toward a landing spot, a shortstop
+   * is closing on a ball that is still rolling - three different curves with
+   * three different speed profiles, and the old code answered all of them with
+   * the same fixed cadence. Measuring the speed off the position the caller
+   * just wrote means this does not have to know which curve it was, or care
+   * when one of them changes.
+   *
+   * `cap` is the fastest gait the moment allows. A batter who was awarded first
+   * base crosses the line at a fair clip, and without a cap the speed alone
+   * would break him into a run for it, which is the one thing a walk is not.
+   */
+  private stride(actor: Actor, from: Vector3, dt: number, cap: Gait = "sprint") {
+    if (dt <= 0) return;
+    const step = gaitFor(from.distanceTo(actor.position) / dt, cap, actor.pose);
+    actor.pose = step.gait;
+    actor.poseT = (actor.poseT + dt * step.cadence) % 1;
   }
 
   private pitcher(): Actor | undefined {
@@ -1562,14 +1656,14 @@ export class Director {
             const u = clamp01(t / Math.max(0.35, gatherAt));
             // A ball at the wall would otherwise walk the fielder through it.
             const target = playableSpot((restPoint ?? landing).clone().setY(0));
+            STEP_FROM.copy(fielder.position);
             fielder.position.copy(chaseFrom).lerp(target, easeOut(u));
             fielder.facing = yawToward(
               fielder.position,
               target.distanceTo(fielder.position) > 1 ? target : fp(0, 0),
             );
             if (t < gatherAt) {
-              fielder.pose = "run";
-              fielder.poseT = (fielder.poseT + dt * 1.6) % 1;
+              this.stride(fielder, STEP_FROM, dt);
             } else if (t < throwStart) {
               cue.at("field", t, gatherAt, () =>
                 this.fx.puff(fielder.position.clone(), 7, { spread: 3.2, lift: 2, size: 0.8 }),
@@ -1598,11 +1692,11 @@ export class Director {
             const lunge = Math.max(0.12, plan.beaten.at - 0.16);
             diveFrom ??= diver.position.clone();
             const u = clamp01(t / lunge);
+            STEP_FROM.copy(diver.position);
             diver.position.copy(diveFrom).lerp(plan.beaten.spot, easeOut(u));
             diver.facing = yawToward(diveFrom, plan.beaten.spot);
             if (t < lunge) {
-              diver.pose = "run";
-              diver.poseT = (diver.poseT + dt * 2.1) % 1;
+              this.stride(diver, STEP_FROM, dt);
             } else if (t < lunge + 1.5) {
               cue.at("dive", t, lunge, () =>
                 this.fx.puff(diver.position.clone(), 16, { spread: 6, lift: 2.4, size: 1 }),
@@ -1622,16 +1716,16 @@ export class Director {
           if (!actor) continue;
           if (t < track.start) continue;
           const u = clamp01((t - track.start) / Math.max(0.001, track.end - track.start));
-          const progress = track.from + (track.to - track.from) * easeInOut(u);
+          const progress = track.from + (track.to - track.from) * pace(u);
           const bow = track.to - track.from > 1 ? 1 : 0;
           const point = basePathPoint(progress, bow);
           const ahead = basePathPoint(Math.min(4, progress + 0.08), bow);
+          STEP_FROM.copy(actor.position);
           actor.position.set(point.x, 0, point.z);
           actor.facing = yawToward(actor.position, ahead);
           actor.visible = true;
           if (u < 1) {
-            actor.pose = track.walking ? "walk" : "run";
-            actor.poseT = (actor.poseT + dt * (track.walking ? 0.75 : 1.9)) % 1;
+            this.stride(actor, STEP_FROM, dt, track.gait);
           } else {
             // Spikes into the bag. A runner who was thrown out slid hardest.
             cue.at(`slide:${track.actorKey}`, t, track.end, () =>
@@ -1642,16 +1736,21 @@ export class Director {
               }),
             );
             // A hitter who just pulled up safe at a bag has a word for the
-            // dugout about it.
-            const safeAtBase = !track.isOut && !track.scored && HIT_KINDS.has(result.kind);
-            actor.pose = track.isOut
-              ? "dejected"
-              : track.scored
-                ? "celebrate"
-                : safeAtBase
-                  ? "celebrate"
-                  : "ready";
-            if (safeAtBase) actor.poseT = clamp01((t - track.end) / 1.4);
+            // dugout about it. Which word is drawn per player and per at-bat -
+            // see `pickPose` - so a dugout full of men who all just scored is
+            // not a dugout full of one man.
+            actor.pose = track.reaction ?? "ready";
+            // Reactions are timed in *seconds* from the moment the man got
+            // there, not as a 0..1 ramp. Several of them - the hands going up
+            // and coming back down, a man folding onto his knees - have beats
+            // past the first second, and a normalised poseT capped at 1 would
+            // hold them at their opening frame forever.
+            if (track.reaction) actor.poseT = Math.max(0, t - track.end);
+            if (track.reaction === "rain") {
+              cue.at(`cash:${track.actorKey}`, t, track.end + 0.35, () =>
+                this.fx.cash(actor.position.clone()),
+              );
+            }
             if (track.isOut) {
               // Beamed off the field rather than simply switched off.
               cue.at(`beam:${track.actorKey}`, t, track.end + 0.3, () => this.beamOut(actor));
@@ -1665,12 +1764,22 @@ export class Director {
         // --- Reactions ---
         // The pitcher wears a hit, and the hitter enjoys one.
         if (HIT_KINDS.has(result.kind)) {
+          // The pitcher's reaction runs on its own clock while the rest of the
+          // play is still going on. `restIdle` advances reaction poses, but it
+          // only runs between plays, and a man who has just given up a home run
+          // has a whole trot around the bases to get through first.
+          const sulking = this.pitcher();
+          if (sulking && REACTIONS.has(sulking.pose)) sulking.poseT += dt;
           cue.at("sulk", t, revealAt, () => {
             const pitcher = this.pitcher();
-            if (pitcher) {
-              pitcher.pose = "annoyed";
-              pitcher.poseT = 0;
-            }
+            if (!pitcher) return;
+            // A ball that landed in the seats is the one that puts a man on
+            // his knees. Everything else he stands there and wears.
+            pitcher.pose =
+              result.kind === "home_run"
+                ? "collapse"
+                : pickPose(SULKS, pitcher.playerId, result.atBatIndex);
+            pitcher.poseT = 0;
           });
         }
 
@@ -1778,15 +1887,24 @@ export class Director {
           ? TROT_PER_BASE
           : RUN_PER_BASE;
       const start = from === 0 ? 0.12 : 0.02;
+      const isOut = move.to === "out";
+      // A run that scores and a ball that left the park are worth the showy
+      // celebrations; beating a throw to first is worth a fist.
+      const big = move.isScoring || result.kind === "home_run";
       tracks.push({
         actorKey,
         from,
         to,
         start,
         end: start + bases * perBase,
-        isOut: move.to === "out",
+        isOut,
         scored: move.isScoring,
-        walking: walked,
+        gait: walked ? "walk" : result.kind === "home_run" ? "run" : "sprint",
+        reaction: isOut
+          ? pickPose(DEJECTIONS, move.playerId, result.atBatIndex)
+          : move.isScoring || HIT_KINDS.has(result.kind)
+            ? pickPose(big ? BIG_CELEBRATIONS : CELEBRATIONS, move.playerId, result.atBatIndex)
+            : null,
       });
     }
     return tracks;
@@ -1870,7 +1988,10 @@ export class Director {
           end: 2.1,
           isOut: false,
           scored: false,
-          walking: false,
+          // A man stealing a base is doing the one thing on a diamond that is
+          // unambiguously a sprint.
+          gait: "sprint",
+          reaction: null,
         };
       }
     }
@@ -1889,10 +2010,11 @@ export class Director {
         const actor = this.actors.get(track.actorKey);
         if (!actor) return;
         const u = clamp01(t / (track.end - track.start));
-        const point = basePathPoint(track.from + (track.to - track.from) * easeInOut(u));
+        const point = basePathPoint(track.from + (track.to - track.from) * pace(u));
+        STEP_FROM.copy(actor.position);
         actor.position.set(point.x, 0, point.z);
-        actor.pose = u < 1 ? "run" : "ready";
-        actor.poseT = (actor.poseT + dt * 1.9) % 1;
+        if (u < 1) this.stride(actor, STEP_FROM, dt);
+        else actor.pose = "ready";
       },
     };
   }

@@ -8,9 +8,11 @@ import {
   RUBBER_DEPTH,
   batterOffset,
   batterSpot,
+  fieldRadius,
   fp,
   onDeckSpot,
   playableSpot,
+  sprayAngle,
   standingSpot,
   wallDistance,
   type BaseId,
@@ -123,8 +125,20 @@ export type CameraMode =
   | "line"
   /** High in the third-base stands, across the diamond. */
   | "bowl"
-  /** Travels with whichever actor `cameraFollowKey` names. */
-  | "follow";
+  /**
+   * Off the bat on a home run: high in the corner of the stands on the side
+   * the ball is headed, hitter in the near frame, the ball climbing away over
+   * the park. See `cameraAnchor` for what "the side the ball is headed" means.
+   */
+  | "launch"
+  /**
+   * The whole park, from high outside the bowl and across the ball's line, so
+   * a home run travels the width of the frame and lands in the seats with the
+   * entire stadium around it.
+   */
+  | "park"
+  /** Travels with whichever actor `cameraFollowKey` names - the home-run trot. */
+  | "trot";
 
 /** How long a shot holds before anything less urgent may replace it. */
 const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
@@ -134,7 +148,9 @@ const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
   wide: 1.2,
   line: 0.9,
   bowl: 0.9,
-  follow: 1,
+  launch: 1.2,
+  park: 1.5,
+  trot: 1,
 };
 
 /**
@@ -144,6 +160,30 @@ const SHOT_HOLD: Partial<Record<CameraMode, number>> = {
  * so often that you lose track of where the game is.
  */
 const IDLE_SHOTS: CameraMode[] = ["mound", "line", "base", "bowl", "slot", "wide"];
+
+/** Middle of the diamond: the pivot the trot shot swings around. */
+const DIAMOND_CENTER = BASE_POSITIONS.home.clone().lerp(BASE_POSITIONS.second, 0.5);
+
+/**
+ * Where the park shot stands, relative to the ball it is watching: a hundred
+ * degrees round from the ball's own line, and high.
+ *
+ * Square across the flight is the whole trick. From behind the plate - where
+ * every other wide angle in this park stands - a home run recedes rather than
+ * travels, and three hundred feet of carry swings it perhaps two degrees
+ * across the frame: it only gets smaller. From the side it crosses two thirds
+ * of the frame, and the distance becomes something you can see rather than
+ * something the caption tells you afterwards.
+ *
+ * The stand-off is measured out from the playing surface rather than from the
+ * plate, because the surface is nothing like round: it reaches four hundred
+ * feet to centre and under seventy behind the plate, and one fixed radius that
+ * clears the bowl out by the poles puts the camera down among the seats
+ * everywhere else.
+ */
+const PARK_SWING = (100 * Math.PI) / 180;
+const PARK_STANDOFF = 200;
+const PARK_HEIGHT = 190;
 
 /** How long after a play ends before the camera settles back on the pitch. */
 const IDLE_SETTLE = 0.9;
@@ -466,8 +506,18 @@ export class Director {
    * and a security camera.
    */
   cameraCut = 0;
-  /** Actor the `follow` shot travels with. */
+  /** Actor the `trot` shot travels with. */
   cameraFollowKey: string | null = null;
+  /**
+   * Where a ball in the air is going, fixed at contact.
+   *
+   * The home-run shots are composed around this rather than around wherever
+   * the ball is this frame. A camera *placed* off a moving ball slides across
+   * the park for the whole flight, and the one thing these angles have to do
+   * is hold still while the ball travels - the travel is the shot. They still
+   * aim at the live ball; it is only the placement that is pinned here.
+   */
+  cameraAnchor: Vector3 | null = null;
   /** Decaying knock on the lens after a hard-hit ball. */
   cameraShake = 0;
   /**
@@ -635,6 +685,19 @@ export class Director {
     this.shotStart = this.now();
     this.cameraFollowKey = opts.follow ?? null;
     if (opts.cut) this.cameraCut += 1;
+  }
+
+  /**
+   * Which half of the park a ball in the air is headed for: +1 toward right
+   * field, -1 toward left. Taken from `cameraAnchor`, so it is settled at
+   * contact and cannot flip mid-flight and swing a shot across the park with
+   * the ball still up. A ball struck dead centre is called to the right, which
+   * is arbitrary but stable - what matters is that it picks a side at all,
+   * because a shot composed square behind the flight has nothing to say about
+   * how far it went.
+   */
+  private anchorSide(): number {
+    return (this.cameraAnchor?.x ?? 0) < 0 ? -1 : 1;
   }
 
   /** A hard-hit ball knocks the lens. `amount` is 0..1. */
@@ -1288,11 +1351,13 @@ export class Director {
           const heat = result.ball ? heatOf(result.ball) : 0;
           const big = result.kind === "home_run" || result.kind === "triple";
           this.knockCamera(big ? 0.85 : result.ball ? 0.2 + heat * 0.55 : 0.2);
-          // A ball scalded on a line deserves the same angle a home run gets:
-          // nothing sells a screamer like a camera at the height it is
-          // travelling at.
+          // A ball scalded on a line deserves an angle at the height it is
+          // travelling at - nothing else sells a screamer. A home run does not
+          // want that angle: from down there it is a speck against bare sky
+          // with nothing to measure it against, so it gets its own opening.
           const screamer = result.ball?.trajectory === "line_drive" && heat > 0.72;
-          if (big || screamer) this.setShot("low", { cut: true, force: true });
+          if (result.kind === "home_run") this.setShot("launch", { cut: true, force: true });
+          else if (big || screamer) this.setShot("low", { cut: true, force: true });
         });
         if (t <= contactAt) {
           flight.update(t);
@@ -1463,6 +1528,8 @@ export class Director {
             result.kind === "home_run" ? 0.6 : plan && plan.apex < 14 ? 0.22 : 0.32;
           this.setShot("ball");
         }
+        // Where this one is headed, for the home-run shots to be built around.
+        this.cameraAnchor = landing ? landing.clone() : null;
       },
       update: (t, dt) => {
         cue.at("reveal", t, revealAt, () => this.announce(result));
@@ -1699,16 +1766,35 @@ export class Director {
         }
 
         // --- Camera ---
-        // A home run is three shots: low off the bat, wide as it leaves, then
-        // back to the plate for the trot. The change of sides owns the camera
-        // once it starts, so the returns-to-the-pitcher below stand down for it.
+        // A home run is three shots, and the middle one is the point of it:
+        // off the bat from the corner of the stands, then out to the whole
+        // park while the ball is still climbing - so the flight is watched
+        // across the width of the stadium and lands in the seats with the
+        // stadium around it - and finally the trot.
+        //
+        // The cut to the park shot goes early on purpose. It used to wait
+        // until the ball was already down, which spent the entire flight - the
+        // only part of a home run that is in doubt - at field level, and then
+        // arrived at the wide angle with nothing left to show from it.
+        //
+        // The change of sides owns the camera once it starts, so the
+        // returns-to-the-pitcher below stand down for it.
         if (result.kind === "home_run") {
-          cue.at("hr:wide", t, ballDuration + 0.85, () =>
-            this.setShot("wide", { cut: true, force: true }),
+          cue.at("hr:park", t, Math.min(1.5, ballDuration * 0.45), () =>
+            this.setShot("park", { cut: true, force: true }),
           );
-          cue.at("hr:trot", t, ballDuration + 3.4, () => {
-            const trot = tracks.find((track) => track.scored);
-            this.setShot("follow", { cut: true, force: true, follow: trot?.actorKey });
+          // The ball keeps carrying into the seats for a beat after it clears
+          // the wall (see the flight above); the trot waits that out, so
+          // nothing cuts away from a ball still in the air.
+          cue.at("hr:trot", t, ballDuration + 2.6, () => {
+            // The hitter, who is the one still running: `tracks` is ordered
+            // lead runner first, so on anything with men on - a grand slam
+            // most of all - the first man to score is someone already home
+            // and about to vanish, and the camera used to spend the whole
+            // trot pointed at where he had been standing.
+            const trot =
+              tracks.find((track) => track.from === 0) ?? tracks.find((track) => track.scored);
+            this.setShot("trot", { cut: true, force: true, follow: trot?.actorKey });
           });
         } else if (endsHalf) {
           // Handled by the change-of-sides cut above.
@@ -2041,13 +2127,69 @@ export class Director {
         // High in the third-base stands, across the diamond and out toward
         // right field, with a few rows of crowd along the near edge of frame.
         return { position: fp(-166, -26, 74), target: fp(-6, 36, 6), lerp: 1.4 };
-      case "follow": {
+      case "launch": {
+        // Off the bat on a home run: up in the corner of the stands beside the
+        // plate, across the ball's line, with the hitter in the near frame and
+        // the whole diamond opening out ahead of him. The low angle down the
+        // line - what a screamer gets - is the wrong one here. A ball forty
+        // feet up and rising reads from down there as a speck against bare
+        // sky, and there is nothing left in frame to measure it against.
+        const ball = this.ball.position;
+        // Aimed well under the ball rather than at it. Tracking it honestly
+        // would tip the lens up into empty sky within a second - climbing is
+        // all a home run does - so the aim only creeps after it, which leaves
+        // the ball riding high in frame with the park still spread beneath.
+        const target = new Vector3(ball.x * 0.45, ball.y * 0.4 + 18, ball.z * 0.45);
+        return {
+          position: fp(-this.anchorSide() * 84, -58, 44),
+          target,
+          lerp: 2.4,
+          // Already pointed at the ball; dragging it back toward the infield
+          // on a phone would aim it at the dirt the hitter is standing on.
+          fixed: true,
+        };
+      }
+      case "park": {
+        // The whole park, and the shot a home run is really for: everything
+        // the ball is leaving behind in one frame - the diamond it was struck
+        // on, the wall it has to clear, the stands it lands in - with the
+        // flight crossing the width of it. See `PARK_SWING` for where it
+        // stands and why that is the only placement that works.
+        const anchor = this.cameraAnchor;
+        const theta = anchor ? sprayAngle(anchor.x, -anchor.z) : 0;
+        const round = theta - this.anchorSide() * PARK_SWING;
+        // Held on the middle of the flight, and only barely drawn after the
+        // ball: it is the ball that should travel across this shot, not the
+        // shot that should chase the ball.
+        const held = anchor
+          ? new Vector3(anchor.x * 0.42, 58, anchor.z * 0.42)
+          : fp(0, 140, 58);
+        const radius = fieldRadius(round) + PARK_STANDOFF;
+        return {
+          position: new Vector3(Math.sin(round) * radius, PARK_HEIGHT, -Math.cos(round) * radius),
+          target: held.lerp(this.ball.position, 0.18),
+          lerp: 1.3,
+          // The composition is the point; pulling the aim back to the infield
+          // on a phone would swing the landing spot straight out of frame.
+          fixed: true,
+        };
+      }
+      case "trot": {
         const actor = this.cameraFollowKey ? this.actors.get(this.cameraFollowKey) : undefined;
         const at = actor ? actor.position : fp(0, 40, 0);
+        // Travelling with the runner, from outside the basepath and well above
+        // it: he keeps his place in frame all the way round while the diamond,
+        // the confetti and the far side of the bowl fill in behind him. The
+        // old framing sat almost at his shoulder, which spent the whole trot
+        // looking at grass.
+        const outward = new Vector3(at.x - DIAMOND_CENTER.x, 0, at.z - DIAMOND_CENTER.z);
+        if (outward.lengthSq() < 1) outward.set(0, 0, 1);
+        outward.normalize();
         return {
-          position: new Vector3(at.x + 40, 30, at.z + 54),
-          target: new Vector3(at.x, 9, at.z),
-          lerp: 3.4,
+          position: new Vector3(at.x + outward.x * 92, 54, at.z + outward.z * 92),
+          target: new Vector3(at.x, 12, at.z),
+          lerp: 2.2,
+          fixed: true,
         };
       }
       case "center":

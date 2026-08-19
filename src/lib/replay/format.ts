@@ -110,6 +110,15 @@ export interface RecordingManifest {
      * "2025 World Series Game 7" is worth more on a card than "2025-11-01".
      */
     label?: string;
+    /**
+     * Why this game is on the shelf, in a sentence or two.
+     *
+     * The shelf is curated - a handful of games picked out of a season of
+     * thousands - and a scoreline does not carry the reason. "Giants 11,
+     * Nationals 10" looks like any other slugfest until you know San Francisco
+     * was down eight runs going into the eighth.
+     */
+    note?: string;
   };
   frameCount: number;
   /** Real elapsed milliseconds from the first frame to the last. */
@@ -125,6 +134,8 @@ export interface RecordingIndexEntry {
   venue: string;
   /** Mirrors `manifest.game.label`, so the index alone can name a recording. */
   label?: string;
+  /** Mirrors `manifest.game.note`, so the shelf can say why without a fetch. */
+  note?: string;
   home: RecordingTeam;
   away: RecordingTeam;
   frameCount: number;

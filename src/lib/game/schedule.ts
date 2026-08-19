@@ -17,6 +17,8 @@ export interface GameSummary {
   outs: number | null;
   /** A finished game we recorded. Watchable however long ago it was played. */
   isReplay?: boolean;
+  /** Why a recording is on the shelf. Only recordings carry one. */
+  note?: string;
 }
 
 type ScheduleTeamEntry = NonNullable<NonNullable<MlbScheduleGame["teams"]>["home"]>;
@@ -65,6 +67,7 @@ export function summarizeRecording(entry: RecordingIndexEntry): GameSummary {
     isTopInning: null,
     outs: null,
     isReplay: true,
+    note: entry.note,
   };
 }
 

@@ -103,7 +103,7 @@ recordings/v1/{gamePk}/frames.ndjson.gz    ~190-215 KB  keyframe + patches
 recordings/v1/index.json                              list of recorded games
 ```
 
-Measured, not estimated: three real games in `public/recordings/` come to 856 KB
+Measured, not estimated: six real games in `public/recordings/` come to 1.5 MB
 together — see [Recorded games](#recorded-games).
 
 ### `frames.ndjson.gz`
@@ -154,7 +154,9 @@ Small, loaded first, drives the timeline and the game list.
   "source": "reconstructed",              // or "timecode"
   "game": { "date": "2025-10-01", "venue": "Dodger Stadium",
             "home": {"id":119,"abbrev":"LAD","score":6},
-            "away": {"id":137,"abbrev":"SF","score":3} },
+            "away": {"id":137,"abbrev":"SF","score":3},
+            "label": "2025 World Series Game 7",   // what to call it
+            "note": "Eleven innings, two comebacks…" },  // why it is on the shelf
   "frameCount": 742,
   "durationMs": 10842000,
   "frames": [ { "i": 1, "t": 21400, "inning": 1, "isTop": true,
@@ -178,6 +180,7 @@ npm run record -- 775302                     # record + validate, write locally
 npm run record -- 775302 --out /tmp/rec      # write somewhere else
 npm run record -- --from feed.json           # re-record from a saved feed
 npm run record -- 813024 --label "2025 World Series Game 7"   # name it
+npm run record -- 823215 --note "Down eight, scored ten late."  # say why it's here
 ```
 
 Output lands in `public/recordings/v1/<gamePk>/` by default, which is where the
@@ -502,11 +505,18 @@ validates.
 
 Committed under `public/recordings/v1/`:
 
+A curated shelf, not a sample: five games from the 2026 season picked for being
+worth watching, plus the World Series game that came before them. Each one
+carries a `note` explaining the pick, which is what the home page card shows.
+
 | gamePk | Game | Why it's here |
 | --- | --- | --- |
-| `813024` | LAD 5 @ TOR 4 | **2025 World Series Game 7**, labelled as such in the manifest. Eleven innings — 620 frames, 99 at-bats, 364 pitches — so it exercises extra innings, which nothing else here does. |
-| `824561` | CIN 9 @ CWS 8 | High-scoring one-run game: 88 at-bats, 343 pitches, 12 pitchers. The busiest substitution path available. |
-| `823215` | WSH 10 @ SF 11 | A slugfest at Oracle Park: 84 at-bats, 344 pitches, 33 markers — the most scoring plays of the three. |
+| `813024` | LAD 5 @ TOR 4 | **2025 World Series Game 7**, labelled as such in the manifest. Eleven innings — 620 frames, 99 at-bats, 364 pitches, 13 pitchers — so it exercises extra innings and the busiest substitution path here. |
+| `824641` | CWS 5 @ CHC 7 | Pete Crow-Armstrong's leadoff-and-walk-off game, into the 10th: 613 frames, 89 at-bats, 359 pitches. A second extra-innings case, and a walk-off that ends the recording mid-inning. |
+| `824102` | HOU 10 @ KC 8 | Yordan Álvarez's two-homer first: a nine-run half-inning, then 13 pitchers across 86 at-bats and 372 pitches. The heaviest single frame of scoring in the set. |
+| `823215` | WSH 10 @ SF 11 | A slugfest at Oracle Park: 84 at-bats, 344 pitches, 33 markers — the most scoring plays of any recording here. |
+| `823943` | LAA 0 @ LAD 1 | A 1–0 duel: 440 frames, 63 at-bats, 19 markers. The sparse end of the range — long stretches with nothing on the bases, and a single scoring play at the very end. |
+| `822899` | HOU 9 @ TEX 0 | A combined no-hitter. 475 frames with one side never reaching base on a hit, which is the emptiest defensive alignment the renderer will ever be handed. |
 
 **Replay:**
 

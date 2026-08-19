@@ -85,11 +85,14 @@ behind the catcher with the pitch arriving at the lens, and **Sky** near enough
 straight down on the park from a few hundred feet up. Your choice is remembered.
 
 **Recorded games** (`/watch/[gamePk]?replay=1`) — real games captured off the
-Stats API and replayed pitch by pitch. Playback has no clock: the next pitch is
-handed over when the ballpark has finished animating the last one, so a home
-run's trot and celebration always play out in full. Step by plate appearance or
-half-inning, or scrub a bar ticked with innings and scoring plays; `?at=<n>`
-opens on the nth at-bat. This is how the animation work is exercised in the
+Stats API and replayed pitch by pitch. The shelf is curated rather than
+exhaustive: a handful of games from the season worth sitting through, each
+carrying a note on its card saying what happened in it — a combined no-hitter, a
+1–0 duel settled by a walk-off, an eight-run comeback. Playback has no clock: the
+next pitch is handed over when the ballpark has finished animating the last one,
+so a home run's trot and celebration always play out in full. Step by plate
+appearance or half-inning, or scrub a bar ticked with innings and scoring plays;
+`?at=<n>` opens on the nth at-bat. This is how the animation work is exercised in the
 off-hours, and how it is verified: a recording is the same GUMBO the live game
 speaks, so it runs the same adapter and animation path. See
 [docs/RECORDING.md](docs/RECORDING.md).

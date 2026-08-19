@@ -43,6 +43,9 @@ const MAX_DUST = 460;
 const DIRT_COLORS = ["#a97c4e", "#96683c", "#bb9068", "#8a6136", "#c2a077"];
 
 const CONFETTI_EXTRA = ["#ffd447", "#ff6b6b", "#4ecdc4", "#f7f7f2", "#b388ff"];
+
+/** Banknotes: a few greens and the odd worn, off-white one. */
+const CASH_COLORS = ["#8fbf7a", "#6fa65c", "#a8cf94", "#d9e3c6", "#5c8f4c"];
 const FIREWORK_BRIGHTS = ["#ffd447", "#ff5f8f", "#5ce1e6", "#b6ff5c", "#ffffff"];
 /** Hot embers for a fuming fan - dark enough to read as anger, not as fire. */
 const EMBER_COLORS = ["#c62828", "#8d2020", "#5c1010"];
@@ -294,6 +297,43 @@ export class Fx {
         gravity: -26,
         drag: 0.6,
         flutter: randomIn(1.2, 3.2),
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  /**
+   * Bills coming off a stack, for a celebration that needs them - see the
+   * `rain` pose. Thrown up and out of one hand rather than exploded outwards
+   * like confetti, so they read as being peeled off something and let go: a
+   * short toss, a lot of flutter, and a slow fall.
+   */
+  cash(origin: Vector3) {
+    const colors = CASH_COLORS.map((hex) => new Color(hex));
+    for (let i = 0; i < 26; i++) {
+      if (this.confetti.length >= MAX_CONFETTI) break;
+      const angle = randomIn(-1.1, 1.1);
+      this.confetti.push({
+        // Off the hand, which on this rig is up around the shoulder.
+        pos: origin
+          .clone()
+          .add(new Vector3(randomIn(-1.4, 1.4), randomIn(11, 13.5), randomIn(-1.4, 1.4))),
+        vel: new Vector3(
+          Math.sin(angle) * randomIn(4, 11),
+          randomIn(7, 15),
+          Math.cos(angle) * randomIn(4, 11),
+        ),
+        color: colors[Math.floor(Math.random() * colors.length)].clone(),
+        life: randomIn(1.8, 3.2),
+        maxLife: 3.2,
+        // Wider than they are tall, which is most of what makes paper money
+        // read as paper money at this distance.
+        size: randomIn(1.1, 1.7),
+        spin: new Vector3(randomIn(-5, 5), randomIn(-9, 9), randomIn(-5, 5)),
+        rot: new Vector3(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+        gravity: -15,
+        drag: 1.1,
+        flutter: randomIn(2.4, 4.6),
         phase: Math.random() * Math.PI * 2,
       });
     }

@@ -20,6 +20,16 @@ import {
   type Material,
 } from "three";
 import type { Actor, Pose } from "@/lib/anim/director";
+import {
+  FIGURE_SCALE,
+  LEG_REACH,
+  SHIN,
+  SWING,
+  THIGH,
+  TOE_AHEAD,
+  legAt,
+  type Gait,
+} from "@/lib/anim/gait";
 import type { Uniform } from "@/lib/mlb/teams";
 import { panel, roundedBox } from "./geometry";
 import { getLabelTexture, getNumberTexture, labelAspect } from "./textures";
@@ -35,8 +45,12 @@ export type Species = "alien" | "robot";
  * Cartoon scale. Deliberately far larger than life - these figures exist to
  * communicate the state of the game from a camera 80 feet up, not to be
  * anatomically sensible next to a 90-foot base path.
+ *
+ * It lives in `@/lib/anim/gait` rather than here because the locomotion has to
+ * know it: a stride measured in model units is only a speed once you know how
+ * many feet a model unit is worth.
  */
-const SCALE = 2.35;
+const SCALE = FIGURE_SCALE;
 
 /** `tan(fov/2)` of the broadcast lens, which name plates are sized against. */
 const BASE_LENS = Math.tan((50 * Math.PI) / 360);
@@ -465,13 +479,6 @@ function clamp01(v: number): number {
 const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing"]);
 
 /**
- * Distance from the hip joint down to the sole, in rig units. Rotating a leg
- * about Z by `phi` moves that foot sideways by roughly `LEG_REACH * phi`, which
- * is how `sway` gets cancelled at the ground.
- */
-const LEG_REACH = 2.48;
-
-/**
  * A squat that keeps its feet. Flexing the hip by `SQUAT_HIP` and the knee by
  * `SQUAT_KNEE` folds the leg into a Z; this pair is chosen so the sole ends up
  * back under the same spot of grass it started on, at any depth. The hips then
@@ -480,10 +487,6 @@ const LEG_REACH = 2.48;
  */
 const SQUAT_HIP = 0.5;
 const SQUAT_KNEE = 1.077;
-/** Hip to knee, knee to sole, and how far the toe sits ahead of the ankle. */
-const THIGH = 1.32;
-const SHIN = 1.16;
-const TOE_AHEAD = 0.1;
 
 /**
  * How far the hips have to drop for a leg held at these angles to keep its sole
@@ -557,6 +560,72 @@ function lean(weight: number, amount = 0.5) {
 
 function clampUnit(v: number): number {
   return v < -1 ? -1 : v > 1 ? 1 : v;
+}
+
+/**
+ * One frame of a gait, built from the same stride table its cadence is derived
+ * from - see `@/lib/anim/gait`. `t` is the phase through the cycle, 0..1, and
+ * the director advances it by however many cycles the ground under the figure
+ * has gone by, which is what keeps the boots from sliding.
+ *
+ * There is deliberately no per-gait code here. Sprinting, running and walking
+ * differ by how far the hips swing, how much of the cycle a foot spends down,
+ * how hard the knee drives through the air and how far the torso is pitched
+ * over - all of it numbers, all of it in one table. Anything written as a
+ * special case for one of the three would be a fourth thing to keep in step
+ * with the cadence, and the cadence is the only reason this works.
+ */
+function gaitPose(gait: Gait, t: number, life: ReturnType<typeof idleLife>): PoseValues {
+  const swing = SWING[gait];
+  const left = legAt(swing, t);
+  const right = legAt(swing, t + 0.5);
+
+  // The hips ride on whichever foot is down - on both of them through the
+  // double support of a walk - so a planted sole holds its height as well as
+  // its place. This is also where the bounce comes from, for nothing: a leg is
+  // at its longest directly under the hip and shortest at either end of its
+  // stride, so the body rises and falls over each step on its own.
+  const weight = left.support + right.support;
+  const dropL = legDrop(left.hip, left.knee);
+  const dropR = legDrop(right.hip, right.knee);
+  const crouch =
+    weight > 0
+      ? (dropL * left.support + dropR * right.support) / weight
+      : Math.min(dropL, dropR);
+  // Nothing is holding a sprinter up for a third of every cycle, and a figure
+  // that stays at a constant height through that is a figure skating.
+  const flight = Math.max(0, 1 - weight);
+
+  // Arms oppose the legs: the left arm is back when the left leg is forward,
+  // which is at phase zero. Nothing about the arms has to be slip-free, so
+  // they run on a plain sine.
+  const pump = Math.cos(t * Math.PI * 2);
+
+  return {
+    ...REST,
+    crouch,
+    bob: swing.bob * flight,
+    lean: swing.lean,
+    // Shoulders counter-rotate against the hips, a little, late.
+    twist: -pump * swing.arm * 0.13,
+    roll: pump * swing.arm * 0.05,
+    legL: left.hip,
+    legR: right.hip,
+    kneeL: left.knee,
+    kneeR: right.knee,
+    armL: swing.arm * pump,
+    armR: -swing.arm * pump,
+    elbowL: swing.elbow,
+    elbowR: swing.elbow,
+    armSpread: swing.spread,
+    // Eyes up and level. `headTilt` is read back as `headTilt - lean` - see the
+    // render step - so it describes where the head is pointing in the world
+    // rather than relative to a torso that is already pitched over: near zero
+    // is a runner looking down the line, which is what a runner does however
+    // far forward the rest of him is folded.
+    headTilt: swing.lean * 0.1,
+    headYaw: gait === "walk" ? life.headYaw * 0.5 : 0,
+  };
 }
 
 function poseValues(
@@ -640,48 +709,10 @@ function poseValues(
         headTilt: -0.34,
         headYaw: life.headYaw * 0.25,
       };
-    case "walk": {
-      // Strolling down to first with the base awarded. Half the cadence of a
-      // run, a shorter stride, and the arms hanging rather than pumping.
-      const swing = Math.sin(t * Math.PI * 2);
-      const lift = Math.cos(t * Math.PI * 2);
-      return {
-        ...REST,
-        crouch: 0.04,
-        lean: 0.08,
-        legL: swing * 0.42,
-        legR: -swing * 0.42,
-        kneeL: 0.12 + Math.max(0, -swing) * 0.5,
-        kneeR: 0.12 + Math.max(0, swing) * 0.5,
-        armL: -swing * 0.3,
-        armR: swing * 0.3,
-        elbowL: -0.4,
-        elbowR: -0.4,
-        armSpread: 0.12,
-        headYaw: life.headYaw * 0.5,
-        bob: Math.abs(lift) * 0.05,
-      };
-    }
-    case "run": {
-      const swing = Math.sin(t * Math.PI * 2);
-      const lift = Math.cos(t * Math.PI * 2);
-      return {
-        ...REST,
-        crouch: 0.16,
-        lean: 0.3,
-        legL: swing * 1.0,
-        legR: -swing * 1.0,
-        // The trailing leg folds up; the leading one extends.
-        kneeL: 0.55 + Math.max(0, -swing) * 1.15,
-        kneeR: 0.55 + Math.max(0, swing) * 1.15,
-        armL: -swing * 0.85,
-        armR: swing * 0.85,
-        elbowL: -1.35,
-        elbowR: -1.35,
-        armSpread: 0.2,
-        bob: Math.abs(lift) * 0.14,
-      };
-    }
+    case "sprint":
+    case "run":
+    case "walk":
+      return gaitPose(pose, t, life);
     case "windup": {
       // Two beats. First the gather: sink onto the back leg with the hands
       // together at the belt. Then the leg kick, the front knee driving up as
@@ -885,6 +916,203 @@ function poseValues(
         headYaw: settle * 0.4,
         roll: Math.sin(clock * 9) * 0.12 * (1 - settle * 0.6),
         bob: pump * 0.45 * (1 - settle * 0.7),
+      };
+    }
+    case "dance": {
+      // The running man. One knee drives up while the other foot slides back
+      // out from under it, and the trick of the dance is that the two happen
+      // at once - the up-front leg lands on the beat the back one leaves on,
+      // so the figure runs hard and travels nowhere.
+      //
+      // Unlike a gait this one *wants* the foot to slide: the crouch here is
+      // held flat rather than ridden off the planted leg, because a running
+      // man that bobs with each step is just jogging on the spot.
+      const beat = clock * 5.6;
+      const drive = Math.sin(beat);
+      const front = Math.max(0, drive);
+      const back = Math.max(0, -drive);
+      const hop = Math.abs(Math.cos(beat));
+      return {
+        ...REST,
+        crouch: 0.62 - hop * 0.16,
+        bob: hop * 0.3,
+        lean: 0.2,
+        twist: drive * 0.16,
+        roll: drive * 0.1,
+        // Knee up on one side, the other leg raked back and straight.
+        legL: -1.2 * front + 0.62 * back,
+        legR: -1.2 * back + 0.62 * front,
+        kneeL: 1.45 * front + 0.14 * back,
+        kneeR: 1.45 * back + 0.14 * front,
+        // Elbows locked at a right angle and pumping, which is what makes it
+        // read as running rather than as marching.
+        armL: -0.55 + drive * 0.62,
+        armR: -0.55 - drive * 0.62,
+        elbowL: -1.5,
+        elbowR: -1.5,
+        armSpread: 0.22,
+        headTilt: 0.06,
+        headYaw: drive * 0.18,
+      };
+    }
+    case "rain": {
+      // Making it rain. One hand holds the stack up by the shoulder, the other
+      // works across it flicking bills off the top, and the knees ride a slow
+      // bounce underneath. The money itself is thrown by the director - see
+      // `Fx.cash` - because particles are not something a pose can do.
+      const flick = Math.sin(clock * 7.4);
+      const bounce = Math.sin(clock * 3.7);
+      const settle = squat(0.26 + bounce * 0.12);
+      return {
+        ...REST,
+        ...lean(bounce, 0.34),
+        crouch: settle.crouch,
+        legL: settle.leg,
+        legR: settle.leg,
+        kneeL: settle.knee,
+        kneeR: settle.knee,
+        lean: -0.08,
+        twist: -0.2 + flick * 0.1,
+        // The stack hand stays put up by the ear.
+        armR: -2.15,
+        elbowR: -1.9,
+        // The other sweeps out and back across it, peeling them off.
+        armL: -1.85 + flick * 0.42,
+        elbowL: -1.15 - flick * 0.5,
+        elbowIn: 0.78 + flick * 0.22,
+        armSpread: 0.44,
+        headTilt: -0.22,
+        headYaw: -0.3 + flick * 0.14,
+      };
+    }
+    case "wacky": {
+      // The inflatable tube man outside a car dealership. Everything runs on
+      // its own detuned frequency and none of it agrees with anything else,
+      // which is the entire joke: there is no pose here, only a body that has
+      // lost its skeleton and is being held up by a fan.
+      const whip = Math.sin(clock * 3.1);
+      const flail = Math.sin(clock * 7.7);
+      const noodle = Math.sin(clock * 5.3 + 1.4);
+      return {
+        ...REST,
+        ...lean(whip, 0.5),
+        crouch: 0.1 - Math.abs(whip) * 0.08,
+        bob: 0.18 + noodle * 0.2,
+        // Folded nearly double one moment and snapped upright the next.
+        lean: 0.22 + whip * 0.46,
+        twist: noodle * 0.4,
+        roll: whip * 0.44,
+        // Legs stay long and loose - a tube man has no knees to speak of.
+        legL: whip * 0.16,
+        legR: -whip * 0.14,
+        kneeL: 0.1 + Math.max(0, noodle) * 0.2,
+        kneeR: 0.1 + Math.max(0, -noodle) * 0.2,
+        // Arms overhead, flapping out of phase with each other and with the
+        // elbows, which is what stops it reading as a jumping jack.
+        armL: -2.95 + flail * 0.55,
+        armR: -2.95 + Math.sin(clock * 7.7 + 2.2) * 0.55,
+        elbowL: noodle * 0.95,
+        elbowR: Math.sin(clock * 6.1 + 3.4) * 0.95,
+        armSpread: 0.46 + flail * 0.3,
+        headTilt: noodle * 0.42,
+        headYaw: flail * 0.5,
+      };
+    }
+    case "frustrated": {
+      // Both hands thrown up - *what was that* - held there a beat, then
+      // dropped and slapped against the thighs. Three beats, because the drop
+      // is what carries the meaning: hands going up on their own is a cheer.
+      const throwUp = clamp01(t / 0.22);
+      const drop = clamp01((t - 1.15) / 0.4);
+      const slap = clamp01((t - 1.5) / 0.6);
+      const shake = Math.sin(clock * 3.6);
+      return {
+        ...REST,
+        crouch: 0.05 + 0.12 * slap,
+        lean: -0.1 * throwUp + 0.26 * drop,
+        twist: shake * 0.12 * (1 - drop),
+        // Up and out to the sides, palms to the sky, then straight back down.
+        //
+        // Both the shoulder angle and the spread have to be dialled in against
+        // each other, and neither alone gets there. Spread on its own swings
+        // the arm out sideways at shoulder height - a shrug. Shoulder angle on
+        // its own carries it up and over *behind* the head, where the hands
+        // are hidden by the torso and the whole gesture is invisible from the
+        // front. This pair puts them above the shoulder, out, and slightly
+        // ahead, which is where hands go up in the air.
+        armL: -2.45 * throwUp + 2.6 * drop,
+        armR: -2.45 * throwUp + 2.6 * drop,
+        // Elbows near straight on the way up: a bent one is a shrug.
+        elbowL: -0.55 + 0.1 * throwUp + 0.2 * drop,
+        elbowR: -0.55 + 0.1 * throwUp + 0.2 * drop,
+        armSpread: 0.24 + 0.81 * throwUp - 0.66 * drop,
+        // Head back at the sky on the way up, down at the dirt after.
+        headTilt: -0.42 * throwUp + 0.78 * drop,
+        headYaw: shake * 0.26,
+        roll: shake * 0.05,
+      };
+    }
+    case "facepalm": {
+      // Hand up, head down into it, and it stays there. The far arm folds
+      // across the chest on the way, which it does whether or not it is asked
+      // to: `elbowIn` is one channel driving both forearms toward the midline,
+      // and the fold happens to be exactly what this pose wants anyway.
+      const reach = clamp01(t / 0.45);
+      const sink = clamp01((t - 0.4) / 0.7);
+      return {
+        ...REST,
+        crouch: 0.08 + 0.14 * sink,
+        lean: 0.16 * reach + 0.14 * sink,
+        legL: -0.12 * sink,
+        legR: -0.12 * sink,
+        kneeL: 0.14 * sink,
+        kneeR: 0.14 * sink,
+        // Upper arm up and across, forearm folded back onto the face.
+        armR: -1.72 * reach,
+        elbowR: -0.25 - 2.15 * reach,
+        armL: -0.55 * reach,
+        elbowL: -0.25 - 1.15 * reach,
+        elbowIn: 0.95 * reach,
+        armSpread: 0.2 + 0.16 * reach,
+        // The head comes down to meet the hand rather than waiting for it,
+        // and has to out-pitch the torso lean to end up looking at the dirt.
+        headTilt: 0.62 * reach,
+        headYaw: Math.sin(clock * 1.9) * 0.13 * reach,
+        roll: -0.06 * reach,
+      };
+    }
+    case "collapse": {
+      // Straight down onto the knees, folded over them, hands on the dirt.
+      // What a pitcher does the moment a ball he threw lands in the seats.
+      //
+      // The rig only yaws, so nobody here can actually lie down - what sells
+      // it instead is depth: the hips go to shin height on a knee fold hard
+      // enough that the boots stay under them, and the torso folds most of a
+      // right angle over the top. `legDrop` is what buys that honestly.
+      const buckle = clamp01(t / 0.55);
+      const fall = buckle * buckle;
+      const heave = Math.sin(clock * 1.5);
+      const hip = -0.66 * fall;
+      const knee = 2.42 * fall;
+      return {
+        ...REST,
+        crouch: legDrop(hip, knee),
+        legL: hip,
+        legR: hip * 0.92,
+        kneeL: knee,
+        kneeR: knee,
+        lean: 0.98 * fall + heave * 0.04,
+        // Arms hang from a torso that is already folded over, which puts the
+        // hands out on the ground ahead of the knees.
+        armL: -0.28 * fall,
+        armR: -0.28 * fall,
+        elbowL: -0.18,
+        elbowR: -0.18,
+        armSpread: 0.34 * fall,
+        chest: heave * 0.05,
+        // Hanging, and the torso is already folded almost double under it.
+        headTilt: 1.24 * fall,
+        roll: Math.sin(clock * 1.1) * 0.05 * fall,
       };
     }
     case "annoyed": {

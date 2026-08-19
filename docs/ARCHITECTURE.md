@@ -230,7 +230,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `Crowd.tsx` | The spectators — body, head, eyes and two hair shapes as five `InstancedMesh`es, with an idle bob |
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat |
-| `Ball.tsx` | The ball and its comet trail |
+| `Ball.tsx` | The ball and its comet trail, held to a minimum apparent size so a long fly stays visible |
 | `Effects.tsx` | Pushes `Fx` particles into instanced meshes |
 | `Weather.tsx` | Rain and snow |
 | `Shadows.tsx` | Contact blobs and the ground-occlusion band |

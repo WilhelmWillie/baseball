@@ -111,6 +111,15 @@ function GameCard({ game }: { game: GameSummary }) {
         <TeamLine team={game.home} score={game.home.score} dim={!isLive && game.state !== "final"} />
       </div>
 
+      {/* Why this one is on the shelf. The scoreline alone does not carry it:
+          an 11-10 game reads as any other slugfest until you know eight of
+          those runs were made up in the last two innings. */}
+      {game.note && (
+        <p className="mt-3.5 rounded-2xl bg-grass-mist/55 px-3 py-2.5 text-xs leading-relaxed text-bark">
+          {game.note}
+        </p>
+      )}
+
       <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
         <span className="truncate text-bark-soft">
           {game.statusText}

@@ -166,8 +166,9 @@ export function buildManifest(options: {
   frames: RecordedFrame[];
   source: RecordingSource;
   label?: string;
+  note?: string;
 }): RecordingManifest {
-  const { final, frames, source, label } = options;
+  const { final, frames, source, label, note } = options;
   const gamePk = final.gamePk ?? final.gameData?.game?.pk ?? 0;
   const base = frames[0]?.t ?? 0;
 
@@ -226,6 +227,7 @@ export function buildManifest(options: {
       away: teamOf(last, "away"),
       description: GAME_TYPES[final.gameData?.game?.type ?? ""] ?? final.gameData?.game?.type,
       label,
+      note,
     },
     frameCount: frames.length,
     durationMs: (frames[frames.length - 1]?.t ?? 0) - base,

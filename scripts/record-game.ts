@@ -41,6 +41,7 @@ interface Args {
   date?: string;
   from?: string;
   label?: string;
+  note?: string;
   list: boolean;
   out: string;
   force: boolean;
@@ -58,6 +59,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--out") args.out = requireValue(arg, argv[++i]);
     else if (arg === "--from") args.from = requireValue(arg, argv[++i]);
     else if (arg === "--label") args.label = requireValue(arg, argv[++i]);
+    else if (arg === "--note") args.note = requireValue(arg, argv[++i]);
     else if (/^\d+$/.test(arg)) args.gamePk = Number(arg);
     else throw new Error(`Unrecognized argument: ${arg}`);
   }
@@ -83,6 +85,7 @@ function usage(): void {
       `  --out <dir>          output directory (default: ${DEFAULT_OUT})`,
       "  --from <file.json>   record from a saved live feed instead of fetching",
       '  --label "<name>"     what to call it, e.g. "2025 World Series Game 7"',
+      '  --note "<why>"       why it is on the shelf, shown on the game card',
       "  --force              record even if the game is not final",
     ].join("\n"),
   );
@@ -143,6 +146,7 @@ function writeIndex(outDir: string): number {
       date: manifest.game.date,
       venue: manifest.game.venue,
       label: manifest.game.label,
+      note: manifest.game.note,
       home: manifest.game.home,
       away: manifest.game.away,
       frameCount: manifest.frameCount,
@@ -162,6 +166,7 @@ async function record(
   force: boolean,
   from?: string,
   label?: string,
+  note?: string,
 ): Promise<void> {
   let final: MlbLiveFeed;
   if (from) {
@@ -212,7 +217,7 @@ async function record(
     return;
   }
 
-  const manifest = buildManifest({ final, frames, source: "reconstructed", label });
+  const manifest = buildManifest({ final, frames, source: "reconstructed", label, note });
   console.log("Encoding…");
   const lines = encodeFrames(manifest.gamePk, frames);
 
@@ -282,7 +287,7 @@ async function main(): Promise<void> {
     usage();
     return;
   }
-  await record(args.gamePk, args.out, args.force, args.from, args.label);
+  await record(args.gamePk, args.out, args.force, args.from, args.label, args.note);
 }
 
 main().catch((error) => {

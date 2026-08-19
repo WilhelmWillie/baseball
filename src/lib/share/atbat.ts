@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { summarizeGame, type GameSummary } from "@/lib/game/schedule";
 import { inningLabel } from "@/lib/game/normalize";
-import { fetchPlayByPlay, fetchScheduleGame } from "@/lib/mlb/client";
+import { fetchPlayByPlay, fetchScheduleGame, isFinalStatus } from "@/lib/mlb/client";
 import type { MlbPlay } from "@/lib/mlb/types";
 
 /**
@@ -52,6 +52,50 @@ function indexOf(play: MlbPlay, fallback: number): number {
   return play.about?.atBatIndex ?? play.atBatIndex ?? fallback;
 }
 
+/** A plate appearance and the one before it, which carries the score going in. */
+interface Located {
+  play: MlbPlay;
+  previous: MlbPlay | undefined;
+}
+
+function locate(plays: MlbPlay[], atBatIndex: number): Located | null {
+  const at = plays.findIndex((play, i) => indexOf(play, i) === atBatIndex);
+  if (at < 0) return null;
+  return { play: plays[at], previous: plays[at - 1] };
+}
+
+/**
+ * How far past a cached copy's last play an index can be and still be real.
+ *
+ * A copy is at most a minute old, and a minute of baseball is a plate
+ * appearance or two - never twenty. Anything further out is a made-up index,
+ * and capping it is what stops a crawler walking `/clip/<pk>/99999` from
+ * turning every 404 into a call upstream.
+ */
+const STALE_PLAY_LEEWAY = 8;
+
+/**
+ * Whether a miss is better explained by a stale feed than by a bad link.
+ *
+ * The play-by-play is cached for a minute, which is right for a clip of a game
+ * that ended last September and wrong for the play that just happened. The
+ * game log people click "Clip" in is driven by the live feed with nothing
+ * cached in front of it, so a plate appearance shows up there - with its Clip
+ * link - while this copy of the feed can still be up to a minute behind. That
+ * gap was the bug: the link 404s, and refreshing past the minute "fixes" it.
+ *
+ * Only two shapes of miss can be blamed on an old copy - an index just past
+ * everything it knows about, or a play that had not finished when it was taken.
+ * Anything else is a link to a play that never existed, and answering it costs
+ * nothing upstream.
+ */
+function mayBeStale(plays: MlbPlay[], located: Located | null, atBatIndex: number): boolean {
+  if (located) return !located.play.about?.isComplete;
+  const last = plays[plays.length - 1];
+  const highest = last ? indexOf(last, plays.length - 1) : -1;
+  return atBatIndex > highest && atBatIndex <= highest + STALE_PLAY_LEEWAY;
+}
+
 /** Statcast off the last batted ball of the plate appearance, if there was one. */
 function hitDataOf(play: MlbPlay): AtBatCard["hit"] {
   const events = play.playEvents ?? [];
@@ -80,13 +124,21 @@ async function load(gamePk: number, atBatIndex: number): Promise<AtBatCard | nul
   ]);
   if (!scheduled) return null;
 
-  const at = plays.findIndex((play, i) => indexOf(play, i) === atBatIndex);
-  if (at < 0) return null;
-  const play = plays[at];
+  let located = locate(plays, atBatIndex);
+
+  // A game that is over cannot grow a play, so its misses are final. While one
+  // is being played, read the feed again uncached before calling a link dead -
+  // only on this path, so the clip everyone else is watching still comes off
+  // the cached copy.
+  if (!isFinalStatus(scheduled) && mayBeStale(plays, located, atBatIndex)) {
+    const fresh = await fetchPlayByPlay(gamePk, 0).then((pbp) => pbp.allPlays ?? []);
+    located = locate(fresh, atBatIndex);
+  }
+  if (!located) return null;
+  const { play, previous } = located;
 
   // Scores on a play are cumulative game totals as of its end, so the state
   // before this one is simply where the previous play left off.
-  const previous = plays[at - 1];
   const inning = play.about?.inning ?? 0;
   const isTop = play.about?.isTopInning ?? true;
 

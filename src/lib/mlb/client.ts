@@ -85,10 +85,17 @@ export async function fetchLiveFeed(gamePk: number): Promise<MlbLiveFeed> {
  * image, so anything rendering a card reads this rather than the whole feed.
  *
  * A completed plate appearance never changes again short of a replay review,
- * which is why this can be cached where `fetchLiveFeed` cannot.
+ * which is why this can be cached where `fetchLiveFeed` cannot. What the cache
+ * cannot do is grow a play it was taken before: during a live game the newest
+ * plate appearance is missing from a copy up to a minute old, so a caller that
+ * has to be sure a play does not exist - rather than merely that it has not
+ * arrived here yet - passes `revalidateSeconds: 0` and reads the feed itself.
  */
-export async function fetchPlayByPlay(gamePk: number): Promise<MlbPlayByPlay> {
-  return getJson<MlbPlayByPlay>(`${BASE}/v1/game/${gamePk}/playByPlay`, 60);
+export async function fetchPlayByPlay(
+  gamePk: number,
+  revalidateSeconds = 60,
+): Promise<MlbPlayByPlay> {
+  return getJson<MlbPlayByPlay>(`${BASE}/v1/game/${gamePk}/playByPlay`, revalidateSeconds);
 }
 
 export function isLiveStatus(game: MlbScheduleGame): boolean {

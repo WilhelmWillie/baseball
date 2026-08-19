@@ -6,6 +6,10 @@ import type { GameSnapshot, HistoryEntry } from "@/lib/game/types";
 /**
  * The last play, which expands into the full log on hover. Clicking pins it
  * open, since hover is not available on touch.
+ *
+ * Hover is tracked from pointer events and only for a real mouse: a touch
+ * fires an emulated enter that never gets a matching leave, so counting a tap
+ * as hovering would hold the log open no matter how often it was tapped shut.
  */
 export function History({
   history,
@@ -39,8 +43,12 @@ export function History({
   return (
     <div
       className="w-full sm:w-[300px]"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") setHovered(true);
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") setHovered(false);
+      }}
     >
       <button
         type="button"
@@ -100,13 +108,12 @@ export function History({
                     </span>
                     {entry.description}
                   </span>
-                  {/* A plain anchor rather than `next/link`: this opens a new
-                      tab, and prefetching a clip would reconstruct the game
-                      server-side for every play the log happens to show. */}
+                  {/* A plain anchor rather than `next/link`: prefetching a
+                      clip would reconstruct the game server-side for every
+                      play the log happens to show. The clip replaces this tab
+                      and links back to the full game. */}
                   <a
                     href={`/clip/${gamePk}/${entry.id}`}
-                    target="_blank"
-                    rel="noopener"
                     title="Watch just this play"
                     className="mt-px shrink-0 rounded-full border border-grass/40 px-2 py-0.5 text-[10px] font-bold text-grass-deep transition-colors hover:bg-grass hover:text-card"
                   >

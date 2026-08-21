@@ -23,6 +23,30 @@ No API key is needed. The MLB Stats API is public, and all calls are proxied
 through this app's own routes so the browser never talks to `statsapi.mlb.com`
 directly.
 
+## Analytics
+
+Product analytics runs on [PostHog](https://posthog.com). It is **off unless a
+project key is present**, so local dev and preview builds run clean without one —
+set the keys in the deployment (and in `.env.local` if you want events locally):
+
+```bash
+# .env.local
+NEXT_PUBLIC_POSTHOG_KEY=phc_xxxxxxxx          # project key; without it analytics is disabled
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com   # or https://eu.i.posthog.com; optional, this is the default
+```
+
+PostHog is initialized once in `src/instrumentation-client.ts`, before hydration.
+Pageviews and UTM parameters are captured automatically (`capture_pageview:
+"history_change"`). Product events live in one typed union in
+`src/lib/analytics/events.ts` — add a feature by adding a line there and one
+`track(...)` call. Today's events: `game_opened` / `game_loaded` (which games),
+`game_watch_ended` (foreground watch time via `src/lib/analytics/useWatchTimer.ts`),
+`camera_switched` (camera switcher usage), `game_selected`, plus `sound_toggled`,
+`lineup_opened`, `scoreboard_mode_changed`, and `feed_error`. Feature flags are
+available through `useFlag()` in `src/lib/analytics/posthog.tsx` for gating future
+work. To harden against ad-blockers later, proxy ingestion behind a first-party
+`/ingest` path via `next.config.ts` rewrites and point `api_host` at it.
+
 ## What's here
 
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games

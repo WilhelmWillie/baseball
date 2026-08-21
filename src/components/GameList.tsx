@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { summarizeRecording, type GameSummary } from "@/lib/game/schedule";
 import { loadRecordingIndex } from "@/lib/replay/source";
 import { Ball } from "@/components/brand/Ball";
+import { track } from "@/lib/analytics/events";
 
 interface SchedulePayload {
   date: string;
@@ -151,7 +152,17 @@ function GameCard({ game }: { game: GameSummary }) {
   }
 
   return (
-    <Link href={href} className={`${shell} ${interactive}`}>
+    <Link
+      href={href}
+      className={`${shell} ${interactive}`}
+      onClick={() =>
+        track("game_selected", {
+          gamePk: String(game.gamePk),
+          mode: game.isReplay ? "replay" : "live",
+          state: game.state,
+        })
+      }
+    >
       {body}
     </Link>
   );

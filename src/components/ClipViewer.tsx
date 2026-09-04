@@ -7,7 +7,6 @@ import { useReplay } from "@/hooks/useReplay";
 import { useGameStore } from "@/store/gameStore";
 import { sfx } from "@/lib/audio/sfx";
 import { CLIP_BEATS } from "@/lib/replay/timeline";
-import { loadRecordingIndex } from "@/lib/replay/source";
 import { hitLine, type AtBatCard } from "@/lib/share/atbat";
 import { Ball } from "@/components/brand/Ball";
 import { ShareMenu } from "@/components/ShareMenu";
@@ -67,28 +66,17 @@ export function ClipViewer({
   /**
    * Where "watch the whole game" goes.
    *
-   * A recorded game can be picked up at this very plate appearance; anything
-   * else can only be opened at its live edge. The recordings index is a static
-   * file the browser already caches, and getting this wrong is a dead-end link
-   * on the one screen meant to send people deeper, so it is worth the check.
+   * A game that has finished can be picked up at this very plate appearance,
+   * because a finished game is rebuilt from its feed on demand; one still being
+   * played can only be opened at its live edge. This used to need the
+   * recordings index - back when the handful of published games were the only
+   * ones that could be resumed - and now the game's own status answers it,
+   * which the server already resolved for the card.
    */
-  const [fullGame, setFullGame] = useState(`/watch/${gamePk}`);
-  useEffect(() => {
-    let cancelled = false;
-    loadRecordingIndex()
-      .then((games) => {
-        if (cancelled) return;
-        if (games.some((game) => String(game.gamePk) === String(gamePk))) {
-          setFullGame(`/watch/${gamePk}/at/${atBatIndex}`);
-        }
-      })
-      .catch(() => {
-        // No index, no upgrade. The live-edge link still works.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [gamePk, atBatIndex]);
+  const fullGame =
+    card.game.state === "final"
+      ? `/watch/${gamePk}/at/${atBatIndex}`
+      : `/watch/${gamePk}`;
 
   const statcast = hitLine(card.hit);
 

@@ -3,18 +3,20 @@
 Letting anyone replay any game of the 2026 season, without recording any of
 them. [Issue #31](https://github.com/WilhelmWillie/baseball/issues/31).
 
-Status: **proposed.** Nothing here is built yet. The numbers below are measured,
-not estimated — see [Measurements](#the-measurement-that-decides-it).
+Status: **shipped.** Any game the 2026 season has finished plays at
+`/watch/<gamePk>`, and `/games/<date>` is how you find one. Every number below is
+measured rather than estimated, including the ones taken after the fact — see
+[What shipped](#what-shipped).
 
-## Where we are
+## Where we were
 
-Six games are on the shelf. Each was captured by `npm run record`, encoded as a
+Six games were on the shelf. Each was captured by `npm run record`, encoded as a
 keyframe plus RFC-6902 patches, and committed under `public/recordings/v1/`.
-`/watch/<gamePk>?replay=1` plays one. Everything else in the app is live-only: a
-final game's card on the home page says "That's a wrap" and does not open.
+`/watch/<gamePk>?replay=1` played one. Everything else in the app was live-only:
+a final game's card on the home page said "That's a wrap" and did not open.
 
-Meanwhile the 2026 season has played **1,962 regular-season games** across 151
-game days since Opening Day on 2026-03-25, and will finish somewhere near 2,430
+Meanwhile the 2026 season had played **1,962 regular-season games** across 151
+game days since Opening Day on 2026-03-25, on the way to somewhere near 2,430
 before the postseason. Six is not a season.
 
 ## The obvious plan, and why we should not do it
@@ -99,9 +101,9 @@ That last row is the equivalence check worth keeping: the on-demand path
 produces the same frame count as the recording we published from the same feed,
 because it is the same code.
 
-## What changes
+## What changed
 
-### Phase 1 — play any finished game
+### Phase 1 — play any finished game *(shipped)*
 
 1. **`lib/replay/source.ts`** — `RecordingPlayer` becomes an interface of the
    three members `useReplay` actually touches (`manifest`, `frameCount`,
@@ -130,7 +132,7 @@ because it is the same code.
    reconstruction, and its job is catching recorder bugs before a publish that
    no longer happens. It stays the sweep tool below.
 
-### Phase 2 — find any game
+### Phase 2 — find any game *(shipped)*
 
 Playing them is half the issue; the home page still only knows about today.
 
@@ -148,7 +150,7 @@ Playing them is half the issue; the home page still only knows about today.
    training reconstructs fine but is not what the issue asks for; leave it out
    of the browser rather than build a filter nobody asked for.
 
-### Phase 3 — the shelf becomes editorial (optional, and last)
+### Phase 3 — the shelf becomes editorial *(not done, and still last)*
 
 Once anything is playable, the six published recordings are redundant with a
 path that also serves the other 2,424 games — and they are the only reason the
@@ -165,44 +167,69 @@ documented either way — [RECORDING.md](./RECORDING.md) and
 `NEXT_PUBLIC_RECORDINGS_BASE_URL` are still the right answer for a game the
 Stats API stops serving.
 
-### Phase 4 — only if the numbers ask
+### Phase 4 — only if the numbers ask *(not done)*
 
 Trimming the feed server-side (the boxscore's season stat lines are the obvious
 fat), prefetching on card hover, a team or date search. None of it is worth
 doing before there is a measurement on a phone saying it is.
 
-## Risks
+## Risks, and how they turned out
 
-1. **A game that will not reconstruct.** 24/24 in the sample, but a season holds
-   suspended games resumed the next day, protests, a position player pitching,
-   and whatever else. Mitigation: `scripts/validate-season.ts` — walk every
-   date, reconstruct and validate every final game, print the failures. Run it
-   once over 2026 before Phase 2 ships. It is ~1,950 feeds serially, so about
-   an hour of wall clock and 1.6 GB read, once. If a handful of games fail, they
-   fail closed: the card stays unwatchable and says why.
-2. **What we ask of the Stats API.** One 800 KB read per game watched, versus
-   one per *viewer* if the immutable caching in Phase 1.3 is skipped. It is the
-   load-bearing part of that step, not a nicety. The in-process LRU should grow
-   past its current 32 entries for finals, which never invalidate.
-3. **Phones.** 4 MB of heap and 12 ms of CPU on a laptop. Measure a real device
-   before Phase 2, because Phase 2 is what invites people to open old games from
-   a phone.
-4. **The boxscore caveat is unchanged.** MLB publishes per-player stat lines
-   only in their final state, so a replayed game shows end-of-game numbers
-   beside a name from the first inning. The linescore — what the renderer
-   actually stands players on — is rebuilt exactly. Already documented in
-   RECORDING.md; it just applies to every game now instead of six.
-5. **Scope creep into "any season."** Everything here is season-agnostic apart
-   from the date clamp, and 2025's postseason already reconstructs. Ship 2026
-   and resist the year picker.
+1. **A game that will not reconstruct.** Answered by running it:
+   `npm run validate-season` walked 2026-03-25 → 2026-09-04, rebuilt and
+   validated **2,137 games in 5.5 minutes**, and found exactly one that produced
+   no frames. That one turned out not to be a game at all (below). Every game
+   the season actually played rebuilds. The sweep is a committed script rather
+   than a one-off, so the next stretch of season can be checked the same way.
+2. **A game that was never played.** The failure above was `823543`, TB @ NYY on
+   2026-05-23 — rained out, and rescheduled for September. MLB files a
+   postponement under `abstractGameState: "Final"`, so `isFinalStatus` called it
+   finished, the card offered it, and opening it found a feed with no
+   play-by-play in it. There were 27 more like it in the first half of the
+   season. `isCalledOffStatus` now separates "the game is over" from "the game
+   is off", and a called-off game is not watchable.
+3. **A game with two entries.** A postponed game keeps its `gamePk` when it is
+   made up, so `?gamePk=` answers with *both* — the postponement on its original
+   date and the game on the date it was played. `fetchScheduleGame` took the
+   first, which had a game in progress reported as finished and sent the live
+   viewer into replay. It now prefers the entry that was played, and
+   `dedupeGames` keeps a date window from listing one game twice.
+4. **What we ask of the Stats API.** One ~800 KB read per game, not per viewer:
+   a finished feed goes back `immutable` and sits in a cache of its own, so the
+   second person to open a game pays nothing upstream. This is the load-bearing
+   half of the design, not a nicety.
+5. **Phones.** Still the open one. Measured in a desktop browser, the rebuild is
+   not what anyone waits for — the ballpark is (first pitch lands ~0.5 s after a
+   warm load, and the feed fetch is ~30 ms of it) — and the frames measure 4 MB
+   of heap. Neither number has been taken on a real handset.
+6. **The boxscore caveat is unchanged.** MLB publishes per-player stat lines only
+   in their final state, so a replayed game shows end-of-game numbers beside a
+   name from the first inning. The linescore — what the renderer actually stands
+   players on — is rebuilt exactly. Already documented in RECORDING.md; it now
+   applies to every game rather than six.
+7. **Scope creep into "any season."** Everything here is season-agnostic apart
+   from `SEASON_OPENING_DAY`, and 2025's postseason already reconstructs. 2026
+   shipped; the year picker did not.
 
-## What this does not need
+## What this did not need
 
 No database. No object storage. No nightly job. No new dependency. No change to
 the normalizer, the director, the store, or anything under `components/scene/`.
+The recorder still exists and still works — it is simply no longer the way a
+finished game is watched.
 
-## When it ships
+## What shipped
 
-`docs/ARCHITECTURE.md` gains the new route and the `FramePlayer`/`PatchPlayer`
-split in its "Where to change what" table; `README.md`'s account of recordings
-stops being the only way a finished game is watched.
+| | |
+| --- | --- |
+| Games watchable before | 6 |
+| Games watchable after | every game the season has played — 2,136 through 2026-09-04 |
+| Bytes added to the repo | none |
+| Season sweep | 2,137 games checked, 0 that were played failed |
+| Feed per game | ~800 KB, ~130 KB gzipped, served `immutable` |
+| Rebuild cost | ~12 ms and ~4 MB of heap, in the browser, at load |
+
+The pieces: `FramePlayer` and `loadReconstructed` in `lib/replay/source.ts`,
+state-aware caching in `/api/game/[gamePk]`, status-driven mode selection in
+`/watch/[gamePk]`, `/games/[date]` with `SeasonNav`, the called-off and
+duplicate-entry fixes in `lib/mlb/client.ts`, and `scripts/validate-season.ts`.

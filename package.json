@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "favicon": "node scripts/build-favicon.mjs",
-    "record": "tsx scripts/record-game.ts"
+    "record": "tsx scripts/record-game.ts",
+    "validate-season": "tsx scripts/validate-season.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGameStore } from "@/store/gameStore";
 import type { RecordingManifest } from "@/lib/replay/format";
-import { loadClip, loadRecording, type RecordingPlayer } from "@/lib/replay/source";
+import { loadClip, loadReplay, type RecordingPlayer } from "@/lib/replay/source";
 import {
   atBatAtFrame,
   beatAfter,
@@ -72,12 +72,14 @@ export interface ReplayControls {
 }
 
 /**
- * Where the frames come from: a published recording of a whole game, or one
- * plate appearance cut out of a game's feed on demand.
+ * Where the frames come from: a whole game, or one plate appearance cut out of
+ * a game's feed on demand.
  *
  * The distinction ends at the load. Both arrive as the same format and are
  * played by the same pump below, which is the point - a clip is a very short
- * recording, not a second playback path.
+ * recording, not a second playback path. `loadReplay` makes the same promise
+ * one level down: a game published as bytes and a game rebuilt from its feed in
+ * the browser are both just frames by the time they reach here.
  */
 export type ReplaySource = { kind: "recording" } | { kind: "clip"; atBatIndex: number };
 
@@ -138,7 +140,7 @@ export function useReplay(
     let cancelled = false;
     reset();
     const loading =
-      sourceKind === "clip" ? loadClip(gamePk, clipAtBat) : loadRecording(gamePk);
+      sourceKind === "clip" ? loadClip(gamePk, clipAtBat) : loadReplay(gamePk);
     loading
       .then((loaded) => {
         if (cancelled) return;

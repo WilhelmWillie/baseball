@@ -50,10 +50,15 @@ work. To harden against ad-blockers later, proxy ingestion behind a first-party
 ## What's here
 
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games
-first. Only games actually in progress open: a game before first pitch has no
-lineup in the feed and one that has finished has nothing left to animate, so
-those cards are shown but not clickable. Recorded games sit below the slate and
-always open, so there is something to watch whatever the schedule says.
+first. A game in progress opens live and a game that has been played opens as a
+replay; only a game before first pitch stays shut, because the feed carries no
+lineup until then. Below the slate sit the curated recordings and a way into the
+rest of the season.
+
+**The season** (`/games/[date]`) — any day since Opening Day, as its own page.
+Every game MLB has finished is watchable, so the browser is the thing that
+points at them: step a day at a time or jump with the date picker, bounded by
+Opening Day and today.
 
 **Live viewer** (`/watch/[gamePk]`) — a 3D ballpark with the nine defenders in
 their positions, the batter, on-deck hitter and baserunners. The home club take
@@ -108,18 +113,25 @@ whole diamond ahead of you, **Umpire** through the umpire's own eyes in the slot
 behind the catcher with the pitch arriving at the lens, and **Sky** near enough
 straight down on the park from a few hundred feet up. Your choice is remembered.
 
-**Recorded games** (`/watch/[gamePk]?replay=1`) — real games captured off the
-Stats API and replayed pitch by pitch. The shelf is curated rather than
-exhaustive: a handful of games from the season worth sitting through, each
-carrying a note on its card saying what happened in it — a combined no-hitter, a
-1–0 duel settled by a walk-off, an eight-run comeback. Playback has no clock: the
+**Replay** (`/watch/[gamePk]`, once a game is final) — any game of the 2026
+season, played back pitch by pitch. Almost none of them are recorded: a finished
+GUMBO document carries the whole game *and* its timing, so the browser rebuilds
+the frame stream from it on the way in — measured at ~12 ms, against ~4 s to
+encode the same frames as a stored recording, which is why the season needs no
+library behind it. A handful of games are still published as bytes and make up
+the curated shelf on the home page, each carrying a note saying what happened in
+it — a combined no-hitter, a 1–0 duel settled by a walk-off, an eight-run
+comeback. Both arrive as the same frames. Playback has no clock: the
 next pitch is handed over when the ballpark has finished animating the last one,
 so a home run's trot and celebration always play out in full. Step by plate
 appearance or half-inning, or scrub a bar ticked with innings and scoring plays;
 `?at=<n>` opens on the nth at-bat. This is how the animation work is exercised in the
-off-hours, and how it is verified: a recording is the same GUMBO the live game
-speaks, so it runs the same adapter and animation path. See
-[docs/RECORDING.md](docs/RECORDING.md).
+off-hours, and how it is verified: a replayed game is the same GUMBO the live
+game speaks, so it runs the same adapter and animation path — and
+`npm run validate-season` walks a whole season through it to prove that holds
+for every game, not only the ones somebody thought to publish. See
+[docs/RECORDING.md](docs/RECORDING.md) and
+[docs/SEASON-REPLAY.md](docs/SEASON-REPLAY.md).
 
 ## Architecture
 

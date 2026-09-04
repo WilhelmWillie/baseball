@@ -9,6 +9,13 @@ by plate appearance and half-inning, and a scrub bar marked with half-innings an
 scoring plays. Playback has no clock — it advances when the ballpark has finished
 animating.
 
+**Recording is no longer how most games are watched.** Everything below still
+describes the stored format, and the curated shelf still uses it, but any game
+the season has finished is now rebuilt from its final feed in the browser
+instead — the reconstruction step described here, run at load time rather than
+at publish time. See [SEASON-REPLAY.md](./SEASON-REPLAY.md) for why that is both
+cheaper and smaller than publishing the same game.
+
 ## Context
 
 Pocket Ballpark animates a live MLB game by polling the Stats API's GUMBO feed

@@ -15,19 +15,21 @@ function timeLabel(iso: string | null): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+/** The day a game was played, for a list that spans more than one of them. */
+function dayLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function StatusPill({ game }: { game: GameSummary }) {
   if (game.state === "live") {
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-grass px-2.5 py-1 text-[11px] font-bold text-white">
         <span className="h-1.5 w-1.5 animate-[blink_1.4s_ease-in-out_infinite] rounded-full bg-card" />
         {game.isTopInning ? "Top" : "Bot"} {game.inningOrdinal ?? ""} · {game.outs ?? 0} out
-      </span>
-    );
-  }
-  if (game.isReplay) {
-    return (
-      <span className="rounded-full bg-grass-mist px-2.5 py-1 text-[11px] font-bold text-grass-deep">
-        ⏺ Recording
       </span>
     );
   }
@@ -79,15 +81,17 @@ function TeamLine({
   );
 }
 
-export function GameCard({ game }: { game: GameSummary }) {
+/**
+ * `withDate` is for a list that is not one day: the home page's last nine
+ * games run back through however many days it took to play them, and "Final"
+ * in the footer is a word the pill above has already said.
+ */
+export function GameCard({ game, withDate = false }: { game: GameSummary; withDate?: boolean }) {
   const isLive = game.state === "live";
-  // `?replay=1` only where it earns its place. The watch page decides how to
-  // open a game from the game's own status, so an ordinary link is enough - but
-  // a published recording plays without the Stats API, and forcing replay here
-  // is what keeps the shelf watchable on a day the schedule cannot be reached.
-  const href = game.isReplay
-    ? `/watch/${game.gamePk}?replay=1`
-    : `/watch/${game.gamePk}`;
+  // An ordinary link: the watch page decides how to open a game from the game's
+  // own status, so `?replay=1` has nothing to add. It still works for every
+  // link ever shared - it is just not minted here any more.
+  const href = `/watch/${game.gamePk}`;
   // A game that has been played is rebuilt from its feed on demand, so a final
   // card opens like a live one. What stays shut is a game with nothing behind
   // it yet: no lineup is published before first pitch, and a postponed game
@@ -112,18 +116,11 @@ export function GameCard({ game }: { game: GameSummary }) {
         <TeamLine team={game.home} score={game.home.score} dim={!isLive && game.state !== "final"} />
       </div>
 
-      {/* Why this one is on the shelf. The scoreline alone does not carry it:
-          an 11-10 game reads as any other slugfest until you know eight of
-          those runs were made up in the last two innings. */}
-      {game.note && (
-        <p className="mt-3.5 rounded-2xl bg-grass-mist/55 px-3 py-2.5 text-xs leading-relaxed text-bark">
-          {game.note}
-        </p>
-      )}
-
       <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
         <span className="truncate text-bark-soft">
-          {game.statusText}
+          {withDate && game.state === "final" && game.startTime
+            ? dayLabel(game.startTime)
+            : game.statusText}
         </span>
         <span
           className={`shrink-0 font-bold ${watchable ? "text-grass" : "text-bark-soft/70"}`}
@@ -156,8 +153,8 @@ export function GameCard({ game }: { game: GameSummary }) {
       onClick={() =>
         track("game_selected", {
           gamePk: String(game.gamePk),
-          // A finished game opens as a replay whether or not it was published.
-          mode: game.isReplay || game.state === "final" ? "replay" : "live",
+          // A finished game opens as a replay, rebuilt from its own feed.
+          mode: game.state === "final" ? "replay" : "live",
           state: game.state,
         })
       }

@@ -161,6 +161,14 @@ playback source exist. The part worth keeping is the curation: `label` and
 Move those into a small committed table (`lib/replay/featured.ts`: gamePk,
 label, note), point `loadRecordingIndex` at it, and delete 1.6 MB of artifacts.
 
+Since then the shelf has come off the home page anyway: the second section is
+the season's last nine finished games, served by `/api/games/recent`, and
+`summarizeRecording` went with it. The recordings still play when a `gamePk` is
+opened directly, so what is left of this phase is the deletion itself — the
+artifacts, the patch encoder, and the publish half of the recorder — plus the
+question of whether `label` and `note` are worth a home of their own now that
+nothing renders them.
+
 Do this separately and afterwards. It is a subtraction, and the on-demand path
 deserves to be in production for a while first. The stored format stays
 documented either way — [RECORDING.md](./RECORDING.md) and

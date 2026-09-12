@@ -1,7 +1,6 @@
 import { paletteFor, type TeamPalette } from "@/lib/mlb/teams";
 import type { MlbScheduleGame } from "@/lib/mlb/types";
 import { isFinalStatus, isLiveStatus } from "@/lib/mlb/client";
-import type { RecordingIndexEntry } from "@/lib/replay/format";
 
 export interface GameSummary {
   gamePk: number;
@@ -15,10 +14,6 @@ export interface GameSummary {
   inningOrdinal: string | null;
   isTopInning: boolean | null;
   outs: number | null;
-  /** A finished game we recorded. Watchable however long ago it was played. */
-  isReplay?: boolean;
-  /** Why a recording is on the shelf. Only recordings carry one. */
-  note?: string;
 }
 
 type ScheduleTeamEntry = NonNullable<NonNullable<MlbScheduleGame["teams"]>["home"]>;
@@ -36,38 +31,6 @@ function summarizeTeam(entry: ScheduleTeamEntry | undefined) {
     score: entry?.score ?? null,
     record,
     palette,
-  };
-}
-
-/**
- * A recorded game as the home page's card wants it. Club colours come from the
- * same `paletteFor` the live schedule uses, keyed off the ids the recorder
- * stored, so a recording looks like any other game on the shelf.
- */
-export function summarizeRecording(entry: RecordingIndexEntry): GameSummary {
-  const side = (team: RecordingIndexEntry["home"]) => ({
-    id: team.id,
-    name: team.name,
-    abbrev: team.abbrev,
-    score: team.score,
-    palette: paletteFor(team.id, team.abbrev),
-  });
-  return {
-    gamePk: entry.gamePk,
-    state: "final",
-    // A label earns its place over the date: "2025 World Series Game 7" says
-    // more about why a recording is on the shelf than "2025-11-01" does.
-    statusText: entry.label ?? entry.date,
-    startTime: entry.date,
-    venue: entry.venue,
-    home: side(entry.home),
-    away: side(entry.away),
-    inning: null,
-    inningOrdinal: null,
-    isTopInning: null,
-    outs: null,
-    isReplay: true,
-    note: entry.note,
   };
 }
 
@@ -148,6 +111,35 @@ export function dedupeGames(games: GameSummary[]): GameSummary[] {
     if (!seen || rank[game.state] < rank[seen.state]) best.set(game.gamePk, game);
   }
   return [...best.values()];
+}
+
+/**
+ * How many finished games the home page leads with.
+ *
+ * Nine, laid out three by three: enough that the season reads as something
+ * still being played rather than a link to a date picker, and few enough that
+ * the slate above it is still the first thing on the page.
+ */
+export const RECENT_GAME_LIMIT = 9;
+
+/**
+ * The games that finished most recently, newest first.
+ *
+ * "Completed" is `summarizeGame`'s `final`, which is `isFinalStatus` - a
+ * postponement is filed under `Final` by the schedule and has no baseball in
+ * it, so it never lands here. Ordering is by first pitch rather than last out,
+ * which the schedule does not publish; within a day the two only disagree when
+ * an early game runs long enough to end after a later one started.
+ */
+export function recentFinals(games: GameSummary[], limit: number): GameSummary[] {
+  return games
+    .filter((game) => game.state === "final")
+    .sort((a, b) => {
+      const at = a.startTime ? Date.parse(a.startTime) : 0;
+      const bt = b.startTime ? Date.parse(b.startTime) : 0;
+      return bt - at;
+    })
+    .slice(0, limit);
 }
 
 /** Live games first, then games about to start, then finals. */

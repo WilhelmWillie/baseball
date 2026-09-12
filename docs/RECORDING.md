@@ -423,11 +423,14 @@ the same `gamePk` being live. `Viewer` takes a `mode` of `"live" | "replay"` and
 picks a driver; both hooks are always called, with the inactive one disabled,
 since a hook cannot be conditional.
 
-`GameList.tsx` grows a **Recorded games** section, fed by
-`loadRecordingIndex()`. `summarizeRecording()` in `lib/game/schedule.ts` maps an
-index entry onto the same `GameSummary` the schedule uses, so club colours come
-from the same `paletteFor` and the existing `GameCard` renders it. Recorded
-games are always clickable, unlike finished live games.
+`GameList.tsx` grew a **Recorded games** section, fed by `loadRecordingIndex()`,
+with `summarizeRecording()` in `lib/game/schedule.ts` mapping an index entry onto
+the same `GameSummary` the schedule uses so the existing `GameCard` could render
+it. **Both are gone.** Once every finished game became watchable
+([SEASON-REPLAY.md](./SEASON-REPLAY.md)), a shelf of six was a strange thing for
+the home page to lead with, and it now leads with the season's last nine games
+instead. Nothing links to a recording any more; the index stays, because
+`loadReplay` reads it to decide which player a `gamePk` needs.
 
 **No API routes.** The design originally called for `/api/replay`,
 `/api/replay/[gamePk]` and `.../frames`. They would be pure pass-throughs:
@@ -449,7 +452,7 @@ are deferred to Phase 4, and only if that is the shape chosen.
 | `src/store/gameStore.ts` | `seek(feed)` — composes the existing `reset` + `ingest`. Done in Phase 2. |
 | `src/components/Viewer.tsx` | Takes `mode: "live" \| "replay"`, picks the driver, renders `<Transport/>` in replay. |
 | `src/app/watch/[gamePk]/page.tsx` | Reads `?replay=1` and `?at=`, passes `mode`. |
-| `src/components/GameList.tsx` | Recorded-games section, via `loadRecordingIndex()` and `summarizeRecording()`. |
+| `src/components/GameList.tsx` | Recorded-games section, via `loadRecordingIndex()` and `summarizeRecording()`. Since removed — see "Routes" above. |
 | `package.json` | `+ tsx` (dev) and `+ fast-json-patch` (runtime, ~10 KB) — both done in Phase 1, along with the `record` script. `+ @aws-sdk/client-s3` (dev) in Phase 4. |
 | `docs/ARCHITECTURE.md`, `README.md` | Document `lib/replay/`, the format, the recorder. |
 
@@ -514,7 +517,8 @@ Committed under `public/recordings/v1/`:
 
 A curated shelf, not a sample: five games from the 2026 season picked for being
 worth watching, plus the World Series game that came before them. Each one
-carries a `note` explaining the pick, which is what the home page card shows.
+carries a `note` explaining the pick, which the home page card showed while the
+shelf was on the home page.
 
 | gamePk | Game | Why it's here |
 | --- | --- | --- |

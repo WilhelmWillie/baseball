@@ -52,8 +52,9 @@ work. To harden against ad-blockers later, proxy ingestion behind a first-party
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games
 first. A game in progress opens live and a game that has been played opens as a
 replay; only a game before first pitch stays shut, because the feed carries no
-lineup until then. Below the slate sit the curated recordings and a way into the
-rest of the season.
+lineup until then. Below the slate sits **the rest of the season**: the last
+nine games to end, three by three, and a way into every other day since Opening
+Day.
 
 **The season** (`/games/[date]`) — any day since Opening Day, as its own page.
 Every game MLB has finished is watchable, so the browser is the thing that
@@ -127,10 +128,10 @@ season, played back pitch by pitch. Almost none of them are recorded: a finished
 GUMBO document carries the whole game *and* its timing, so the browser rebuilds
 the frame stream from it on the way in — measured at ~12 ms, against ~4 s to
 encode the same frames as a stored recording, which is why the season needs no
-library behind it. A handful of games are still published as bytes and make up
-the curated shelf on the home page, each carrying a note saying what happened in
-it — a combined no-hitter, a 1–0 duel settled by a walk-off, an eight-run
-comeback. Both arrive as the same frames. Playback has no clock: the
+library behind it. A handful of games are still published as bytes under
+`public/recordings/` and play from there when they are opened; nothing links to
+them any more, and the home page leads with the games that just ended instead.
+Both arrive as the same frames. Playback has no clock: the
 next pitch is handed over when the ballpark has finished animating the last one,
 so a home run's trot and celebration always play out in full. Step by plate
 appearance or half-inning, or scrub a bar ticked with innings and scoring plays;

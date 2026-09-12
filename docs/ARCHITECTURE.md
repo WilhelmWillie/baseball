@@ -73,13 +73,14 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 
 | Route | File | Notes |
 | --- | --- | --- |
-| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate, the curated shelf, and the way into the season. Live and finished games are clickable; games before first pitch are not. |
+| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate, the season's last nine games, and the way into every other day of it. Live and finished games are clickable; games before first pitch are not. |
 | `/games/[date]` | `app/games/[date]/page.tsx` | One day of the season, server-rendered, bounded by `SEASON_OPENING_DAY` and today. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. **The mode comes from the game's status** - final plays back, live tunes in, and a game that has not started gets a card saying when it does. |
-| `/watch/[gamePk]?replay=1` | same | Forces replay without consulting the schedule, which is what keeps the published shelf watchable when the Stats API cannot be reached. `?at=<n>` opens on the nth plate appearance. |
+| `/watch/[gamePk]?replay=1` | same | Forces replay without consulting the schedule. No card mints it any more, but every link ever shared carries it, and it is still what plays a published recording when the Stats API cannot be reached. `?at=<n>` opens on the nth plate appearance. |
 | `/watch/[gamePk]/at/[atBatIndex]` | `app/watch/[gamePk]/at/[atBatIndex]/page.tsx` | The same recorded game, cued to one plate appearance by MLB's index for it. What the transport's share button hands out. |
 | `/clip/[gamePk]/[atBatIndex]` | `app/clip/[gamePk]/[atBatIndex]/page.tsx` → `components/ClipViewer.tsx` | One play, on its own, ending on a share card. Works for live games as well as finished ones. |
 | `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first, or one day with `?date=`. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
+| `GET /api/games/recent` | `app/api/games/recent/route.ts` | The last nine games the season finished, newest first, over a ten-day window clamped to Opening Day. Memoized for a minute — the answer is the same for everybody and costs ~800 KB upstream to rebuild. Never 500s either. |
 | `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Feed proxy, and the source a replay is rebuilt from. A game in progress is `no-store` behind a 3s in-memory cache; a finished game is `immutable` and kept in a cache of its own, since it can never change and every viewer after the first is then a cache hit. |
 | `GET /api/clip/[gamePk]/[atBatIndex]` | `app/api/clip/[gamePk]/[atBatIndex]/route.ts` | Cuts one plate appearance out of a game's feed and returns it in the recording format. 404 for a play that is missing or still in progress. |
 
@@ -130,7 +131,9 @@ strikes from the pitches rather than trusting the feed's `count` field (which is
 documented inconsistently), and it decides which pitch ended an at-bat *before*
 MLB publishes the result, so the pitch and its outcome can animate as one motion.
 
-**`lib/game/schedule.ts`** — `summarizeGame()` / `sortGames()` for the home page.
+**`lib/game/schedule.ts`** — `summarizeGame()` / `sortGames()` for the home page,
+plus `recentFinals()`, which is the home page's nine-game grid, and the season
+bounds (`SEASON_OPENING_DAY`, `seasonDate`, `neighborDays`) the browser walks.
 
 ### State and the polling loop
 
@@ -260,8 +263,10 @@ the crack lands with the swing rather than with the poll that reported it.
 Capturing a real game so it can be replayed, and playing it back. Design and
 rationale live in [RECORDING.md](./RECORDING.md), and
 [SEASON-REPLAY.md](./SEASON-REPLAY.md) covers why most games are no longer
-captured at all. Six games are committed under `public/recordings/` as the
-curated shelf; every other game is rebuilt from its feed when it is opened.
+captured at all. Six games are still committed under `public/recordings/` and
+play from there when they are opened, but nothing links to them: the home page
+leads with the games that just ended, and every game is rebuilt from its feed
+when it is opened.
 
 **`lib/replay/format.ts`** — *read this first.* The on-disk contract shared by
 the recorder and, later, the player: `FrameLine` (one keyframe then RFC-6902
@@ -318,9 +323,9 @@ which is how the rest of the season is watchable with nothing published. It runs
 recorder's own three calls - and holds the frames in an array, so `feedAt` is an
 index. That costs nothing to seek and about 4 MB of heap, because the frames
 share nearly all of their structure. The reconstructor is imported dynamically:
-the home page pulls `loadRecordingIndex` out of this module and has no use for
-~900 lines of it. See [SEASON-REPLAY.md](./SEASON-REPLAY.md) for why rebuilding
-beats storing.
+`loadReplay` reads the recordings index before it knows which player it needs,
+and a game that turns out to be published never pays for ~900 lines it will not
+run. See [SEASON-REPLAY.md](./SEASON-REPLAY.md) for why rebuilding beats storing.
 
 **`lib/replay/timeline.ts`** — indexes a recording by plate appearance:
 `buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Also

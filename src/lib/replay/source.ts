@@ -216,8 +216,8 @@ export async function loadRecording(gamePk: number | string): Promise<RecordingP
  * space, which only matters for something kept on disk.
  *
  * The reconstructor is pulled in on demand rather than imported at the top: it
- * is ~900 lines that only a replay needs, and `loadRecordingIndex` below is
- * imported by the home page.
+ * is ~900 lines that only a replay needs, and `loadReplay` below has to read the
+ * index before it knows whether this is the player it wants.
  */
 export async function loadReconstructed(gamePk: number | string): Promise<RecordingPlayer> {
   const [res, { reconstructFrames }, { dedupeFrames, buildManifest }] = await Promise.all([
@@ -280,7 +280,7 @@ export async function loadClip(
   return new PatchPlayer(bundle.manifest, bundle.lines);
 }
 
-/** The recorded-games index, for the home page. Absent is not an error. */
+/** Which games are published as bytes. Absent is not an error. */
 export async function loadRecordingIndex(): Promise<RecordingIndexEntry[]> {
   const res = await fetch(`${BASE}/v${FRAME_FORMAT_VERSION}/${INDEX_FILE}`, {
     cache: "force-cache",

@@ -200,12 +200,29 @@ export function Viewer({
               )}
             </>
           )
+        ) : isReplay && replay.status === "error" ? (
+          /* Any game that has been played can be rebuilt, but "any" is a large
+             number: a postponed game with no play-by-play behind it, a feed
+             that would not load. Say which it was and offer the way out, rather
+             than leaving somebody in an empty ballpark. */
+          <div className="max-w-xs rounded-2xl border-2 border-clay/40 bg-card/95 px-4 py-3 lip-float">
+            <p className="font-display text-base font-extrabold text-clay">
+              Can&apos;t play this game
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-bark-soft">
+              {replay.error ?? "Something went wrong reading this game."}
+            </p>
+            <Link
+              href="/"
+              className="mt-2.5 inline-block text-xs font-bold text-grass-deep hover:underline"
+            >
+              Find another game →
+            </Link>
+          </div>
         ) : (
           <div className="rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-4 py-3 text-sm font-semibold text-bark-soft lip-float">
             {isReplay
-              ? replay.status === "error"
-                ? "Can't read the recording"
-                : "Cueing up the tape…"
+              ? "Cueing up the tape…"
               : connection === "error"
                 ? "Can't reach the feed"
                 : "Tuning in…"}

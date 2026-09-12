@@ -63,12 +63,23 @@ export async function fetchSchedule(startDate: string, endDate: string): Promise
 export async function fetchScheduleGame(gamePk: number): Promise<MlbScheduleGame | null> {
   const url = `${BASE}/v1/schedule?sportId=1&gamePk=${gamePk}&hydrate=team,linescore,venue`;
   const schedule = await getJson<MlbSchedule>(url, 60);
+  const matches: MlbScheduleGame[] = [];
   for (const date of schedule.dates ?? []) {
     for (const game of date.games ?? []) {
-      if (game.gamePk === gamePk) return game;
+      if (game.gamePk === gamePk) matches.push(game);
     }
   }
-  return null;
+  if (matches.length === 0) return null;
+  // A rained-out game keeps its `gamePk` when it is made up, so the schedule
+  // answers with two entries: the postponement on the original date and the
+  // game itself on the date it was played. Taking the first would have a game
+  // in progress reported as finished, so the one that was played wins.
+  return (
+    matches.find(isLiveStatus) ??
+    matches.find(isFinalStatus) ??
+    matches.find((game) => !isCalledOffStatus(game)) ??
+    matches[0]
+  );
 }
 
 export async function fetchLiveFeed(gamePk: number): Promise<MlbLiveFeed> {
@@ -105,6 +116,23 @@ export function isLiveStatus(game: MlbScheduleGame): boolean {
   return abstract === "Live" || coded === "I" || coded === "M";
 }
 
+/**
+ * A game that was called off, rather than played.
+ *
+ * MLB files these under `abstractGameState: "Final"` - the game is not going to
+ * happen, which from the schedule's point of view is a kind of finished - so
+ * anything asking "is there a game here to watch" has to rule them out
+ * separately. There were 27 postponements and 3 cancellations in the first half
+ * of 2026 alone, and each one has a feed with no play-by-play behind it.
+ */
+export function isCalledOffStatus(game: MlbScheduleGame): boolean {
+  const coded = game.status?.codedGameState;
+  // "D" = postponed, "C" = cancelled.
+  if (coded === "D" || coded === "C") return true;
+  return /postponed|cancell?ed/i.test(game.status?.detailedState ?? "");
+}
+
+/** A game that was played to its end. "Completed Early: Rain" counts. */
 export function isFinalStatus(game: MlbScheduleGame): boolean {
-  return game.status?.abstractGameState === "Final";
+  return game.status?.abstractGameState === "Final" && !isCalledOffStatus(game);
 }

@@ -44,9 +44,10 @@ downstream of `lib/game/` speaks in `GameSnapshot` and `NormalizedEvent`.
 | Language | TypeScript 5, `strict` |
 
 `@/*` maps to `./src/*` (`tsconfig.json`). Scripts: `npm run dev`, `build`,
-`start`, `lint`, `record`. No test suite — recorded games under
-`public/recordings/` are how the animation path is exercised, and the recorder's
-own validation pass is the closest thing to one.
+`start`, `lint`, `record`, `validate-season`. No test suite — replaying real
+games is how the animation path is exercised, and the validation pass those
+replays are checked with (`npm run validate-season`, over a whole season) is the
+closest thing to one.
 
 ## Directory map
 
@@ -72,13 +73,14 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 
 | Route | File | Notes |
 | --- | --- | --- |
-| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate. Only in-progress games are clickable. |
-| `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. |
-| `/watch/[gamePk]?replay=1` | same | Plays a recording from `public/recordings/`. `?at=<n>` opens on the nth plate appearance. |
+| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate, the curated shelf, and the way into the season. Live and finished games are clickable; games before first pitch are not. |
+| `/games/[date]` | `app/games/[date]/page.tsx` | One day of the season, server-rendered, bounded by `SEASON_OPENING_DAY` and today. |
+| `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. **The mode comes from the game's status** - final plays back, live tunes in, and a game that has not started gets a card saying when it does. |
+| `/watch/[gamePk]?replay=1` | same | Forces replay without consulting the schedule, which is what keeps the published shelf watchable when the Stats API cannot be reached. `?at=<n>` opens on the nth plate appearance. |
 | `/watch/[gamePk]/at/[atBatIndex]` | `app/watch/[gamePk]/at/[atBatIndex]/page.tsx` | The same recorded game, cued to one plate appearance by MLB's index for it. What the transport's share button hands out. |
 | `/clip/[gamePk]/[atBatIndex]` | `app/clip/[gamePk]/[atBatIndex]/page.tsx` → `components/ClipViewer.tsx` | One play, on its own, ending on a share card. Works for live games as well as finished ones. |
-| `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
-| `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Live-feed proxy. 3s in-memory cache keyed by `gamePk`, capped at 32 entries. |
+| `GET /api/games` | `app/api/games/route.ts` | Today + yesterday's schedule, sorted live-first, or one day with `?date=`. Never 500s — on upstream failure it returns 200 with an `error` field so the page can still render. |
+| `GET /api/game/[gamePk]` | `app/api/game/[gamePk]/route.ts` | Feed proxy, and the source a replay is rebuilt from. A game in progress is `no-store` behind a 3s in-memory cache; a finished game is `immutable` and kept in a cache of its own, since it can never change and every viewer after the first is then a cache hit. |
 | `GET /api/clip/[gamePk]/[atBatIndex]` | `app/api/clip/[gamePk]/[atBatIndex]/route.ts` | Cuts one plate appearance out of a game's feed and returns it in the recording format. 404 for a play that is missing or still in progress. |
 
 The feed routes set `dynamic = "force-dynamic"` and `Cache-Control: no-store`.
@@ -248,8 +250,10 @@ the crack lands with the swing rather than with the poll that reported it.
 ### Recording
 
 Capturing a real game so it can be replayed, and playing it back. Design and
-rationale live in [RECORDING.md](./RECORDING.md). Three real games are committed
-under `public/recordings/`; `/watch/[gamePk]?replay=1` plays them.
+rationale live in [RECORDING.md](./RECORDING.md), and
+[SEASON-REPLAY.md](./SEASON-REPLAY.md) covers why most games are no longer
+captured at all. Six games are committed under `public/recordings/` as the
+curated shelf; every other game is rebuilt from its feed when it is opened.
 
 **`lib/replay/format.ts`** — *read this first.* The on-disk contract shared by
 the recorder and, later, the player: `FrameLine` (one keyframe then RFC-6902
@@ -280,14 +284,35 @@ as a fixture.
 records one, or re-records from a saved feed with `--from`. Needs outbound
 access to `statsapi.mlb.com`.
 
+**`scripts/validate-season.ts`** — the CLI (`npm run validate-season`). Walks a
+date range, rebuilds every game that was played and runs `validateFrames` over
+it. With every finished game replayable on demand, this is what says the
+reconstructor holds across a whole season rather than across the games somebody
+chose to publish: the 2026 season through 2026-09-04 is 2,136 games, all of
+which rebuild.
+
 ### Playback
 
-**`lib/replay/source.ts`** — `loadRecording(gamePk)` → a `RecordingPlayer`.
-Materializing every frame would be most of a gigabyte, so it keeps **one
-document** and walks it with `applyPatch`, plus a checkpoint every 50 frames to
-bound how far a backward seek has to rewind. Recordings live behind a base URL
-and nothing else: `public/recordings/` is served at `/recordings`, and
-`NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a bucket without a code change.
+**`lib/replay/source.ts`** — `RecordingPlayer` is an interface of three members
+(`manifest`, `frameCount`, `feedAt`) with two implementations, and `loadReplay`
+picks between them off the recordings index.
+
+`PatchPlayer` plays a **published recording**: materializing its frames would be
+most of a gigabyte, so it keeps one document and walks it with `applyPatch`, plus
+a checkpoint every 50 frames to bound how far a backward seek has to rewind.
+Recordings live behind a base URL and nothing else - `public/recordings/` is
+served at `/recordings`, and `NEXT_PUBLIC_RECORDINGS_BASE_URL` repoints it at a
+bucket without a code change.
+
+`FramePlayer` plays a game **rebuilt in the browser** by `loadReconstructed`,
+which is how the rest of the season is watchable with nothing published. It runs
+`reconstructFrames` → `dedupeFrames` → `buildManifest` over the final feed - the
+recorder's own three calls - and holds the frames in an array, so `feedAt` is an
+index. That costs nothing to seek and about 4 MB of heap, because the frames
+share nearly all of their structure. The reconstructor is imported dynamically:
+the home page pulls `loadRecordingIndex` out of this module and has no use for
+~900 lines of it. See [SEASON-REPLAY.md](./SEASON-REPLAY.md) for why rebuilding
+beats storing.
 
 **`lib/replay/timeline.ts`** — indexes a recording by plate appearance:
 `buildAtBats`, `buildMarkers`, `atBatAtFrame`, `stepHalfInning`. Also
@@ -388,6 +413,9 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | Polling behaviour | `hooks/useLiveFeed.ts` |
 | When state becomes visible | `store/gameStore.ts` |
 | What a recording stores | `lib/replay/format.ts` |
+| Where a replay's frames come from | `loadReplay` in `lib/replay/source.ts` |
+| Whether a game counts as played | `isFinalStatus` / `isCalledOffStatus` in `lib/mlb/client.ts` |
+| How far back the season browser goes | `SEASON_OPENING_DAY` in `lib/game/schedule.ts` |
 | How a game is reconstructed from its final feed | `lib/replay/reconstruct.ts` |
 | What makes a recording valid | `lib/replay/validate.ts` |
 | How a recording is paced | `REPLAY_BEATS` in `lib/replay/timeline.ts` |

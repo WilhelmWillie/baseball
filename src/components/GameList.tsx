@@ -5,167 +5,14 @@ import { useEffect, useState } from "react";
 import { summarizeRecording, type GameSummary } from "@/lib/game/schedule";
 import { loadRecordingIndex } from "@/lib/replay/source";
 import { Ball } from "@/components/brand/Ball";
-import { track } from "@/lib/analytics/events";
+import { easternDate } from "@/lib/mlb/client";
+import { GameCard } from "@/components/GameCard";
 
 interface SchedulePayload {
   date: string;
   games: GameSummary[];
   liveCount: number;
   error?: string;
-}
-
-function timeLabel(iso: string | null): string {
-  if (!iso) return "Time TBD";
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
-function StatusPill({ game }: { game: GameSummary }) {
-  if (game.state === "live") {
-    return (
-      <span className="flex items-center gap-1.5 rounded-full bg-grass px-2.5 py-1 text-[11px] font-bold text-white">
-        <span className="h-1.5 w-1.5 animate-[blink_1.4s_ease-in-out_infinite] rounded-full bg-card" />
-        {game.isTopInning ? "Top" : "Bot"} {game.inningOrdinal ?? ""} · {game.outs ?? 0} out
-      </span>
-    );
-  }
-  if (game.isReplay) {
-    return (
-      <span className="rounded-full bg-grass-mist px-2.5 py-1 text-[11px] font-bold text-grass-deep">
-        ⏺ Recording
-      </span>
-    );
-  }
-  if (game.state === "final") {
-    return (
-      <span className="rounded-full bg-paper-deep px-2.5 py-1 text-[11px] font-bold text-bark-soft">
-        Final
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-clay-soft/60 px-2.5 py-1 text-[11px] font-bold text-bark">
-      {timeLabel(game.startTime)}
-    </span>
-  );
-}
-
-function TeamLine({
-  team,
-  score,
-  dim,
-}: {
-  team: GameSummary["home"];
-  score: number | null;
-  dim: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span
-        className="inline-block h-7 w-7 shrink-0 rounded-full ring-2 ring-card"
-        style={{ backgroundColor: team.palette.primary }}
-      />
-      <span
-        className={`w-12 font-display text-lg font-extrabold leading-none ${
-          dim ? "text-bark-soft" : "text-bark"
-        }`}
-      >
-        {team.abbrev}
-      </span>
-      <span className="flex-1 truncate text-sm text-bark-soft">{team.name}</span>
-      <span
-        className={`w-8 text-right font-display text-2xl font-extrabold leading-none ${
-          dim ? "text-bark-soft/70" : "text-grass-deep"
-        }`}
-      >
-        {score ?? "–"}
-      </span>
-    </div>
-  );
-}
-
-function GameCard({ game }: { game: GameSummary }) {
-  const isLive = game.state === "live";
-  const href = game.isReplay
-    ? `/watch/${game.gamePk}?replay=1`
-    : `/watch/${game.gamePk}`;
-  // There is nothing to watch in a game that has not started or has finished:
-  // the feed carries no lineup before first pitch and nothing moves after the
-  // last out, so those cards do not open. A recording is the exception - it
-  // carries the whole game, so it opens however long ago it was played.
-  const watchable = isLive || game.isReplay;
-
-  const shell =
-    "group block rounded-3xl border-2 bg-card p-4 transition-all duration-200 sm:p-5";
-  const interactive = watchable
-    ? "border-grass-deep/12 lip hover:-translate-y-1 hover:-rotate-[0.4deg] hover:border-grass/60"
-    : "cursor-not-allowed border-bark/8 bg-card/60 opacity-70";
-
-  const body = (
-    <>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <StatusPill game={game} />
-        <span className="truncate text-xs text-bark-soft/80">{game.venue}</span>
-      </div>
-
-      <div className="space-y-2.5">
-        <TeamLine team={game.away} score={game.away.score} dim={!isLive && game.state !== "final"} />
-        <TeamLine team={game.home} score={game.home.score} dim={!isLive && game.state !== "final"} />
-      </div>
-
-      {/* Why this one is on the shelf. The scoreline alone does not carry it:
-          an 11-10 game reads as any other slugfest until you know eight of
-          those runs were made up in the last two innings. */}
-      {game.note && (
-        <p className="mt-3.5 rounded-2xl bg-grass-mist/55 px-3 py-2.5 text-xs leading-relaxed text-bark">
-          {game.note}
-        </p>
-      )}
-
-      <div className="mt-4 flex items-center justify-between gap-2 border-t-2 border-dashed border-grass-deep/12 pt-3 text-xs">
-        <span className="truncate text-bark-soft">
-          {game.statusText}
-        </span>
-        <span
-          className={`shrink-0 font-bold ${watchable ? "text-grass" : "text-bark-soft/70"}`}
-        >
-          {watchable ? (
-            <>
-              Grab a seat{" "}
-              <span className="inline-block transition-transform group-hover:translate-x-1">→</span>
-            </>
-          ) : game.state === "final" ? (
-            "That's a wrap"
-          ) : (
-            "Not yet"
-          )}
-        </span>
-      </div>
-    </>
-  );
-
-  if (!watchable) {
-    return (
-      <div className={`${shell} ${interactive}`} aria-disabled>
-        {body}
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      href={href}
-      className={`${shell} ${interactive}`}
-      onClick={() =>
-        track("game_selected", {
-          gamePk: String(game.gamePk),
-          mode: game.isReplay ? "replay" : "live",
-          state: game.state,
-        })
-      }
-    >
-      {body}
-    </Link>
-  );
 }
 
 function SectionTitle({ children, count }: { children: React.ReactNode; count?: number }) {
@@ -258,7 +105,7 @@ export function GameList() {
                 <p className="mt-1">
                   {failed
                     ? "We couldn't reach the schedule from here — the recorded games below still play."
-                    : "Nothing is in progress. Come back around first pitch, or put on one of the recorded games below."}
+                    : "Nothing is in progress. Come back around first pitch, or watch back any game the season has already played."}
                 </p>
               </div>
             )}
@@ -278,6 +125,30 @@ export function GameList() {
               </div>
             </section>
           )}
+
+          {/* Every game that has been played, not only the ones on the shelf.
+              A finished game is rebuilt from MLB's play-by-play when it is
+              opened, so the season needs a way in rather than a library. */}
+          <section className="mt-10">
+            <SectionTitle>The rest of the season</SectionTitle>
+            <Link
+              href={`/games/${data?.date ?? easternDate()}`}
+              className="group flex items-center justify-between gap-4 rounded-3xl border-2 border-grass-deep/12 bg-card p-5 transition-all duration-200 lip hover:-translate-y-1 hover:border-grass/60"
+            >
+              <span>
+                <span className="block font-display text-lg font-bold text-bark">
+                  Browse any day of 2026
+                </span>
+                <span className="mt-1 block text-sm leading-relaxed text-bark-soft">
+                  Every game since Opening Day plays in the ballpark — pick a date and
+                  watch it back.
+                </span>
+              </span>
+              <span className="shrink-0 text-lg font-bold text-grass transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </Link>
+          </section>
 
           {rest.length > 0 && (
             <section className="mt-10">

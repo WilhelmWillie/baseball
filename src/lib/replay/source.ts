@@ -1,5 +1,6 @@
 import { applyPatch, type Operation } from "fast-json-patch";
 import type { MlbLiveFeed } from "@/lib/mlb/types";
+import type { RecordedFrame } from "./reconstruct";
 import {
   CLIP_SHAPE_VERSION,
   FRAMES_FILE,
@@ -14,12 +15,15 @@ import {
 } from "./format";
 
 /**
- * Loading a recording and moving through it.
+ * Loading a game to replay, and moving through it.
  *
- * Recordings live behind a base URL and nothing more. `public/recordings/` is
- * served statically at `/recordings`, so local development needs no
- * configuration; pointing this at a public bucket later is an env var, not a
- * code change.
+ * Two sources, one interface. A **published recording** is bytes on a static
+ * host - `public/recordings/` is served at `/recordings`, and pointing that at a
+ * bucket later is an env var rather than a code change. A **reconstructed
+ * game** is any game MLB has finished, rebuilt from its final feed in the
+ * browser at load time, which is how the rest of the season is watchable
+ * without publishing anything. `loadReplay` picks between them; everything
+ * downstream sees a `RecordingPlayer` either way.
  */
 const BASE = process.env.NEXT_PUBLIC_RECORDINGS_BASE_URL ?? "/recordings";
 
@@ -71,14 +75,29 @@ async function readFrameStream(url: string): Promise<FrameLine[]> {
 }
 
 /**
- * A loaded recording, positioned somewhere in the game.
+ * A game the replay pump can play, however it was obtained.
  *
- * `feedAt` returns the player's own document rather than a copy. That is safe
- * because nothing downstream keeps it: `buildSnapshot`, `buildHistory` and
- * `extractEvents` all read primitives out into fresh objects, and the store
- * retains a `GameSnapshot`, never the feed it came from.
+ * `useReplay` touches exactly these three members, which is what lets a game
+ * rebuilt in the browser and a recording published as bytes be the same thing
+ * downstream. Both implementations return their own document from `feedAt`
+ * rather than a copy, which is safe because nothing downstream keeps it:
+ * `buildSnapshot`, `buildHistory` and `extractEvents` read primitives out into
+ * fresh objects, and the store retains a `GameSnapshot`, never the feed it came
+ * from.
  */
-export class RecordingPlayer {
+export interface RecordingPlayer {
+  readonly manifest: RecordingManifest;
+  readonly frameCount: number;
+  feedAt(index: number): MlbLiveFeed;
+}
+
+/**
+ * A published recording: one keyframe and a patch per frame, walked forward.
+ *
+ * The stored format trades work for bytes - see `PatchPlayer` versus
+ * `FramePlayer` below - and this is the side that pays the work.
+ */
+export class PatchPlayer implements RecordingPlayer {
   private readonly patches: PatchLine[];
   private readonly checkpoints = new Map<number, MlbLiveFeed>();
   private document: MlbLiveFeed;
@@ -144,6 +163,33 @@ export class RecordingPlayer {
   }
 }
 
+/**
+ * A game rebuilt in the browser, held as frames.
+ *
+ * The counterpart to `PatchPlayer`, and the reason most games need no recording
+ * at all. `reconstructFrames` shallow-copies as it reveals plays, so ~500 frames
+ * of an ~800 KB document share nearly all of their structure - measured at 4 MB
+ * of heap, not the 400 MB the arithmetic suggests. Seeking is then an array
+ * index: no rewind, no checkpoints, no patches replayed.
+ */
+export class FramePlayer implements RecordingPlayer {
+  constructor(
+    readonly manifest: RecordingManifest,
+    private readonly frames: RecordedFrame[],
+  ) {
+    if (frames.length === 0) throw new Error("Cannot play a game with no frames");
+  }
+
+  get frameCount(): number {
+    return this.frames.length;
+  }
+
+  feedAt(index: number): MlbLiveFeed {
+    const target = Math.max(0, Math.min(index, this.frames.length - 1));
+    return this.frames[target].feed;
+  }
+}
+
 export async function loadRecording(gamePk: number | string): Promise<RecordingPlayer> {
   const prefix = `${BASE}/${recordingPrefix(Number(gamePk))}`;
   const [manifestRes, lines] = await Promise.all([
@@ -152,7 +198,61 @@ export async function loadRecording(gamePk: number | string): Promise<RecordingP
   ]);
   if (!manifestRes.ok) throw new Error(`Recording manifest responded ${manifestRes.status}`);
   const manifest = (await manifestRes.json()) as RecordingManifest;
-  return new RecordingPlayer(manifest, lines);
+  return new PatchPlayer(manifest, lines);
+}
+
+/**
+ * Any game that has been played, rebuilt from its final feed in the browser.
+ *
+ * This is what makes a season watchable without recording a season. A finished
+ * GUMBO document carries every play and every timestamp, so `reconstructFrames`
+ * rebuilds the frame stream from it - the same three calls the recorder makes,
+ * against the same feed, producing the same frames.
+ *
+ * It is also *cheaper* than publishing one. Measured on a nine-inning game:
+ * rebuilding the frames takes ~12 ms, while encoding them as patches takes ~4 s,
+ * and the published recording is larger over the wire (179 KB of frames) than
+ * the feed it was built from (130 KB gzipped). The stored format buys disk
+ * space, which only matters for something kept on disk.
+ *
+ * The reconstructor is pulled in on demand rather than imported at the top: it
+ * is ~900 lines that only a replay needs, and `loadRecordingIndex` below is
+ * imported by the home page.
+ */
+export async function loadReconstructed(gamePk: number | string): Promise<RecordingPlayer> {
+  const [res, { reconstructFrames }, { dedupeFrames, buildManifest }] = await Promise.all([
+    // The proxy serves a finished game `immutable`, so a second viewing - or a
+    // second viewer behind the same CDN - costs nothing upstream.
+    fetch(`/api/game/${gamePk}`, { cache: "force-cache" }),
+    import("./reconstruct"),
+    import("./encode"),
+  ]);
+  if (!res.ok) throw new Error(`This game's feed responded ${res.status}`);
+  const feed = (await res.json()) as MlbLiveFeed;
+
+  const frames = dedupeFrames(reconstructFrames(feed));
+  if (frames.length === 0) {
+    // A game with no plays in its feed: postponed, or scheduled and not yet
+    // played. There is nothing to watch and nothing a retry would fix.
+    throw new Error("There's no play-by-play for this game to rebuild");
+  }
+  return new FramePlayer(buildManifest({ final: feed, frames, source: "reconstructed" }), frames);
+}
+
+/**
+ * A whole game, from wherever it can be had.
+ *
+ * The shelf's handful of games are published as bytes and play without the
+ * Stats API; everything else in the season is rebuilt from its feed. Which one
+ * a `gamePk` is comes from the index - a 4 KB static file the browser has
+ * usually cached already - rather than from probing for a recording that is not
+ * there, because a 404 on the way into a game is a slower and worse way to
+ * learn the same thing.
+ */
+export async function loadReplay(gamePk: number | string): Promise<RecordingPlayer> {
+  const index = await loadRecordingIndex().catch(() => []);
+  const published = index.some((entry) => entry.gamePk === Number(gamePk));
+  return published ? loadRecording(gamePk) : loadReconstructed(gamePk);
 }
 
 /**
@@ -177,7 +277,7 @@ export async function loadClip(
   if (res.status === 404) throw new Error("That play isn't available to watch");
   if (!res.ok) throw new Error(`Clip responded ${res.status}`);
   const bundle = (await res.json()) as { manifest: RecordingManifest; lines: FrameLine[] };
-  return new RecordingPlayer(bundle.manifest, bundle.lines);
+  return new PatchPlayer(bundle.manifest, bundle.lines);
 }
 
 /** The recorded-games index, for the home page. Absent is not an error. */

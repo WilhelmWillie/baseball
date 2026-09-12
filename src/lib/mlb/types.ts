@@ -343,6 +343,8 @@ export interface MlbScheduleGame {
   venue?: MlbVenue;
   linescore?: MlbLinescore;
   seriesDescription?: string;
+  /** MLB's one-letter kind: "R" regular season, "S" spring, "W" World Series… */
+  gameType?: string;
   doubleHeader?: string;
   gameNumber?: number;
 }

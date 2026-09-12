@@ -319,9 +319,11 @@ function zoneHeight(feet: number): number {
 /**
  * Where the ball leaves the hand, measured off the throwing pose rather than
  * guessed: at `THROW_RELEASE` the pitcher's hand is here, a little in front of
- * the rubber and up at the top of the arm slot.
+ * the rubber and up at the top of the arm slot. It comes down whenever the
+ * figures do - the chibi rig hangs its hands lower than the old one did, and a
+ * ball that leaves from where the hand used to be leaves from mid-air.
  */
-const RELEASE_HEIGHT = 11.0;
+const RELEASE_HEIGHT = 10.6;
 const RELEASE_DEPTH = RUBBER_DEPTH - 2 - 4.7;
 const RELEASE_LATERAL = 2.3;
 const PLATE_DEPTH = 1.35;

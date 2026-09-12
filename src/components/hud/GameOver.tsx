@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { TeamBadge } from "@/components/brand/Species";
+import { speciesFor } from "@/lib/game/species";
 import type { GameSnapshot, TeamSide } from "@/lib/game/types";
 
 function LineScore({ snapshot }: { snapshot: GameSnapshot }) {
@@ -35,9 +37,10 @@ function LineScore({ snapshot }: { snapshot: GameSnapshot }) {
           {rows.map(([side, abbrev]) => (
             <tr key={side} className="border-t-2 border-dashed border-grass-deep/12">
               <td className="flex items-center gap-2 px-2 py-1.5">
-                <span
-                  className="inline-block h-4 w-4 rounded-full ring-2 ring-card"
-                  style={{ backgroundColor: snapshot.teams[side].palette.primary }}
+                <TeamBadge
+                  species={speciesFor(side)}
+                  color={snapshot.teams[side].palette.primary}
+                  className="h-4 w-4"
                 />
                 <span className="font-display font-extrabold text-bark">{abbrev}</span>
               </td>
@@ -66,10 +69,7 @@ function BoxScore({ snapshot, side }: { snapshot: GameSnapshot; side: TeamSide }
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <span
-          className="inline-block h-5 w-5 rounded-full ring-2 ring-card"
-          style={{ backgroundColor: team.palette.primary }}
-        />
+        <TeamBadge species={speciesFor(side)} color={team.palette.primary} className="h-5 w-5" />
         <span className="font-display text-base font-extrabold text-bark">{team.name}</span>
         <span className="font-display text-base font-extrabold text-grass-deep">
           {snapshot.score[side]}
@@ -180,9 +180,10 @@ export function GameOver({ snapshot }: { snapshot: GameSnapshot }) {
           <div className="mt-4 flex items-center gap-6">
             {(["away", "home"] as const).map((side) => (
               <div key={side} className="flex items-center gap-3">
-                <span
-                  className="inline-block h-9 w-9 rounded-full ring-2 ring-card"
-                  style={{ backgroundColor: snapshot.teams[side].palette.primary }}
+                <TeamBadge
+                  species={speciesFor(side)}
+                  color={snapshot.teams[side].palette.primary}
+                  className="h-9 w-9"
                 />
                 <div>
                   <div className="font-display text-sm font-extrabold text-bark-soft">

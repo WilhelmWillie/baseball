@@ -672,35 +672,51 @@ function skyline(blocks: Block[]) {
 }
 
 /**
- * A wooden scoreboard standing over the batter's eye, high enough to clear the
- * facade behind it. The digits are decorative - the real count is on the HUD -
- * but a park without a board out there does not look like a park.
+ * The board out over the batter's eye. Its woodwork is here with the rest of
+ * the park; what is *written* on it is not - the recessed panel is left blank
+ * and `components/scene/Scoreboard.tsx` hangs a canvas of the game's actual
+ * line score on the front of it. Two rows of decorative digits used to stand
+ * in for that, which looked right from a seat and said nothing.
+ *
+ * Sized to hold nine innings and the R/H/E totals legibly from behind home -
+ * a toy park's board, like everything else out there, is drawn for the read
+ * rather than to scale.
  */
-function scoreboard(blocks: Block[]) {
-  const z = -(fieldRadius(0) + 74);
-  const width = 150;
-  const height = 44;
-  const base = 52;
+export const SCOREBOARD = {
+  /** Depth of the board's centre plane. Negative Z runs out toward center. */
+  z: -(fieldRadius(0) + 74),
+  width: 168,
+  height: 58,
+  /** How tall the posts are, which is where the bottom edge of the board sits. */
+  base: 54,
+  /** Margin of frame left around the recessed panel, across and up. */
+  frameX: 9,
+  frameY: 7,
+};
 
-  for (const dx of [-56, 56]) {
+/** The recessed panel the line score is painted on, in world space. */
+export const SCOREBOARD_FACE = {
+  width: SCOREBOARD.width - SCOREBOARD.frameX * 2,
+  height: SCOREBOARD.height - SCOREBOARD.frameY * 2,
+  y: SCOREBOARD.base + SCOREBOARD.height / 2,
+  /** Stood just off the recess, so the panel and the wood never z-fight. */
+  z: SCOREBOARD.z + 4.3,
+};
+
+function scoreboard(blocks: Block[]) {
+  const { z, width, height, base } = SCOREBOARD;
+
+  for (const dx of [-(width / 2 - 22), width / 2 - 22]) {
     blocks.push({ p: [dx, base / 2, z], s: [7, base, 7], c: COLORS.scoreboard });
   }
   blocks.push({ p: [0, base + height / 2, z], s: [width, height, 5], c: COLORS.scoreboard });
+  // The recess itself, a shade darker than the frame, so the board still reads
+  // as a board in the moment before a game is loaded into it.
   blocks.push({
-    p: [0, base + height / 2, z + 3],
-    s: [width - 14, height - 12, 2],
+    p: [0, SCOREBOARD_FACE.y, z + 3],
+    s: [SCOREBOARD_FACE.width, SCOREBOARD_FACE.height, 2],
     c: COLORS.scoreboardFace,
   });
-  // Two rows of lit digits, one per club.
-  for (let row = 0; row < 2; row++) {
-    for (let i = 0; i < 9; i++) {
-      blocks.push({
-        p: [-width / 2 + 20 + i * 14.5, base + height / 2 + (row === 0 ? 7 : -7), z + 4.6],
-        s: [6.5, 8, 1],
-        c: row === 0 ? "#f6e7c6" : "#e8d3a6",
-      });
-    }
-  }
   // Shingled roof, overhanging the way the houses beyond it do.
   blocks.push({ p: [0, base + height + 5, z], s: [width + 12, 9, 11], c: "#c4614a" });
 }

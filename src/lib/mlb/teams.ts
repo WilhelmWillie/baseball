@@ -69,6 +69,25 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
+/**
+ * The two inks the interface writes on top of a club's color - the same paper
+ * and bark the palette in `app/globals.css` is built from, as literals, because
+ * the canvas textures and the 3D park cannot read a CSS variable.
+ */
+export const INK_LIGHT = "#fffcf5";
+export const INK_DARK = "#4a3524";
+
+/**
+ * Whichever of the two reads on top of `hex`. Weighted for how bright each
+ * channel looks rather than averaged, so a saturated red (bright in the maths,
+ * dark to the eye) still gets the cream ink.
+ */
+export function inkOn(hex: string): string {
+  const [r, g, b] = hexToRgb(hex);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? INK_DARK : INK_LIGHT;
+}
+
 /** Rough perceptual distance, good enough to catch two clubs in the same color. */
 export function colorDistance(a: string, b: string): number {
   const [r1, g1, b1] = hexToRgb(a);

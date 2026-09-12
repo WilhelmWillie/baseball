@@ -1,6 +1,8 @@
 "use client";
 
-import type { GameSnapshot } from "@/lib/game/types";
+import { TeamBadge } from "@/components/brand/Species";
+import { speciesFor } from "@/lib/game/species";
+import type { GameSnapshot, TeamSide } from "@/lib/game/types";
 
 /**
  * How much of the scoreboard is showing. `full` is the panel with the last
@@ -113,11 +115,13 @@ function Outs({ count }: { count: number }) {
 }
 
 function TeamRow({
+  side,
   abbrev,
   color,
   runs,
   batting,
 }: {
+  side: TeamSide;
   abbrev: string;
   color: string;
   runs: number;
@@ -125,10 +129,7 @@ function TeamRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span
-        className="inline-block h-5 w-5 rounded-full ring-2 ring-card"
-        style={{ backgroundColor: color }}
-      />
+      <TeamBadge species={speciesFor(side)} color={color} className="h-5 w-5" />
       <span
         className={`w-11 font-display text-base font-extrabold leading-none ${
           batting ? "text-bark" : "text-bark-soft"
@@ -148,13 +149,15 @@ function TeamRow({
   );
 }
 
-/** The tight team line used in the minimized bar: dot, abbrev, runs. */
+/** The tight team line used in the minimized bar: badge, abbrev, runs. */
 function MiniTeam({
+  side,
   abbrev,
   color,
   runs,
   batting,
 }: {
+  side: TeamSide;
   abbrev: string;
   color: string;
   runs: number;
@@ -162,10 +165,7 @@ function MiniTeam({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span
-        className="inline-block h-3.5 w-3.5 shrink-0 rounded-full ring-2 ring-card"
-        style={{ backgroundColor: color }}
-      />
+      <TeamBadge species={speciesFor(side)} color={color} className="h-4 w-4" />
       <span
         className={`w-8 font-display text-sm font-extrabold leading-none ${
           batting ? "text-bark" : "text-bark-soft"
@@ -228,12 +228,14 @@ export function Scorebug({
         <div className="pointer-events-none flex w-full items-center gap-2.5 rounded-2xl border-2 border-grass-deep/12 bg-card/95 px-3 py-2 backdrop-blur-[2px] lip-float sm:w-auto">
           <div className="flex flex-col gap-1">
             <MiniTeam
+              side="away"
               abbrev={teams.away.abbrev}
               color={teams.away.palette.primary}
               runs={score.away}
               batting={snapshot.battingSide === "away"}
             />
             <MiniTeam
+              side="home"
               abbrev={teams.home.abbrev}
               color={teams.home.palette.primary}
               runs={score.home}
@@ -263,12 +265,14 @@ export function Scorebug({
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5">
             <TeamRow
+              side="away"
               abbrev={teams.away.abbrev}
               color={teams.away.palette.primary}
               runs={score.away}
               batting={snapshot.battingSide === "away"}
             />
             <TeamRow
+              side="home"
               abbrev={teams.home.abbrev}
               color={teams.home.palette.primary}
               runs={score.home}

@@ -67,7 +67,16 @@ so who is who reads instantly. The stands wear the home club's colours too, with
 a visible minority in the visitors' and the rest in neutral street clothes. The
 scorebug carries score, inning, count, outs, bases, and a line for each of the
 two players who matter: the hitter's season average and what he has done today,
-the pitcher's ERA, pitch count, innings and strikeouts.
+the pitcher's ERA, pitch count, innings and strikeouts. Each club's chip on the
+panel wears its species' face, so the two reads - colour and species - agree
+without anyone having to work out which dot is which.
+
+**The board in the park** — the wooden scoreboard out over the batter's eye
+carries the game's real line score: nine innings, R/H/E, a face on each club,
+and the half-inning being played lit the way a real board lights it. A game that
+runs long keeps playing and the board stops adding columns; the extra runs land
+in R behind a small `+2` marker, so the total never looks like it disagrees with
+the nine innings above it.
 
 **Game log** — the last play sits under the scorebug; hover it to open the full
 log, grouped by half-inning with the running score, scoring plays highlighted.
@@ -195,13 +204,33 @@ the mound with the grass diamond punched out of it) as `THREE.Shape`s in field
 space, which `Field.tsx` turns into flat meshes. Mow stripes come from a
 repeating texture rather than per-tile color.
 
+Those surfaces are all one flat fill each, and lit, a flat fill comes out clean,
+even and a little sterile — a model of a ballpark rather than an afternoon at
+one. `src/lib/field/paint.ts` puts the unevenness back, as snippets injected
+into the materials the park already uses (`onBeforeCompile`, so the lighting,
+shadows and fog stay three.js' own and nothing costs a second draw call). Turf
+and dirt get broad hand-mixed blotches that shift hue as well as value, a warm
+pool of afternoon over the infield, and a cloud the size of the outfield
+drifting across on the same wind the ball flies through. Distance takes the
+colour of the sky — the far grass and the far side of the bowl both haze toward
+whatever `skyLook` has the hemisphere light doing, which is what stops eight
+hundred feet of one green reading as a painted floor. The bowl itself is sunlit
+at the top and in its own shade at the concourse. One clock and one wind
+direction drive all of it, advanced once a frame in `Scene`'s engine loop.
+
 Everything vertical — outfield wall, the raked seating bowl, bleachers running
 down both foul lines behind a low padded wall, light towers, the wooden
 scoreboard over the batter's eye, and the town of gabled houses and oversized
 trees on three hazy rings beyond the park — is generated in
 `src/lib/field/park.ts` as a flat list of boxes and drawn by `Park.tsx` in a
 single `InstancedMesh` — plus a second, tiny one holding just the lamp faces, so
-the tower lights can burn unlit by the sun after dark. Row blocks are cut deeper
+the tower lights can burn unlit by the sun after dark. The scoreboard is the one
+thing out there that is not a box: `park.ts` builds its woodwork and leaves the
+recessed panel blank, and `Scoreboard.tsx` hangs a canvas of the line score on
+the front of it (`scoreboardFace.ts` paints it). It is a texture rather than a
+grid of little digit cubes because what the board has to do is be *read*, from a
+seat four hundred feet away, and it is repainted only when the line score itself
+changes — not per pitch, and never per frame. Row blocks are cut deeper
 than the gap between rows, because boxes that interpenetrate look solid while
 boxes whose faces land on exactly the same plane flicker, and a bowl of several
 thousand of them flickers everywhere at once. Foul ground tapers sharply past

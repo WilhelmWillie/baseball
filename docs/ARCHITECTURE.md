@@ -209,6 +209,13 @@ which seats a `Fan[]` against the same rows. Both come out of one pass and are
 cached together: the crowd is laid out on the bowl's geometry, and building it
 separately would mean writing that geometry down twice.
 
+**`lib/field/paint.ts`** — the shader snippets that keep the park's flat fills
+from reading as flat fills: blotched turf and dirt, a drifting cloud, a
+sunlit-top/shaded-bottom wash on the bowl, and a distance haze pointed at the
+sky's own colour. Injected into the stock materials with `onBeforeCompile`, so
+lighting and shadows stay three.js'. One clock (`advancePaint`, called from
+`Scene`'s engine loop) and one tint (`paintTint`) drive every patched material.
+
 **`lib/field/sky.ts`** — `Conditions` (hour, cloud, precipitation, roof, wind)
 and `skyLook()`, which turns them into a lighting rig: sun arc, color, fog,
 whether the towers are lit. Also `parseWind()` and `parseLocalHour()`, which
@@ -227,8 +234,9 @@ it, applies the shot's lens and widens framing on portrait viewports.
 
 | Component | Draws |
 | --- | --- |
-| `Field.tsx` | The playing surface from `surfaces.ts`, plus mow stripes |
+| `Field.tsx` | The playing surface from `surfaces.ts`, plus mow stripes and the ground paint |
 | `Park.tsx` | All of `park.ts` in one `InstancedMesh`, plus a tiny second one for lamp faces |
+| `Scoreboard.tsx` | The line score on the board over the batter's eye, as a canvas texture (`scoreboardFace.ts`) |
 | `Crowd.tsx` | The spectators — body, head, eyes and two hair shapes as five `InstancedMesh`es, with an idle bob |
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat |
@@ -406,6 +414,8 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | How a pitch moves | `lib/anim/pitches.ts` |
 | Field dimensions, base paths, wall shape | `lib/field/geometry.ts` |
 | Stands, towers, skyline | `lib/field/park.ts` |
+| How the grass, dirt and stonework are painted | `lib/field/paint.ts` |
+| What the board in the park says | `components/scene/scoreboardFace.ts` |
 | Lighting, time of day, weather | `lib/field/sky.ts` |
 | What a player looks like | `components/scene/Player.tsx` |
 | Sounds | `lib/audio/sfx.ts` |

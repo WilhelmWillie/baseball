@@ -7,6 +7,7 @@ import {
   SRGBColorSpace,
   Shape,
   ShapeGeometry,
+  type MeshLambertMaterial,
   type Texture,
 } from "three";
 import {
@@ -19,6 +20,31 @@ import {
   wallDistance,
 } from "@/lib/field/geometry";
 import { COLORS } from "@/lib/field/park";
+import { paintedGround, type GroundPaint } from "@/lib/field/paint";
+
+/**
+ * How each surface is painted. See `lib/field/paint.ts`: a flat green field
+ * comes out clean and sterile, so the turf goes on in blotches, the skin of the
+ * infield in coarser ones, and the whole park sits under a drifting cloud.
+ */
+const TURF: GroundPaint = { patchScale: 0.045, patchDepth: 0.1 };
+const FOUL: GroundPaint = { patchScale: 0.055, patchDepth: 0.12 };
+const SKIN: GroundPaint = { patchScale: 0.08, patchDepth: 0.13, warmth: 0.05 };
+const TRACK: GroundPaint = { patchScale: 0.095, patchDepth: 0.14, warmth: 0.04 };
+
+/**
+ * Ref callbacks, built once at module scope so React never re-runs them and
+ * the painter never has to be handed a material twice. Declarative materials
+ * are the only reason they exist: the shader hook has to go on before three.js
+ * first compiles the material, and a ref is the earliest we see it.
+ */
+const paintRef = (paint: GroundPaint) => (material: MeshLambertMaterial | null) => {
+  if (material) paintedGround(material, paint);
+};
+const turfRef = paintRef(TURF);
+const foulRef = paintRef(FOUL);
+const skinRef = paintRef(SKIN);
+const trackRef = paintRef(TRACK);
 
 /** The chalk rectangle, derived so it can never drift off the hitter's feet. */
 const BOX_W = BATTER_BOX.outer - BATTER_BOX.inner;
@@ -101,20 +127,20 @@ export function Field() {
     <group>
       {/* Fair grass, with the mow pattern. */}
       <mesh geometry={grass} rotation={[-Math.PI / 2, 0, 0]} position={[0, LAYER.grass, 0]} receiveShadow>
-        <meshLambertMaterial color={COLORS.grass} map={mow} />
+        <meshLambertMaterial ref={turfRef} color={COLORS.grass} map={mow} />
       </mesh>
 
       {/* Foul ground reads a shade darker. */}
       <mesh geometry={foul} rotation={[-Math.PI / 2, 0, 0]} position={[0, LAYER.foul, 0]} receiveShadow>
-        <meshLambertMaterial color={COLORS.foulGrass} />
+        <meshLambertMaterial ref={foulRef} color={COLORS.foulGrass} />
       </mesh>
 
       <mesh geometry={track} rotation={[-Math.PI / 2, 0, 0]} position={[0, LAYER.track, 0]} receiveShadow>
-        <meshLambertMaterial color={COLORS.track} />
+        <meshLambertMaterial ref={trackRef} color={COLORS.track} />
       </mesh>
 
       <mesh geometry={infield} rotation={[-Math.PI / 2, 0, 0]} position={[0, LAYER.infield, 0]} receiveShadow>
-        <meshLambertMaterial color={COLORS.dirt} />
+        <meshLambertMaterial ref={skinRef} color={COLORS.dirt} />
       </mesh>
 
       <mesh
@@ -123,13 +149,13 @@ export function Field() {
         position={[0, LAYER.home, 0]}
         receiveShadow
       >
-        <meshLambertMaterial color={COLORS.dirt} />
+        <meshLambertMaterial ref={skinRef} color={COLORS.dirt} />
       </mesh>
 
       {/* Pitcher's mound: a shallow cone, flattened on top. */}
       <mesh position={[0, MOUND_HEIGHT / 2, -MOUND_DEPTH]} receiveShadow castShadow>
         <cylinderGeometry args={[MOUND_RADIUS * 0.72, MOUND_RADIUS, MOUND_HEIGHT, 24]} />
-        <meshLambertMaterial color={COLORS.moundDirt} />
+        <meshLambertMaterial ref={skinRef} color={COLORS.moundDirt} />
       </mesh>
       <mesh position={[0, MOUND_HEIGHT + 0.06, -RUBBER_DEPTH]}>
         <boxGeometry args={[2, 0.14, 0.5]} />

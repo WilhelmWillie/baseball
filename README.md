@@ -327,6 +327,32 @@ hard-edged (`components/scene/geometry.ts` builds rounded boxes from an
 extruded, bevelled profile, since three.js has none in core), and they use
 Phong shading so the directional lights give them a specular highlight.
 
+They are built to chibi proportions: the head is about a third of the figure,
+the neck barely exists, and the limbs are short, fat and heavily rounded over
+big feet. That is not styling for its own sake — a head that size is the only
+part of a figure that still reads from the centre-field camera, which is where
+most of the game is watched from, and it is what carries the expression. The
+skeleton underneath is untouched, so the strike zone, the gaits and every pose
+are the same measurements they always were.
+
+An alien's head is **one lathed egg** rather than a cranium sat on a jaw:
+`egg()` revolves a profile whose widest point rides above the equator, and its
+seam is started at the back of the skull, because a lathe leaves a crease where
+it closes and the default start puts that crease down the middle of the face.
+The face is two glossy domes standing proud of the head, two highlights each —
+one alone reads as a scratch in the paint, a pair is what makes black read as
+wet — and a small closed smile. No nose, no brow, no jaw line: every extra
+feature is another seam to explain. The skins are soft greens rather than the
+old greys, varied across a narrow band so a roster reads as individuals.
+
+A robot's head is a television: a wide case with a dark screen recessed into
+it, a brow that steps in above the screen, a domed crown over that, a rubber
+bellows for a neck and a lens disc for each ear. The eyes are drawn on the
+screen as *curves* rather than blocks, in one of three expressions picked off
+the player id the way an alien's skin is — a squint, a pair of level bars, wide
+open — because nine robots in the field with one expression between them read as
+nine copies of a prop.
+
 Nobody stands still: between pitches everyone breathes, shifts their weight and
 turns their head, on detuned waves seeded per player so no two are in step. The
 catcher gets his own squat pose with the legs folded under him, facing the
@@ -356,20 +382,24 @@ Players react to what just happened, too: a pitcher who has given up a hit puts
 his hands on his hips and shakes his head, and a hitter who pulls up safe at a
 bag throws his fists up and then turns to clap toward the dugout.
 
-Only hitters and runners wear anything on their heads — a cap perched on a
-tapered alien cranium never sat right. What they wear is a real batting helmet,
-built in a frame whose **origin is the rim**: the caller drops it at the height
-where the helmet should stop and the face begins, and a `height` factor stretches
-the shell over however much skull is above that line. That is what makes it
-fittable to two very different heads, and the fit is solved against the actual
-skull geometry rather than by eye — an alien cranium rises a full unit above the
-eyes and needs a tall shell, while a robot's box head has barely any headroom
-above the visor but needs a wide one, because containing a box's top corners in
-an ellipsoid costs width. Add a trim rim picking the shape out, a raised centre
-ridge with vents either side, and a brim on the rim line angled down over the
-brow, matte black underneath the way a real one is to cut glare. Hitters wear a
-single ear flap on the side turned toward the pitcher, runners a double.
-Antennae route out through the back rather than straight up through the crown.
+Only hitters and runners wear anything on their heads — a cap perched on an
+alien cranium never sat right. What they wear is a real batting helmet, built in
+a frame whose **origin is the rim**: the caller drops it at the height where the
+helmet should stop and the face begins, and a `height` factor stretches the
+shell over however much skull is above that line. That is what makes it fittable
+to two very different heads, and the fit is solved against the actual skull
+geometry rather than by eye — `helmetHeight()` inverts the shell's own
+arithmetic to answer "how tall, to clear this much head?", so neither species
+has a hand-tuned number in it. An alien's rim goes just above the eyes with a
+whole egg of skull to cover; a robot's sits on top of the screen case, which is
+also *why* the case steps in above the screen: a helmet shell is an ellipsoid,
+one wide enough to swallow the top corners of a box two units across is a
+sombrero, and one that is not leaves the corners poking through the crown. Add a
+trim rim picking the shape out, a raised centre ridge with vents either side,
+and a brim on the rim line angled down over the brow, matte black underneath the
+way a real one is to cut glare. Hitters wear a single ear flap on the side
+turned toward the pitcher, runners a double. Antennae route out through the back
+rather than straight up through the crown.
 
 Gloves are built rather than approximated — fanned finger stalls, a laced
 web, a padded heel — and they differ by position: a round mitt for the catcher,
@@ -380,8 +410,12 @@ The bat is hung on the point where the arm chain actually puts the hands —
 returns the spot the two hands close on, so the grip can't drift out of sync
 with the stance. It hangs off the torso rather than off an arm (a child of the
 arm inherits the whole chain and ends up pointing into the batter's own back),
-cocked up over the rear shoulder at rest and levelling off through the swing
-while the torso twist carries it through the zone. The batter's arms barely
+cocked up over the shoulder and out over the plate at rest, levelling off
+through the swing while the torso twist carries it through the zone. That
+forward lean is load-bearing: the hands sit a few inches in front of the chest
+and a chibi head is a foot of skull in every direction from the neck, so a bat
+cocked *back* passes straight through the hitter's own face, and one cocked
+sideways has to lie almost flat to clear it. The batter's arms barely
 leave the stance during a swing, for the same reason: move them and the hands
 visibly let go. Uniforms come from a hardcoded palette keyed by MLB
 team id (the API doesn't publish club colors); if both clubs' primaries are too

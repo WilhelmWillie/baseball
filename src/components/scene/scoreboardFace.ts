@@ -144,16 +144,29 @@ function layout(width: number, height: number) {
 }
 
 function alienHead(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  // The same cranium the badge on the panel draws, off the same 24-unit box.
+  // The same head the badge on the panel draws, off the same 24-unit box: one
+  // smooth egg, with a stalk either side of it.
   const u = (v: number) => (v / 24) * size;
   const px = (v: number) => x + u(v);
   const py = (v: number) => y + u(v);
+  ctx.lineWidth = u(1.1);
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(px(12), py(2.5));
-  ctx.bezierCurveTo(px(7), py(2.5), px(3.6), py(5.7), px(3.6), py(10.2));
-  ctx.bezierCurveTo(px(3.6), py(14.7), px(7.3), py(19.1), px(12), py(21.5));
-  ctx.bezierCurveTo(px(16.7), py(19.1), px(20.4), py(14.7), px(20.4), py(10.2));
-  ctx.bezierCurveTo(px(20.4), py(5.7), px(17), py(2.5), px(12), py(2.5));
+  ctx.moveTo(px(9.5), py(3.6));
+  ctx.lineTo(px(8.2), py(1.9));
+  ctx.moveTo(px(14.5), py(3.6));
+  ctx.lineTo(px(15.8), py(1.9));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(px(7.9), py(1.5), u(1.2), 0, Math.PI * 2);
+  ctx.moveTo(px(17.3), py(1.5));
+  ctx.arc(px(16.1), py(1.5), u(1.2), 0, Math.PI * 2);
+  // One egg of a head: wide at the brow, tapering to a rounded chin.
+  ctx.moveTo(px(12), py(3));
+  ctx.bezierCurveTo(px(6.8), py(3), px(3), py(7.1), px(3), py(11.5));
+  ctx.bezierCurveTo(px(3), py(16.5), px(8.3), py(21.7), px(12), py(21.7));
+  ctx.bezierCurveTo(px(15.7), py(21.7), px(21), py(16.5), px(21), py(11.5));
+  ctx.bezierCurveTo(px(21), py(7.1), px(17.2), py(3), px(12), py(3));
   ctx.closePath();
 }
 
@@ -172,34 +185,62 @@ function drawSpecies(
   cut: string,
 ) {
   const u = (v: number) => (v / 24) * size;
+  const px = (v: number) => x + u(v);
+  const py = (v: number) => y + u(v);
   ctx.save();
   ctx.fillStyle = ink;
+  ctx.strokeStyle = ink;
   if (species === "alien") {
     alienHead(ctx, x, y, size);
     ctx.fill();
+    // Two big glossy almonds, and a smile under them.
     ctx.fillStyle = cut;
     for (const [cx, tilt] of [
-      [8.3, -0.35],
-      [15.7, 0.35],
+      [7.9, -0.24],
+      [16.1, 0.24],
     ] as const) {
       ctx.beginPath();
-      ctx.ellipse(x + u(cx), y + u(10.4), u(2.7), u(1.7), tilt, 0, Math.PI * 2);
+      ctx.ellipse(px(cx), py(11), u(3.3), u(3.7), tilt, 0, Math.PI * 2);
       ctx.fill();
     }
-  } else {
+    ctx.strokeStyle = cut;
+    ctx.lineWidth = u(1);
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.arc(x + u(12), y + u(2.6), u(1.8), 0, Math.PI * 2);
+    ctx.moveTo(px(10.2), py(16.6));
+    ctx.quadraticCurveTo(px(12), py(18.2), px(13.8), py(16.6));
+    ctx.stroke();
+  } else {
+    // A screen in a case, on a stubby aerial, with a disc for each ear.
+    ctx.lineWidth = u(1.1);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(px(16.4), py(4.4));
+    ctx.lineTo(px(16.4), py(2.2));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px(16.4), py(1.7), u(1.2), 0, Math.PI * 2);
+    ctx.roundRect(px(5.4), py(3.8), u(13.2), u(5), u(2.3));
     ctx.fill();
     ctx.beginPath();
-    ctx.roundRect(x + u(11.1), y + u(3.4), u(1.8), u(3.8), u(0.9));
-    ctx.roundRect(x + u(3), y + u(6.8), u(18), u(14), u(3.2));
+    ctx.arc(px(3.4), py(13.4), u(2.1), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px(20.6), py(13.4), u(2.1), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(px(2.7), py(7.4), u(18.6), u(12), u(3.4));
     ctx.fill();
     ctx.fillStyle = cut;
     ctx.beginPath();
-    ctx.roundRect(x + u(6.5), y + u(9.6), u(3.8), u(3.8), u(1.3));
-    ctx.roundRect(x + u(13.7), y + u(9.6), u(3.8), u(3.8), u(1.3));
-    ctx.roundRect(x + u(8.4), y + u(16.1), u(7.2), u(1.9), u(0.95));
+    ctx.roundRect(px(5.3), py(9.6), u(13.4), u(7.6), u(2.4));
     ctx.fill();
+    ctx.fillStyle = ink;
+    for (const cx of [9.2, 14.8]) {
+      ctx.beginPath();
+      ctx.ellipse(px(cx), py(13.4), u(1.7), u(2), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }

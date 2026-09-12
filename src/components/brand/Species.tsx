@@ -25,20 +25,29 @@ export function SpeciesGlyph({
   if (species === "alien") {
     return (
       <svg viewBox="0 0 24 24" className={className} aria-hidden>
-        {/* A cranium wide at the brow and tapering to a small chin. */}
+        {/* Two stalks, then one smooth egg of a head under them. */}
         <path
-          d="M12 2.5C7 2.5 3.6 5.7 3.6 10.2c0 4.5 3.7 8.9 8.4 11.3 4.7-2.4 8.4-6.8 8.4-11.3C20.4 5.7 17 2.5 12 2.5Z"
+          d="M9.5 3.6 8.2 1.9M14.5 3.6 15.8 1.9"
+          stroke={ink}
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
+        <circle cx="7.9" cy="1.5" r="1.2" fill={ink} />
+        <circle cx="16.1" cy="1.5" r="1.2" fill={ink} />
+        <path
+          d="M12 3C6.8 3 3 7.1 3 11.5c0 5 5.3 10.2 9 10.2s9-5.2 9-10.2C21 7.1 17.2 3 12 3Z"
           fill={ink}
         />
-        {/* Two big glossy almonds, which is most of an alien's face. */}
-        <ellipse cx="8.3" cy="10.4" rx="2.7" ry="1.7" fill={cut} transform="rotate(-20 8.3 10.4)" />
-        <ellipse
-          cx="15.7"
-          cy="10.4"
-          rx="2.7"
-          ry="1.7"
-          fill={cut}
-          transform="rotate(20 15.7 10.4)"
+        {/* Two big glossy domes, which is the whole of an alien's face. */}
+        <ellipse cx="7.9" cy="11" rx="3.3" ry="3.7" fill={cut} transform="rotate(-14 7.9 11)" />
+        <ellipse cx="16.1" cy="11" rx="3.3" ry="3.7" fill={cut} transform="rotate(14 16.1 11)" />
+        {/* And a smile, which is the rest of it. */}
+        <path
+          d="M10.2 16.6Q12 18.2 13.8 16.6"
+          fill="none"
+          stroke={cut}
+          strokeWidth="1"
+          strokeLinecap="round"
         />
       </svg>
     );
@@ -46,13 +55,16 @@ export function SpeciesGlyph({
 
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      {/* A box head on a stubby aerial, with a grille for a mouth. */}
-      <rect x="11.1" y="3.4" width="1.8" height="3.8" rx="0.9" fill={ink} />
-      <circle cx="12" cy="2.6" r="1.8" fill={ink} />
-      <rect x="3" y="6.8" width="18" height="14" rx="3.2" fill={ink} />
-      <rect x="6.5" y="9.6" width="3.8" height="3.8" rx="1.3" fill={cut} />
-      <rect x="13.7" y="9.6" width="3.8" height="3.8" rx="1.3" fill={cut} />
-      <rect x="8.4" y="16.1" width="7.2" height="1.9" rx="0.95" fill={cut} />
+      {/* A screen in a case, on a stubby aerial, with a disc for each ear. */}
+      <path d="M16.4 4.4V2.2" stroke={ink} strokeWidth="1.1" strokeLinecap="round" />
+      <circle cx="16.4" cy="1.7" r="1.2" fill={ink} />
+      <rect x="5.4" y="3.8" width="13.2" height="5" rx="2.3" fill={ink} />
+      <circle cx="3.4" cy="13.4" r="2.1" fill={ink} />
+      <circle cx="20.6" cy="13.4" r="2.1" fill={ink} />
+      <rect x="2.7" y="7.4" width="18.6" height="12" rx="3.4" fill={ink} />
+      <rect x="5.3" y="9.6" width="13.4" height="7.6" rx="2.4" fill={cut} />
+      <ellipse cx="9.2" cy="13.4" rx="1.7" ry="2" fill={ink} />
+      <ellipse cx="14.8" cy="13.4" rx="1.7" ry="2" fill={ink} />
     </svg>
   );
 }

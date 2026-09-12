@@ -31,15 +31,18 @@ import {
   type Gait,
 } from "@/lib/anim/gait";
 import type { Uniform } from "@/lib/mlb/teams";
+import type { Species } from "@/lib/game/species";
 import { panel, roundedBox } from "./geometry";
 import { getLabelTexture, getNumberTexture, labelAspect } from "./textures";
 
 /**
  * Two species share one skeleton, so the whole pose vocabulary drives both:
  * the home club are aliens, the visitors are robots. Team colors still carry
- * the uniform, which makes the species a second, redundant read on who is who.
+ * the uniform, which makes the species a second, redundant read on who is who -
+ * and the panel and the board in the park put the same two faces on their team
+ * chips, which is why the type lives outside the 3D layer.
  */
-export type Species = "alien" | "robot";
+export type { Species };
 
 /**
  * Cartoon scale. Deliberately far larger than life - these figures exist to

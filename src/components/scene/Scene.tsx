@@ -7,9 +7,11 @@ import { Vector3, type PerspectiveCamera } from "three";
 import { useGameStore } from "@/store/gameStore";
 import type { Director } from "@/lib/anim/director";
 import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
+import { advancePaint, paintTint } from "@/lib/field/paint";
 import { Park } from "./Park";
 import { Crowd } from "./Crowd";
 import { Backstop } from "./Backstop";
+import { Scoreboard } from "./Scoreboard";
 import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
@@ -24,7 +26,11 @@ function Engine() {
   const director = useGameStore((s) => s.director);
   const settle = useGameStore((s) => s.settle);
   useFrame((_, delta) => {
-    director.update(Math.min(delta, 0.1));
+    const step = Math.min(delta, 0.1);
+    director.update(step);
+    // The park's paint drifts on the same wind the ball flies through, and the
+    // whole of it runs off this one clock.
+    advancePaint(step, director.fx.wind);
     if (director.isIdle()) settle();
   });
   return null;
@@ -229,6 +235,12 @@ export function Scene() {
     director.fx.wind.copy(conditions.wind);
   }, [director, conditions]);
 
+  // The park's paint hazes the far outfield toward whatever the sky is doing,
+  // which is this - a blue afternoon, an orange evening, a cold night.
+  useEffect(() => {
+    paintTint(look.hemiSky);
+  }, [look]);
+
   return (
     <Canvas
       shadows
@@ -277,6 +289,7 @@ export function Scene() {
       <Field />
       <GroundOcclusion />
       <Park lampsLit={look.lampsLit} crowd={crowd} />
+      <Scoreboard />
       <Crowd palette={crowd} director={director} />
       <Backstop />
       <ContactShadows director={director} />

@@ -10,6 +10,7 @@ import {
   Object3D,
 } from "three";
 import { buildPark, type Block, type CrowdPalette } from "@/lib/field/park";
+import { paintedPark } from "@/lib/field/paint";
 
 const LAMP_ON = "#fff6c9";
 const LAMP_OFF = "#8d9298";
@@ -45,11 +46,12 @@ export function Park({ lampsLit, crowd }: { lampsLit: boolean; crowd: CrowdPalet
     const solid = blocks.filter((b) => !b.glow);
     const glowing = blocks.filter((b) => b.glow);
 
-    const structureMesh = new InstancedMesh(
-      geometry,
-      new MeshLambertMaterial({ flatShading: true }),
-      solid.length,
-    );
+    // One material for the whole park, so the sunlit-top/shaded-bottom wash and
+    // the hand-mixed grain it is painted with cost nothing per block.
+    const structureMaterial = new MeshLambertMaterial({ flatShading: true });
+    paintedPark(structureMaterial);
+
+    const structureMesh = new InstancedMesh(geometry, structureMaterial, solid.length);
     structureMesh.castShadow = false;
     structureMesh.receiveShadow = false;
     fill(structureMesh, solid);

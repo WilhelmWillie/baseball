@@ -384,6 +384,14 @@ its ending card off `useReplay`'s `settled` rather than `ended`: the frame
 carrying a home run is handed over as the pitch is released, and the swing,
 flight, trot and celebration all happen after it.
 
+**`components/BackLink.tsx`** — the way back out of a page that was arrived at
+from somewhere else. A clip is opened from a game log, from a day's slate or
+from a group chat, so the control reads the referrer and names wherever it
+points, falling back to the games when nothing here opened it. When that page is
+still the entry behind the clip, the click goes back through history rather than
+navigating: a game resumed that way is still where it was left, which a fresh
+navigation would lose *and* pay to rebuild the feed for.
+
 The store gains one action for this: `seek(feed)`, which is `reset()` then
 `ingest()`. A seek is a cut, and `ingest`'s first-read branch already jumps to
 an arbitrary moment via `seedCursor` without replaying what came before.

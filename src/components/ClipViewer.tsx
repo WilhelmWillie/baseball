@@ -9,6 +9,7 @@ import { sfx } from "@/lib/audio/sfx";
 import { CLIP_BEATS } from "@/lib/replay/timeline";
 import { hitLine, type AtBatCard } from "@/lib/share/atbat";
 import { Ball } from "@/components/brand/Ball";
+import { BackLink } from "@/components/BackLink";
 import { ShareMenu } from "@/components/ShareMenu";
 import { Callout } from "./hud/Callout";
 
@@ -116,15 +117,14 @@ export function ClipViewer({
       </div>
 
       {/* Controls, kept to the two that matter on a page you landed on from a
-          link: get out to the games, and turn the sound off. */}
-      <div className="absolute inset-x-2 bottom-3 z-20 flex flex-row items-center justify-center gap-1.5 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:justify-end">
+          link: get out of the clip, and turn the sound off. Above the ending
+          card rather than under it - a way back that disappears the moment the
+          play does is not one. */}
+      <div className="absolute inset-x-2 bottom-3 z-40 flex flex-row items-center justify-center gap-1.5 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-4 sm:justify-end">
         <div className="flex items-center gap-1 rounded-full border border-grass-deep/10 bg-card/95 p-1 backdrop-blur-[2px] lip-float">
-          <Link
-            href="/"
-            className="rounded-full px-3 py-2 text-xs font-bold text-bark transition-colors hover:bg-grass-mist hover:text-grass-deep sm:py-1.5"
-          >
-            ←<span className="hidden sm:inline"> Games</span>
-          </Link>
+          {/* Wherever this clip was opened from - the game log it was clicked
+              in, most of the time, and the games otherwise. */}
+          <BackLink className="rounded-full px-3 py-2 text-xs font-bold text-bark transition-colors hover:bg-grass-mist hover:text-grass-deep sm:py-1.5" />
           <button
             type="button"
             onClick={() => {

@@ -23,6 +23,10 @@ export function Ball({ className = "h-7 w-7" }: { className?: string }) {
 /**
  * The park itself, as a friendly little vignette: mown grass, an infield of
  * dirt, four figures who are clearly having a nice afternoon.
+ *
+ * The pages show screenshots of the real ballpark now; this is the drawing the
+ * share cards still carry, restated as a data URI in `lib/brand/og.ts` because
+ * satori cannot render a component. Keep the two in step.
  */
 export function ParkVignette({ className = "" }: { className?: string }) {
   const cap = (x: number, y: number, shirt: string, hat: string) => (
@@ -38,7 +42,7 @@ export function ParkVignette({ className = "" }: { className?: string }) {
   );
 
   return (
-    <svg viewBox="0 0 400 280" className={className} role="img" aria-label="A low-poly ballpark on a sunny afternoon">
+    <svg viewBox="0 0 400 280" className={className} role="img" aria-label="A little ballpark on a sunny afternoon">
       {/* Sky */}
       <defs>
         <clipPath id="park-clip">

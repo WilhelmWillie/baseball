@@ -1312,6 +1312,111 @@ function poseValues(
   }
 }
 
+/**
+ * Crossfading between poses.
+ * ==========================
+ *
+ * Every pose above is a set of joint angles evaluated from scratch, and the
+ * director changes which one an actor is in the instant the animation calls
+ * for it: a chaser goes from `ready` to `sprint` on one frame, a pitcher from
+ * `throw` to `ready`, a runner from `sprint` to `celebrate` the moment he
+ * touches the bag. Written straight onto the rig those are teleports - every
+ * joint in the body arrives at its new angle in a sixtieth of a second, which
+ * is the one motion a body cannot make.
+ *
+ * So a change of pose is blended rather than cut. The pose being left keeps
+ * running on a clock of its own - the follow-through of a throw carries on
+ * through the blend, a stride keeps striding - and the rig is drawn from a mix
+ * of the two that crosses over the span below. There is no cost once the blend
+ * is done: past `k = 1` the incoming pose is used as it comes.
+ *
+ * The spans are per *incoming* pose, because the thing that decides how long a
+ * transition can take is what is starting rather than what is ending. A swing
+ * or a throw has to fire; blending into one over a fifth of a second is how a
+ * hitter arrives late at every pitch. Standing back up out of one has all the
+ * time in the world.
+ */
+const POSE_BLEND_DEFAULT = 0.18;
+const POSE_BLEND: Partial<Record<Pose, number>> = {
+  // Explosive. These start now, or they read as a flinch.
+  swing: 0.06,
+  throw: 0.07,
+  dive: 0.07,
+  catch: 0.09,
+  windup: 0.14,
+  // Locomotion: long enough that the legs arrive rather than snap into the
+  // stride, short enough that the first step still lands with the first frame.
+  sprint: 0.12,
+  run: 0.14,
+  walk: 0.2,
+  // Coming back to rest, which nobody is in a hurry to do.
+  ready: 0.26,
+  idle: 0.26,
+  crouch: 0.3,
+};
+
+/** Every channel of a pose, so a mix can be written without naming them twice. */
+const POSE_CHANNELS = Object.keys(REST) as Array<keyof PoseValues>;
+
+/** Longest a frame may be, so a stall does not blink a blend out of existence. */
+const MAX_STEP = 0.1;
+
+/**
+ * How fast a pose's own clock may be running. `poseT` means different things
+ * to different poses - a phase for a gait, seconds for a reaction, a normalized
+ * ramp for a swing - so the rate it advances at is measured rather than known,
+ * and this is the guard on a measurement taken across a dropped frame.
+ */
+const MAX_POSE_RATE = 8;
+
+/** Past this in one frame the figure was moved rather than having moved. */
+const TELEPORT = 10;
+
+function mixPose(from: PoseValues, to: PoseValues, k: number, out: PoseValues): PoseValues {
+  for (const channel of POSE_CHANNELS) {
+    out[channel] = from[channel] + (to[channel] - from[channel]) * k;
+  }
+  return out;
+}
+
+/** Smoothstep, so a blend leaves one pose and arrives at the other gently. */
+function smooth(k: number): number {
+  return k * k * (3 - 2 * k);
+}
+
+interface PoseFade {
+  /** The pose being blended out of, and its own clock. */
+  from: Pose | null;
+  fromT: number;
+  /** How fast that clock was running when the pose changed. */
+  rate: number;
+  /** 0..1 through the blend, and how long it takes. */
+  k: number;
+  span: number;
+  /** What was on screen last frame, to notice a change at all. */
+  pose: Pose | null;
+  poseT: number;
+  seen: boolean;
+  at: Vector3;
+  /** Scratch for the mix, so the frame loop allocates nothing. */
+  out: PoseValues;
+}
+
+function newFade(): PoseFade {
+  return {
+    from: null,
+    fromT: 0,
+    rate: 0,
+    k: 1,
+    span: POSE_BLEND_DEFAULT,
+    pose: null,
+    poseT: 0,
+    seen: false,
+    at: new Vector3(),
+    out: { ...REST },
+  };
+}
+
 export interface PlayerProps {
   actor: Actor;
   uniform: Uniform;
@@ -1334,6 +1439,8 @@ export function Player({
   const rootRef = useRef<Group>(null);
   const labelRef = useRef<Sprite>(null);
   const limbsRef = useRef<Limbs | null>(null);
+  // Where this figure is in a change of pose. See `PoseFade`.
+  const fadeRef = useRef<PoseFade>(newFade());
   const key = actor.key;
   const isAlien = species === "alien";
   const face = robotFace(actor.playerId);
@@ -1754,12 +1861,17 @@ export function Player({
     if (!group || !parts) return;
 
     const live = director.actors.get(key);
+    const fade = fadeRef.current;
     if (!live) {
       group.visible = false;
+      fade.seen = false;
       return;
     }
     group.visible = live.visible;
-    if (!live.visible) return;
+    if (!live.visible) {
+      fade.seen = false;
+      return;
+    }
 
     group.position.copy(live.position);
 
@@ -1780,13 +1892,44 @@ export function Player({
     while (diff < -Math.PI) diff += Math.PI * 2;
     group.rotation.y = current + diff * Math.min(1, delta * 12);
 
-    const v = poseValues(
-      live.pose,
-      live.poseT,
-      state.clock.elapsedTime + live.playerId,
-      actor.role === "batter",
-      live.batSide ?? "R",
-    );
+    // A change of pose is crossfaded rather than cut. See `PoseFade` above:
+    // the pose being left keeps running on its own clock through the blend, so
+    // a follow-through follows through and a stride keeps striding while the
+    // body arrives at whatever it is doing next.
+    const step = Math.min(delta, MAX_STEP);
+    const clock = state.clock.elapsedTime + live.playerId;
+    const isBatter = actor.role === "batter";
+    const batSide = live.batSide ?? "R";
+
+    if (live.pose === fade.pose && step > 0) {
+      // How fast `poseT` is running, measured rather than assumed - a gait
+      // phase wraps, a reaction counts seconds, a swing is a 0..1 ramp.
+      let advance = live.poseT - fade.poseT;
+      if (advance < 0) advance += 1;
+      fade.rate = Math.min(MAX_POSE_RATE, advance / step);
+    } else if (live.pose !== fade.pose) {
+      // Somewhere else entirely: a figure that was off screen, or one the
+      // director picked up and put down, arrives in its new pose rather than
+      // travelling to it.
+      const jumped = !fade.seen || fade.at.distanceTo(live.position) > TELEPORT;
+      fade.from = jumped ? null : fade.pose;
+      fade.fromT = fade.poseT;
+      fade.span = POSE_BLEND[live.pose] ?? POSE_BLEND_DEFAULT;
+      fade.k = fade.from ? 0 : 1;
+    }
+    fade.pose = live.pose;
+    fade.poseT = live.poseT;
+    fade.seen = true;
+    fade.at.copy(live.position);
+
+    let v = poseValues(live.pose, live.poseT, clock, isBatter, batSide);
+    if (fade.from && fade.k < 1) {
+      fade.k = Math.min(1, fade.k + step / Math.max(0.001, fade.span));
+      fade.fromT += fade.rate * step;
+      const leaving = poseValues(fade.from, fade.fromT, clock, isBatter, batSide);
+      v = mixPose(leaving, v, smooth(fade.k), fade.out);
+      if (fade.k >= 1) fade.from = null;
+    }
     // Leaning the legs sideways shortens their vertical reach, so the hips have
     // to come down by the same amount or the boots lift off the grass.
     parts.hips.position.y =

@@ -160,6 +160,11 @@ advances outs and score when a play's animation finishes.
 
 - `actors: Map<string, Actor>` — every figure's transform, pose and pose phase.
 - The animation queue: `enqueue()`, `update(dt)`, `isIdle()`, `clearQueue()`.
+  An animation hands its overshoot to the one behind it, so a queue several
+  deep does not drift a frame late per play.
+- Getting the field back into its shape between plays: `restIdle()` and
+  `walkHome()`, which jog whoever a play displaced back to their mark on the
+  gait ladder rather than sliding them or putting them there.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
 - The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
@@ -242,7 +247,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `Scoreboard.tsx` | The line score on the board over the batter's eye, as a canvas texture (`scoreboardFace.ts`) |
 | `Crowd.tsx` | The spectators — body, head, eyes and two hair shapes as five `InstancedMesh`es, with an idle bob |
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
-| `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat |
+| `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat. Owns the crossfade between poses (`POSE_BLEND`), since the director only ever says *which* pose |
 | `Ball.tsx` | The ball and its comet trail, held to a minimum apparent size so a long fly stays visible |
 | `Effects.tsx` | Pushes `Fx` particles into instanced meshes |
 | `Weather.tsx` | Rain and snow |
@@ -423,9 +428,12 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | How a play is interpreted | `lib/game/events.ts` |
 | What the HUD knows about | `GameSnapshot` in `lib/game/types.ts`, then `normalize.ts` |
 | Timing, pacing, poses, camera cuts | `lib/anim/director.ts` |
+| How long a figure takes to change pose | `POSE_BLEND` in `components/scene/Player.tsx` |
+| How fast the field gets back to its marks | `RETURN_SPEED` in `lib/anim/director.ts` |
 | Where the fixed camera modes sit | `lib/anim/views.ts` |
 | How a pitch moves | `lib/anim/pitches.ts` |
 | Field dimensions, base paths, wall shape | `lib/field/geometry.ts` |
+| How big the bags and the batter's box are | `BASE_SIZE` / `BATTER_BOX` in `lib/field/geometry.ts` |
 | Stands, towers, skyline | `lib/field/park.ts` |
 | How the grass, dirt and stonework are painted | `lib/field/paint.ts` |
 | What the board in the park says | `components/scene/scoreboardFace.ts` |

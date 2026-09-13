@@ -52,9 +52,8 @@ work. To harden against ad-blockers later, proxy ingestion behind a first-party
 **Game selection** (`/`) — today's slate from `GET /api/v1/schedule`, live games
 first. A game in progress opens live and a game that has been played opens as a
 replay; only a game before first pitch stays shut, because the feed carries no
-lineup until then. Below the slate sits **the rest of the season**: the last
-nine games to end, three by three, and a way into every other day since Opening
-Day.
+lineup until then. Below the slate sit the **previous games**: the last nine to
+end, three by three, and a way into every other day since Opening Day.
 
 **The season** (`/games/[date]`) — any day since Opening Day, as its own page.
 Every game MLB has finished is watchable, so the browser is the thing that

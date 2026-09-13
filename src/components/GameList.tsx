@@ -133,10 +133,9 @@ export function GameList() {
               it does need to look like a season rather than a date picker,
               which is what the last nine games are doing here. */}
           <section className="mt-10">
-            <SectionTitle>The rest of the season</SectionTitle>
+            <SectionTitle>Previous games</SectionTitle>
             <p className="-mt-1 mb-3 text-sm text-bark-soft">
-              The last nine games to end, rebuilt pitch by pitch from MLB&apos;s own
-              play-by-play the moment you open one.
+              Re-live any past game from this 2026 season.
             </p>
 
             {recent === null ? (

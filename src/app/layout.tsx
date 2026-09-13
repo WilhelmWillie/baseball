@@ -19,7 +19,7 @@ const nunito = Nunito({
 
 const title = "Pocket Ballpark — Watch Baseball Come to Life";
 const description =
-  "Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a charming storybook ballpark.";
+  "Pick a game. Grab a seat. Watch every pitch, hit, and play unfold in a charming 3D ballpark.";
 
 /**
  * Share cards need absolute URLs, and only the deployment knows what host it

@@ -1,7 +1,7 @@
 # Pocket Ballpark
 
 **Watch baseball come to life.** Pick a game. Grab a seat. Watch every pitch,
-hit, and baserunner unfold in a charming low-poly ballpark.
+hit, and play unfold in a charming 3D ballpark.
 
 Everything on the field is driven by the real MLB Stats API — the app doesn't
 simulate baseball, it interprets MLB's event stream and animates it.
@@ -53,7 +53,13 @@ work. To harden against ad-blockers later, proxy ingestion behind a first-party
 first. A game in progress opens live and a game that has been played opens as a
 replay; only a game before first pitch stays shut, because the feed carries no
 lineup until then. Below the slate sit the **previous games**: the last nine to
-end, three by three, and a way into every other day since Opening Day.
+end, three by three, and a way into every other day since Opening Day. The hero
+is a screenshot of the viewer rather than a drawing of one, a home run being
+celebrated at Wrigley, and it links into the recording it was taken from, at
+that plate appearance.
+
+**About** (`/about`) — what this is, where the idea came from, and what it is
+for. Static, and the only page that does not lead with a game.
 
 **The season** (`/games/[date]`) — any day since Opening Day, as its own page.
 Every game MLB has finished is watchable, so the browser is the thing that

@@ -73,6 +73,12 @@ export default async function GamesOnDatePage({ params }: { params: Params }) {
             <span className="text-clay">Pocket</span>
             <span className="-ml-1 text-grass-deep">Ballpark</span>
           </Link>
+          <Link
+            href="/about"
+            className="rounded-full border-2 border-grass-deep/12 bg-card px-3 py-1.5 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep"
+          >
+            What is this?
+          </Link>
         </nav>
 
         <header className="pb-8 pt-2">

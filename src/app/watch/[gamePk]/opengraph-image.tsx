@@ -172,7 +172,7 @@ export default async function Image({ params }: { params: Promise<{ gamePk: stri
         )}
 
         <div style={{ display: "flex", fontSize: 30, color: BRAND.barkSoft }}>
-          Every pitch, hit, and baserunner in a charming storybook ballpark.
+          Every pitch, hit, and play in a charming storybook ballpark.
         </div>
       </div>
     ),

@@ -75,9 +75,9 @@ export default async function GamesOnDatePage({ params }: { params: Params }) {
           </Link>
           <Link
             href="/about"
-            className="rounded-full border-2 border-grass-deep/12 bg-card px-3 py-1.5 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep"
+            className="rounded-full bg-grass px-3.5 py-1.5 text-xs font-bold text-card transition-transform lip-sm hover:-translate-y-0.5"
           >
-            What is this?
+            About
           </Link>
         </nav>
 

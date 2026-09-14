@@ -58,8 +58,9 @@ is a screenshot of the viewer rather than a drawing of one, a home run being
 celebrated at Wrigley, and it links into the recording it was taken from, at
 that plate appearance.
 
-**About** (`/about`) — what this is, where the idea came from, and what it is
-for. Static, and the only page that does not lead with a game.
+**About** (`/about`) — what this is, where the idea came from, how it works,
+and how to reach the author. Static, and the only page that does not lead with
+a game.
 
 **The season** (`/games/[date]`) — any day since Opening Day, as its own page.
 Every game MLB has finished is watchable, so the browser is the thing that

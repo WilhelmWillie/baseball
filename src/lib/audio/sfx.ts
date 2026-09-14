@@ -11,6 +11,8 @@ export type SoundName =
   | "pitch"
   | "mitt"
   | "crack"
+  /** A bat cutting through air that had a ball in it a moment ago. */
+  | "whoosh"
   | "foul"
   | "cheer"
   | "bigCheer"
@@ -113,12 +115,31 @@ class Sfx {
         this.thump(150, 0.09, 0.18);
         break;
       case "crack":
-        // Wooden bat: a sharp band of noise plus a low body resonance.
-        this.burst({ type: "bandpass", freq: 2600, q: 1.4, attack: 0.001, decay: 0.14, gain: 0.5 });
-        this.thump(320, 0.1, 0.22);
+        // Wooden bat: a sharp band of noise plus a low body resonance. How
+        // hard the ball was hit is carried by all three of level, brightness
+        // and weight - a ball off the end of the bat is not a quiet version of
+        // a barrelled one, it is a duller one.
+        this.burst({
+          type: "bandpass",
+          freq: 1900 + intensity * 1100,
+          q: 1.4,
+          attack: 0.001,
+          decay: 0.1 + intensity * 0.07,
+          gain: 0.24 + intensity * 0.42,
+        });
+        this.thump(360 - intensity * 80, 0.09 + intensity * 0.09, 0.12 + intensity * 0.2);
+        // Anything really struck gets a second, lower body under it: the part
+        // of a home run you feel rather than hear.
+        if (intensity > 0.7) this.thump(110, 0.26, 0.14 * intensity);
+        break;
+      case "whoosh":
+        this.whoosh(intensity);
         break;
       case "foul":
-        this.burst({ type: "bandpass", freq: 2100, q: 1.6, attack: 0.001, decay: 0.1, gain: 0.34 });
+        // Played under a "crack", so this is only the tail: a thin tick off
+        // the top of the bat and the murmur that follows a ball into the
+        // netting.
+        this.burst({ type: "bandpass", freq: 2400, q: 1.8, attack: 0.001, decay: 0.09, gain: 0.18 });
         this.crowd({ start: now + 0.15, length: 1.1, gain: 0.1, bright: 700 });
         break;
       case "cheer":
@@ -187,6 +208,40 @@ class Sfx {
     source.connect(filter).connect(gain).connect(this.master);
     source.start(now, offset, spec.attack + spec.decay + 0.05);
     source.stop(now + spec.attack + spec.decay + 0.06);
+  }
+
+  /**
+   * Air off a bat that hit nothing: noise through a bandpass that sweeps up
+   * past the listener and away again, which is the whole of what a swing and a
+   * miss sounds like. The sweep is what makes it a pass rather than a hiss -
+   * a fixed band reads as static, however it is shaped.
+   */
+  private whoosh(intensity: number) {
+    const ctx = this.ctx;
+    if (!ctx || !this.noise || !this.master) return;
+    const now = ctx.currentTime;
+    const length = 0.26;
+    const peak = 0.12 + intensity * 0.16;
+
+    const source = ctx.createBufferSource();
+    source.buffer = this.noise;
+    source.playbackRate.value = 0.9 + Math.random() * 0.25;
+
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.Q.value = 1.1;
+    band.frequency.setValueAtTime(420, now);
+    band.frequency.exponentialRampToValueAtTime(1500 + intensity * 900, now + length * 0.45);
+    band.frequency.exponentialRampToValueAtTime(380, now + length);
+
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, now);
+    amp.gain.exponentialRampToValueAtTime(peak, now + length * 0.42);
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + length);
+
+    source.connect(band).connect(amp).connect(this.master);
+    source.start(now, Math.random() * 1.5, length + 0.05);
+    source.stop(now + length + 0.06);
   }
 
   /** Low sine body, for the weight under a bat crack or a mitt pop. */

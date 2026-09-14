@@ -121,6 +121,22 @@ const REACTIONS = new Set<Pose>([
 /** Poses that are a movement, and are over the moment the movement is. */
 const MOVEMENTS = new Set<Pose>(["sprint", "run", "walk", "throw", "swing", "dive"]);
 
+/**
+ * The three of those that are *travel*. A throw or a dive has a follow-through
+ * worth seeing out; a gait has nothing left to say the moment the figure stops
+ * covering ground, and holding one for another half second is a man running on
+ * the spot.
+ */
+const TRAVEL = new Set<Pose>(["sprint", "run", "walk"]);
+
+/**
+ * What a play may stand a fielder back up out of once the ball is dead: the
+ * catch, the throw, and the jog home the play itself put him in. Anything else
+ * he is in he chose - a pitcher wearing the hit is sulking about it, and
+ * standing him up every frame is not an improvement.
+ */
+const OWN_POSES = new Set<Pose>(["catch", "throw", "sprint", "run", "walk"]);
+
 export interface Actor {
   key: string;
   playerId: number;
@@ -134,6 +150,8 @@ export interface Actor {
   batSide?: "R" | "L";
   /** Resting spot the actor returns to. */
   home: Vector3;
+  /** And which way they face once they are standing on it. */
+  homeFacing: number;
   position: Vector3;
   facing: number;
   pose: Pose;
@@ -285,6 +303,41 @@ const MATERIALIZE_TIME = 0.6;
  * the pitcher for the next hitter.
  */
 const POST_OUT_PAUSE = 1.1;
+
+/**
+ * Getting back to your mark.
+ *
+ * A play leaves whoever made it standing wherever it ended - out in the gap,
+ * laid out by the line - and the next pitch is thrown to a field that has to
+ * be back in its shape. He is not put there and he does not slide there: he
+ * jogs it, on the same gait ladder every other figure on this diamond runs on.
+ * `RETURN_SPEED` is world feet per second, which at figure scale is a
+ * comfortable jog rather than a sprint - nobody hurries back to a position.
+ */
+const RETURN_SPEED = 26;
+/** Eased over the last few feet, so nobody arrives at a dead stop. */
+const RETURN_EASE = 9;
+/** Near enough to be standing on it. */
+const RETURN_SNAP = 0.4;
+
+/**
+ * How long a runner takes to join the base path he is about to be run down.
+ *
+ * None of them start on it. A hitter is stood in the box - nine feet off the
+ * plate and behind it, see `batterSpot` - and a man on base is a step up the
+ * line off the bag. The tracks are laid out as progress along the path itself,
+ * so handing a runner his first point *drops* him onto it: out of the box and
+ * onto home plate, on the frame the play starts. Easing him on over the first
+ * stride is the difference between breaking for it and appearing on it.
+ */
+const PATH_JOIN = 0.4;
+
+/**
+ * The most of a frame an animation may hand to the one behind it. See the
+ * carry in `update`: a frame lands where it lands, and the overshoot past an
+ * animation's end belongs to the next one rather than being thrown away.
+ */
+const CARRY_CAP = 0.1;
 
 export interface CallOut {
   text: string;
@@ -634,6 +687,8 @@ export class Director {
   private current: Anim | null = null;
   private currentTime = 0;
   private currentStart = 0;
+  /** Overshoot owed to the next animation. See `update`. */
+  private carry = 0;
   private idleTime = 0;
   private shotStart = 0;
   /** Counts pitches, so the pre-pitch shot varies without being random. */
@@ -960,10 +1015,26 @@ export class Director {
     const existing = this.actors.get(key);
     if (existing && existing.playerId === player.id) {
       existing.home = config.home.clone();
-      existing.position.copy(config.home);
-      existing.facing = config.facing;
-      existing.pose = config.pose;
-      existing.poseT = 0;
+      existing.homeFacing = config.facing;
+      // A man who is out of position is not *put* back, he goes back. A
+      // snapshot is promoted on the first idle frame after a play ends, and
+      // writing the mark straight onto the position here teleported whoever
+      // had just chased a ball into the gap two hundred feet onto his spot.
+      // `restIdle` walks him in from wherever the play left him instead -
+      // and anybody the play did not move is already standing on his mark,
+      // so in the common case this changes nothing.
+      if (!existing.visible) {
+        existing.position.copy(config.home);
+        existing.facing = config.facing;
+      }
+      // A reaction is worth letting finish; `restIdle` retires it on its own
+      // clock. Stomping it here is what cut a pitcher's head out of his hands
+      // the moment the scoreboard caught up with the home run he had just
+      // given up.
+      if (!REACTIONS.has(existing.pose)) {
+        existing.pose = config.pose;
+        existing.poseT = 0;
+      }
       existing.visible = true;
       existing.dissolve = 0;
       existing.arriving = false;
@@ -982,6 +1053,7 @@ export class Director {
       role: config.role,
       positionKey: config.positionKey,
       home: config.home.clone(),
+      homeFacing: config.facing,
       position: config.home.clone(),
       facing: config.facing,
       pose: config.pose,
@@ -1009,6 +1081,7 @@ export class Director {
     this.queue = [];
     this.current = null;
     this.currentTime = 0;
+    this.carry = 0;
     this.queueLength = 0;
     this.busy = false;
   }
@@ -1027,6 +1100,11 @@ export class Director {
       this.currentTime = (now - this.currentStart) / 1000;
       this.current.update(this.currentTime, dt);
       if (this.currentTime >= this.current.duration) {
+        // Whatever this one ran past its end by belongs to the next one. A
+        // frame lands where it lands, and starting every animation from the
+        // frame boundary after the last one ended throws away up to a frame
+        // each time - a backlog of them then drifts steadily late.
+        this.carry = Math.min(this.currentTime - this.current.duration, CARRY_CAP);
         this.current.onEnd?.();
         this.current = null;
         this.currentTime = 0;
@@ -1036,13 +1114,15 @@ export class Director {
     if (!this.current && this.queue.length > 0) {
       const anim = this.compileNext();
       if (anim) {
+        const carry = this.carry;
+        this.carry = 0;
         this.current = anim;
-        this.currentTime = 0;
-        this.currentStart = this.now();
+        this.currentTime = carry;
+        this.currentStart = this.now() - carry * 1000;
         this.idleTime = 0;
         this.resetIdleCamera();
         anim.onStart?.();
-        anim.update(0, 0);
+        anim.update(carry, 0);
       }
     }
 
@@ -1076,28 +1156,64 @@ export class Director {
     }
   }
 
-  /** Gentle drift back to resting positions between plays. */
+  /** What an actor stands in once whatever it was doing is over. */
+  private restPose(actor: Actor): Pose {
+    if (actor.positionKey === "catcher") return "crouch";
+    return actor.role === "fielder" ? "ready" : "idle";
+  }
+
+  /**
+   * One frame of an actor walking back to his mark. Returns whether he is
+   * still travelling.
+   *
+   * The position is carried by a capped speed rather than by a lerp toward the
+   * spot: a lerp is fastest at the start and asymptotic at the end, which is
+   * exactly the speed profile nobody has, and the gait ladder reads it as a
+   * man who sprints out of the gap and then shuffles the last thirty feet.
+   * `stride` picks the gait off the speed, so a steady one gets a steady jog.
+   */
+  private walkHome(actor: Actor, dt: number): boolean {
+    // A reaction plays out where it happened.
+    if (dt <= 0 || REACTIONS.has(actor.pose)) return false;
+    const gap = actor.position.distanceTo(actor.home);
+    if (gap <= RETURN_SNAP) {
+      actor.position.copy(actor.home);
+      return false;
+    }
+    const speed = RETURN_SPEED * Math.min(1, gap / RETURN_EASE);
+    STEP_FROM.copy(actor.position);
+    actor.position.lerp(actor.home, Math.min(1, (speed * dt) / gap));
+    actor.facing = yawToward(STEP_FROM, actor.home);
+    this.stride(actor, STEP_FROM, dt, "run");
+    return true;
+  }
+
+  /** Back to marks between plays: on foot, and then standing still. */
   private restIdle(dt: number) {
-    const k = Math.min(1, dt * 3);
     for (const actor of this.actors.values()) {
       if (!actor.visible) continue;
-      actor.position.lerp(actor.home, k);
-      if (REACTIONS.has(actor.pose) || MOVEMENTS.has(actor.pose)) {
-        actor.poseT += dt;
-        // A reaction is worth holding; a movement is not. A man on his knees
-        // takes the longest of all to get back up.
-        const hold = actor.pose === "collapse" ? 4.6 : REACTIONS.has(actor.pose) ? 3.2 : 0.6;
+      const reacting = REACTIONS.has(actor.pose);
+      if (!reacting) {
+        // Still on his way: `walkHome` owns the pose while he is travelling,
+        // so the hold below must not also be counting his stride phase up.
+        if (this.walkHome(actor, dt)) continue;
+        actor.facing = actor.homeFacing;
+        if (TRAVEL.has(actor.pose)) {
+          // Standing on his mark. A gait has nothing left to carry.
+          actor.pose = this.restPose(actor);
+          actor.poseT = 0;
+          continue;
+        }
+      }
+      actor.poseT += dt;
+      if (reacting || MOVEMENTS.has(actor.pose)) {
+        // A reaction is worth holding; a follow-through is not. A man on his
+        // knees takes the longest of all to get back up.
+        const hold = actor.pose === "collapse" ? 4.6 : reacting ? 3.2 : 0.6;
         if (actor.poseT > hold) {
-          actor.pose =
-            actor.positionKey === "catcher"
-              ? "crouch"
-              : actor.role === "fielder"
-                ? "ready"
-                : "idle";
+          actor.pose = this.restPose(actor);
           actor.poseT = 0;
         }
-      } else {
-        actor.poseT += dt;
       }
     }
     this.idleCamera();
@@ -1160,9 +1276,16 @@ export class Director {
    * play's own shot takes over from here - and a cutaway the game interrupted
    * still counts as one, so the next is a full gap away rather than immediately
    * after the pitch that cut it short.
+   *
+   * Coming home is part of that. An animation with an opening shot of its own
+   * overrides this a frame later and nothing is lost; one without - a walk, a
+   * stolen base, a change of sides the linescore reported late - used to play
+   * out in full over a picture of the empty third-base seats.
    */
   private resetIdleCamera() {
-    if (this.onIdleCutaway) this.endIdleCutaway();
+    if (!this.onIdleCutaway) return;
+    this.endIdleCutaway();
+    this.setShot("center", { cut: true, force: true });
   }
 
   private compileNext(): Anim | null {
@@ -1191,6 +1314,17 @@ export class Director {
 
   private setCallout(text: string, tone: CallOut["tone"], detail?: string) {
     this.callout = { text, tone, detail, at: Date.now() };
+  }
+
+  /**
+   * Ease a runner off wherever he was standing and onto the base path. See
+   * `PATH_JOIN`. `point` is consumed - it is a fresh vector out of
+   * `basePathPoint` - so nothing is allocated for this.
+   */
+  private joinPath(from: Vector3 | undefined, point: Vector3, elapsed: number): Vector3 {
+    if (!from) return point;
+    const u = clamp01(elapsed / PATH_JOIN);
+    return u >= 1 ? point : point.lerp(from, 1 - easeOut(u));
   }
 
   /**
@@ -1327,6 +1461,40 @@ export class Director {
     }
   }
 
+  /**
+   * What the broadcast opens a pitch on, and the state the hitter has to be in
+   * for it. Every pitch starts here, whether or not it is going to be hit -
+   * which is the point of it being shared. The one that *is* hit used to hand
+   * the lens to the result's own ball-tracking shot at the top of the windup,
+   * which both slid the camera the width of the park through the delivery and
+   * told anybody watching that this was the pitch worth watching.
+   */
+  private openPitch(pitch: PitchEvent) {
+    this.pitchCount += 1;
+    // Whoever is hitting is solid again: the previous batter may have been
+    // beamed out with the queue still backed up behind them.
+    const hitter = this.batter();
+    if (hitter) {
+      hitter.dissolve = 0;
+      hitter.arriving = false;
+      hitter.visible = true;
+    }
+    // Two strikes is worth a tight look at the hitter; every fourth pitch
+    // otherwise gets the long lens on the pitcher, cut back at release.
+    // Everything else is thrown from centre field, the way every pitch on
+    // television is - and it cuts there, whether it is coming back from a
+    // cutaway or from the last play.
+    if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
+    else if (this.pitchCount % 4 === 0) this.setShot("mound", { cut: true, force: true });
+    else this.setShot("center", { cut: true, force: true });
+  }
+
+  /** The long lens on the pitcher is a pre-pitch shot: it leaves at release. */
+  private cutBackAtRelease(cue: Cue, t: number, releaseAt: number) {
+    if (this.cameraMode !== "mound") return;
+    cue.at("cutback", t, releaseAt, () => this.setShot("center", { cut: true, force: true }));
+  }
+
   private compilePitch(pitch: PitchEvent): Anim {
     const cue = new Cue();
     const flight = this.pitchFlight(pitch);
@@ -1341,32 +1509,10 @@ export class Director {
     return {
       label: `pitch:${pitch.id}`,
       duration,
-      onStart: () => {
-        this.pitchCount += 1;
-        // Whoever is hitting is solid again: the previous batter may have been
-        // beamed out with the queue still backed up behind them.
-        const hitter = this.batter();
-        if (hitter) {
-          hitter.dissolve = 0;
-          hitter.arriving = false;
-          hitter.visible = true;
-        }
-        // Two strikes is worth a tight look at the hitter; every fourth pitch
-        // otherwise gets the long lens on the pitcher, cut back at release.
-        // Everything else is thrown from centre field, the way every pitch on
-        // television is - and it cuts there, whether it is coming back from a
-        // cutaway or from the last play.
-        if (pitch.count.strikes >= 2) this.setShot("slot", { cut: true, force: true });
-        else if (this.pitchCount % 4 === 0) this.setShot("mound", { cut: true, force: true });
-        else this.setShot("center", { cut: true, force: true });
-      },
+      onStart: () => this.openPitch(pitch),
       update: (t) => {
         flight.update(t);
-        if (this.cameraMode === "mound") {
-          cue.at("cutback", t, flight.releaseAt, () =>
-            this.setShot("center", { cut: true, force: true }),
-          );
-        }
+        this.cutBackAtRelease(cue, t, flight.releaseAt);
         if (swings || pitch.outcome === "in_play") {
           this.swingAt(t, flight.plateTime - SWING_LEAD, false);
         }
@@ -1436,8 +1582,13 @@ export class Director {
     return {
       label: `atbat:${result.id}`,
       duration: contactAt + inner.duration,
-      onStart: () => inner.onStart?.(),
+      onStart: () => this.openPitch(pitch),
       update: (t, dt) => {
+        // The result owns the camera from contact, not from the top of the
+        // windup. Its opening shot is a ball-tracking one, so handing it the
+        // lens early spent the whole delivery sliding backwards across the
+        // park - and gave the pitch away before it was thrown.
+        cue.at("contact", t, contactAt, () => inner.onStart?.());
         cue.at("crack", t, contactAt, () => {
           this.onSound?.("crack");
           // Chips of dirt off the back foot as the hitter turns on it.
@@ -1457,6 +1608,7 @@ export class Director {
         });
         if (t <= contactAt) {
           flight.update(t);
+          this.cutBackAtRelease(cue, t, flight.releaseAt);
         } else {
           // `dt` used to be passed as zero here, which froze every pose that
           // advances on it: runners never took a stride on any batted ball,
@@ -1548,6 +1700,8 @@ export class Director {
     /** Where the chasing defender and the diving one started from. */
     let chaseFrom: Vector3 | null = null;
     let diveFrom: Vector3 | null = null;
+    /** And where each runner was standing when his own track opened. */
+    const joinFrom = new Map<string, Vector3>();
 
     /**
      * When the call goes up. Naming the play the instant it starts gives away
@@ -1622,7 +1776,13 @@ export class Director {
           // diamond in shot to read at all; one in the air can be chased.
           this.cameraFollow =
             result.kind === "home_run" ? 0.6 : plan && plan.apex < 14 ? 0.22 : 0.32;
-          this.setShot("ball");
+          // A cut, and one this shot is entitled to: it is handed the lens at
+          // contact (see `compileAtBat`), so a shot still serving out its hold
+          // must not be able to keep the camera pointed at the empty slot
+          // while the ball is in the air - and easing three hundred feet from
+          // centre field to behind the plate is not what a broadcast does
+          // with a ball off the bat either.
+          this.setShot("ball", { cut: true, force: true });
         }
         // Where this one is headed, for the home-run shots to be built around.
         this.cameraAnchor = landing ? landing.clone() : null;
@@ -1716,7 +1876,7 @@ export class Director {
         // --- Defense ---
         if (fielderKey && landing) {
           const fielder = this.actors.get(fielderKey);
-          if (fielder) {
+          if (fielder && t < throwEnd) {
             // He runs a route rather than being dragged toward the ball a
             // fraction at a time: he leaves his own spot, and he arrives at the
             // moment the ball is gathered, which is what makes a ball in the
@@ -1739,14 +1899,26 @@ export class Director {
               );
               fielder.pose = "catch";
               fielder.poseT = clamp01((t - gatherAt) / 0.25);
-            } else if (t < throwEnd) {
+            } else {
               fielder.pose = "throw";
               fielder.poseT = clamp01((t - throwStart) / 0.55);
-            } else if (fielder.pose === "throw" || fielder.pose === "catch") {
-              // Only ever undoing our own pose: a pitcher who fielded the ball
+            }
+          } else if (fielder) {
+            // The throw is away and the play is dead: he jogs back to his own
+            // spot over the hold the animation is already sitting through,
+            // which is what the hold is for. Leaving him out there instead
+            // meant the snapshot promoted on the next idle frame had a
+            // fielder to put back, and putting him back is a teleport.
+            if (!this.walkHome(fielder, dt)) {
+              // Only ever undoing our own pose - the catch, the throw, or the
+              // jog that just brought him back. A pitcher who fielded the ball
               // and then wore the hit is sulking about it, and standing him
               // back up every frame is not an improvement.
-              fielder.pose = "ready";
+              if (OWN_POSES.has(fielder.pose)) {
+                fielder.pose = this.restPose(fielder);
+                fielder.poseT = 0;
+              }
+              if (!REACTIONS.has(fielder.pose)) fielder.facing = fielder.homeFacing;
             }
           }
         }
@@ -1759,22 +1931,28 @@ export class Director {
           const diver = this.actors.get(`def:${plan.beaten.key}`);
           if (diver) {
             const lunge = Math.max(0.12, plan.beaten.at - 0.16);
-            diveFrom ??= diver.position.clone();
-            const u = clamp01(t / lunge);
-            STEP_FROM.copy(diver.position);
-            diver.position.copy(diveFrom).lerp(plan.beaten.spot, easeOut(u));
-            diver.facing = yawToward(diveFrom, plan.beaten.spot);
-            if (t < lunge) {
-              this.stride(diver, STEP_FROM, dt);
-            } else if (t < lunge + 1.5) {
-              cue.at("dive", t, lunge, () =>
-                this.fx.puff(diver.position.clone(), 16, { spread: 6, lift: 2.4, size: 1 }),
-              );
-              diver.pose = "dive";
-              diver.poseT = clamp01((t - lunge) / 0.85);
-            } else if (diver.pose === "dive") {
-              // Back on his feet, watching it go.
-              diver.pose = "ready";
+            if (t < lunge + 1.5) {
+              diveFrom ??= diver.position.clone();
+              const u = clamp01(t / lunge);
+              STEP_FROM.copy(diver.position);
+              diver.position.copy(diveFrom).lerp(plan.beaten.spot, easeOut(u));
+              diver.facing = yawToward(diveFrom, plan.beaten.spot);
+              if (t < lunge) {
+                this.stride(diver, STEP_FROM, dt);
+              } else {
+                cue.at("dive", t, lunge, () =>
+                  this.fx.puff(diver.position.clone(), 16, { spread: 6, lift: 2.4, size: 1 }),
+                );
+                diver.pose = "dive";
+                diver.poseT = clamp01((t - lunge) / 0.85);
+              }
+            } else if (!this.walkHome(diver, dt)) {
+              // Up off the dirt, and back where he is supposed to be.
+              if (diver.pose === "dive" || TRAVEL.has(diver.pose)) {
+                diver.pose = this.restPose(diver);
+                diver.poseT = 0;
+              }
+              if (!REACTIONS.has(diver.pose)) diver.facing = diver.homeFacing;
             }
           }
         }
@@ -1784,10 +1962,17 @@ export class Director {
           const actor = this.actors.get(track.actorKey);
           if (!actor) continue;
           if (t < track.start) continue;
+          if (!joinFrom.has(track.actorKey)) {
+            joinFrom.set(track.actorKey, actor.position.clone());
+          }
           const u = clamp01((t - track.start) / Math.max(0.001, track.end - track.start));
           const progress = track.from + (track.to - track.from) * pace(u);
           const bow = track.to - track.from > 1 ? 1 : 0;
-          const point = basePathPoint(progress, bow);
+          const point = this.joinPath(
+            joinFrom.get(track.actorKey),
+            basePathPoint(progress, bow),
+            t - track.start,
+          );
           const ahead = basePathPoint(Math.min(4, progress + 0.08), bow);
           STEP_FROM.copy(actor.position);
           actor.position.set(point.x, 0, point.z);
@@ -2056,6 +2241,8 @@ export class Director {
     const duration = isSteal ? 2.6 : 0.9;
     const cue = new Cue();
     let track: RunnerTrack | null = null;
+    /** Where the runner was leading off from, so he breaks rather than snaps. */
+    let stealFrom: Vector3 | null = null;
 
     if (isSteal) {
       // Move the trailing runner up one base.
@@ -2097,8 +2284,13 @@ export class Director {
         if (!track) return;
         const actor = this.actors.get(track.actorKey);
         if (!actor) return;
+        stealFrom ??= actor.position.clone();
         const u = clamp01(t / (track.end - track.start));
-        const point = basePathPoint(track.from + (track.to - track.from) * pace(u));
+        const point = this.joinPath(
+          stealFrom,
+          basePathPoint(track.from + (track.to - track.from) * pace(u)),
+          t,
+        );
         STEP_FROM.copy(actor.position);
         actor.position.set(point.x, 0, point.z);
         if (u < 1) this.stride(actor, STEP_FROM, dt);

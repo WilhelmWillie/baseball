@@ -2,19 +2,18 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { Ball } from "@/components/brand/Ball";
-import { SEASON_OPENING_DAY } from "@/lib/game/schedule";
 import closeUp from "./close-up.webp";
 
 /**
  * The page that answers "what am I looking at".
  *
  * Everything else here is a way into a game; this is the one page that says
- * where the idea came from and what it is for, which is not much. Static and
- * server-rendered - it touches no feed and never changes.
+ * where the idea came from and how it works. Static and server-rendered - it
+ * touches no feed and never changes.
  */
 const title = "About Pocket Ballpark";
 const description =
-  "Where Pocket Ballpark came from, what it does with MLB's play-by-play, and what it is for — which is honestly not much.";
+  "Where Pocket Ballpark came from, and how it turns MLB's live play data into a 3D toy ballpark.";
 
 export const metadata: Metadata = {
   title,
@@ -48,7 +47,7 @@ export default function AboutPage() {
           </Link>
           <Link
             href="/"
-            className="rounded-full border-2 border-grass-deep/12 bg-card px-3 py-1.5 text-xs font-bold text-bark transition-colors hover:border-grass/60 hover:text-grass-deep"
+            className="rounded-full bg-grass px-3.5 py-1.5 text-xs font-bold text-card transition-transform lip-sm hover:-translate-y-0.5"
           >
             Find a game
           </Link>
@@ -57,15 +56,12 @@ export default function AboutPage() {
         <header className="pb-2 pt-4">
           <p className="text-sm font-bold uppercase tracking-wide text-bark-soft">About</p>
           <h1 className="mt-1 font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-grass-deep sm:text-5xl">
-            A real baseball game,
-            <br />
-            in a toy ballpark.
+            Watch baseball live in a 3D toy ballpark
           </h1>
           <p className="mt-5 text-lg leading-relaxed text-bark">
-            Pocket Ballpark takes a game that is actually being played — or any game
-            this season already played — and acts it out, pitch by pitch, with
-            little aliens and robots in a 3D park. It is a pet project. That is the
-            whole pitch.
+            Pocket Ballpark takes a real baseball game, either one that&apos;s being
+            played right now or one from earlier this season, and plays it out pitch by
+            pitch with little aliens and robots in a 3D park.
           </p>
         </header>
 
@@ -80,106 +76,76 @@ export default function AboutPage() {
             />
           </div>
           <figcaption className="mt-3 text-xs font-semibold leading-relaxed text-bark-soft">
-            The home club take the field as aliens and the visitors as robots, in
-            their real colors, so it is never a question who is who.
+            The home team plays as aliens and the visiting team as robots, in their
+            real team colors.
           </figcaption>
         </figure>
 
         <Section heading="Where the idea came from">
           <p>
-            A few years ago ESPN carried an NFL game as a Toy Story cartoon —
-            Toy Story Funday Football. Not highlights cut together afterwards: the
-            live game, as it was being played, with every player on the field
-            driving a toy in Andy&apos;s room. Tracking data went in one end and a
-            different world came out the other, and the game underneath it was
-            still the real one.
+            A few years ago, ESPN broadcasted a live NFL game as a Toy Story cartoon.
+            Every play was re-created to look as if the players were toys playing a
+            game in Andy&apos;s bedroom.
           </p>
           <p>
-            That stuck with me. Baseball is, if anything, the easier sport to try it
-            on: MLB publishes every pitch, every batted ball, every runner and every
-            stat line as it happens, which is most of what you need to put a game
-            somewhere else. So — same trick, much smaller budget, and a ballpark
-            instead of a bedroom.
+            I loved that concept, and thought it&apos;d be fun to try to do this with
+            baseball. Baseball is a good fit for it, too. The game already happens one
+            pitch at a time, with a pause in between, and MLB publishes data on all of
+            it while the game is going on. So there isn&apos;t much to make up. You
+            mostly just have to draw it.
+          </p>
+          <p>
+            I built it for fun and that&apos;s still all it is. Nobody needs to watch
+            nine innings this way, but a home run or a walk-off is pretty great as a
+            toy.
           </p>
         </Section>
 
-        <Section heading="What it actually does">
+        <Section heading="How it works">
           <p>
-            Nothing here is simulated. The app reads MLB&apos;s public Stats API,
-            translates each play into its own vocabulary, and animates that. A ball
-            goes to the right-field gap because that is where it was hit. The
-            scorebug&apos;s numbers — the hitter&apos;s average, the pitcher&apos;s
-            ERA and pitch count, the line score on the wooden board out past center
-            — are the real ones, arriving a few seconds behind the game itself.
-          </p>
-          <p>
-            The park reads the feed too. First pitch at 1:05 plays under a high sun,
-            a 7:05 start runs into golden hour and then to the tower lights, and rain
-            falls if it was raining. The crowd wears the home club&apos;s colors and
-            has its allegiances: it cheers a strikeout by its own pitcher and groans
-            at a home run off him.
+            MLB has a public API that reports every pitch and every play while a game
+            is going on. Pocket Ballpark reads that feed, works out what each play was,
+            and turns it into animations in the ballpark. The players, the ball, the
+            score and the stats on the scorebug all come from the real game, a few
+            seconds behind it.
           </p>
         </Section>
 
-        <Section heading="What it is for">
+        <Section heading="Say hi">
           <p>
-            Honestly? Not much, and that is not a problem to be fixed. I do not
-            imagine anyone sitting through nine innings this way when the actual
-            broadcast exists. It is for the thirty seconds after something happens:
-            watching a walk-off, a triple, or an inning-ending double play acted out
-            by toys, and sending it to somebody.
+            I&apos;m Wilhelm, and I built this. If you have questions, feedback, or an
+            idea for something it should do, I&apos;d really like to hear it. The
+            easiest way to reach me is on X at{" "}
+            <a
+              href="https://x.com/Wilhelm_Willie"
+              target="_blank"
+              rel="noreferrer"
+              className="font-bold text-grass-deep underline decoration-grass/50 underline-offset-2 hover:text-clay"
+            >
+              @Wilhelm_Willie
+            </a>
+            . Happy to talk about baseball, or the 3D side of it, or anything else.
           </p>
-          <p>
-            Which is why a single plate appearance has its own link. Anything worth
-            showing someone can be handed over on its own, without asking them to
-            find it in a nine-inning game.
-          </p>
-        </Section>
-
-        <Section heading="What's in here">
-          <ul className="space-y-2">
-            <li>
-              <Link href="/" className="font-bold text-grass-deep hover:underline">
-                Today&apos;s games
-              </Link>{" "}
-              — anything in progress opens live and follows along; anything finished
-              plays back from the start.
-            </li>
-            <li>
-              <Link
-                href={`/games/${SEASON_OPENING_DAY}`}
-                className="font-bold text-grass-deep hover:underline"
-              >
-                Every day since Opening Day
-              </Link>{" "}
-              — any game the season has played, rebuilt from MLB&apos;s own
-              play-by-play when you open it. Nothing had to be recorded in advance.
-            </li>
-            <li>
-              A handful of <strong className="font-bold text-bark">recorded games</strong> worth
-              watching back, each with a note saying what happened in it.
-            </li>
-          </ul>
         </Section>
 
         <Section heading="The fine print">
           <p>
-            Data comes from MLB&apos;s public Stats API, the same feed that powers
-            Gameday. This is an independent hobby project: it is not affiliated with,
-            endorsed by, or connected to MLB, MLB Advanced Media, or any club. Team
-            names and colors are theirs.
+            The data comes from MLB&apos;s public Stats API, the same feed behind
+            Gameday. This is an independent hobby project. It&apos;s not affiliated
+            with, endorsed by, or connected to MLB, MLB Advanced Media, or any club.
+            Team names and colors belong to them.
           </p>
           <p>
-            Built with Next.js, React and three.js. The ballpark, the crowd, every
-            player and every sound in it are generated in the browser — there are no
-            models and no audio files.
+            Built with Next.js, React and three.js. The ballpark, the crowd, the
+            players and every sound in it are generated in the browser, so there are no
+            3D models or audio files behind any of it.
           </p>
         </Section>
 
         <div className="mt-12 rounded-3xl border-2 border-grass-deep/12 bg-card p-6 text-center lip">
           <Ball className="mx-auto h-10 w-10 animate-[bob_5s_ease-in-out_infinite]" />
           <p className="mt-3 font-display text-xl font-extrabold text-bark">
-            That is the whole explanation.
+            That&apos;s about it.
           </p>
           <p className="mt-1 text-sm text-bark-soft">Go watch a game.</p>
           <Link

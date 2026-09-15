@@ -94,11 +94,6 @@ export default function AboutPage() {
             it while the game is going on. So there isn&apos;t much to make up. You
             mostly just have to draw it.
           </p>
-          <p>
-            I built it for fun and that&apos;s still all it is. Nobody needs to watch
-            nine innings this way, but a home run or a walk-off is pretty great as a
-            toy.
-          </p>
         </Section>
 
         <Section heading="How it works">
@@ -113,7 +108,7 @@ export default function AboutPage() {
 
         <Section heading="Say hi">
           <p>
-            I&apos;m Wilhelm, and I built this. If you have questions, feedback, or an
+            I&apos;m Willie, and I built this. If you have questions, feedback, or an
             idea for something it should do, I&apos;d really like to hear it. The
             easiest way to reach me is on X at{" "}
             <a

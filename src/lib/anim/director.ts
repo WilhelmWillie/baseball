@@ -54,6 +54,13 @@ export type Pose =
   | "windup"
   | "throw"
   | "swing"
+  /**
+   * A swing with nothing on the end of it. Its own pose rather than a flag on
+   * `swing`, because a miss is not a shorter swing - the bat carries all the
+   * way round and takes the hitter with it, which is the whole read on a
+   * strike three.
+   */
+  | "whiff"
   | "catch"
   /** Fists up, settling into a clap for the dugout. */
   | "celebrate"
@@ -119,7 +126,7 @@ const REACTIONS = new Set<Pose>([
 ]);
 
 /** Poses that are a movement, and are over the moment the movement is. */
-const MOVEMENTS = new Set<Pose>(["sprint", "run", "walk", "throw", "swing", "dive"]);
+const MOVEMENTS = new Set<Pose>(["sprint", "run", "walk", "throw", "swing", "whiff", "dive"]);
 
 /**
  * The three of those that are *travel*. A throw or a dive has a follow-through
@@ -404,9 +411,24 @@ const TROT_PER_BASE = 3.4;
  * from the original 0.55s/0.2s lead so there is room for a visible coil before
  * the bat fires - a swing that only starts a fifth of a second out reads as a
  * flinch rather than a hitter starting his load.
+ *
+ * A miss runs longer than a cut that connected, because there is more of it:
+ * the same coil and the same turn, and then a spin-out nothing interrupted.
+ * The pose splits its own beats to match, so the bat moves at one speed in
+ * both - see `swingPose` in `<Player>`.
  */
 const SWING_TIME = 0.62;
 const SWING_LEAD = 0.27;
+const WHIFF_TIME = 1.15;
+
+/**
+ * Where the barrel crosses the zone, as a fraction of a whiff - a fraction of
+ * a tick after the ball has already gone by it, which is what missing is.
+ * Everything that sells a miss (the air coming off the bat, the dirt off the
+ * back foot, the knock on the lens) is hung here rather than at the plate,
+ * because on a miss the plate is where nothing happened.
+ */
+const BAT_THROUGH_ZONE = 0.3;
 
 /** A walk is not a race. */
 const WALK_PER_BASE = 4.2;
@@ -653,6 +675,8 @@ export class Director {
   cameraAnchor: Vector3 | null = null;
   /** Decaying knock on the lens after a hard-hit ball. */
   cameraShake = 0;
+  /** How fast that knock dies away, set with it by `knockCamera`. */
+  cameraShakeFade = 2.4;
   /**
    * The latest stir of the stands, for the crowd to play out. `home` and `away`
    * are signed excitement, roughly -1..1: positive is elated, negative dejected,
@@ -835,9 +859,16 @@ export class Director {
     return (this.cameraAnchor?.x ?? 0) < 0 ? -1 : 1;
   }
 
-  /** A hard-hit ball knocks the lens. `amount` is 0..1. */
-  private knockCamera(amount: number) {
-    this.cameraShake = Math.max(this.cameraShake, amount);
+  /**
+   * A hard-hit ball knocks the lens. `amount` is 0..1, `fade` how fast it dies
+   * away in units per second - a screamer rings the camera for a good deal
+   * longer than a bat cutting through air does, and one decay rate for both
+   * either cut the big one short or left the small one wobbling.
+   */
+  private knockCamera(amount: number, fade = 2.4) {
+    if (amount < this.cameraShake) return;
+    this.cameraShake = amount;
+    this.cameraShakeFade = fade;
   }
 
   /**
@@ -1128,8 +1159,11 @@ export class Director {
 
     this.busy = !this.isIdle();
     this.queueLength = this.queue.length;
-    // The knock on the lens dies away over about half a second.
-    if (this.cameraShake > 0) this.cameraShake = Math.max(0, this.cameraShake - dt * 2.4);
+    // The knock on the lens dies away at whatever rate the thing that caused
+    // it set - half a second for a whiff, a couple for a ball off the wall.
+    if (this.cameraShake > 0) {
+      this.cameraShake = Math.max(0, this.cameraShake - dt * this.cameraShakeFade);
+    }
 
     // Beam-ins resolve every frame, busy or idle. Play often resumes the
     // instant a side lands - a pitch starts before the field is idle again - so
@@ -1446,19 +1480,38 @@ export class Director {
    * Drives the swing. It starts before the ball arrives and follows through
    * after it, so `swingStart` leads contact - a swing that stops dead the
    * instant the ball is struck reads as a mistimed one.
+   *
+   * A miss is a different pose over a longer clock, and it is left standing at
+   * the end of it: the hitter wearing the swing he just took is the picture,
+   * and snapping him back into his stance a beat later throws it away. The
+   * idle pass puts him back on his feet in his own time - see `restIdle`.
    */
-  private swingAt(t: number, swingStart: number, contact: boolean) {
+  private swingAt(t: number, swingStart: number, connected: boolean) {
     const batter = this.batter();
     if (!batter) return;
     if (t < swingStart) return;
-    if (t < swingStart + SWING_TIME) {
+    const length = connected ? SWING_TIME : WHIFF_TIME;
+    if (t < swingStart + length) {
       // Once the batter has taken off for first, running wins.
       if (batter.pose === "run") return;
-      batter.pose = "swing";
-      batter.poseT = clamp01((t - swingStart) / SWING_TIME);
-    } else if (!contact && batter.pose === "swing") {
-      batter.pose = "ready";
+      batter.pose = connected ? "swing" : "whiff";
+      batter.poseT = clamp01((t - swingStart) / length);
     }
+  }
+
+  /**
+   * The moment the barrel comes through the zone on a swing that hit nothing:
+   * the air off the bat, the dirt the back foot tears up turning on it, and a
+   * knock on the lens. A miss used to pass in silence while the ball simply
+   * carried on into the mitt, which read as a take.
+   */
+  private whiffAt(t: number, cue: Cue, swingStart: number, strikeThree: boolean) {
+    cue.at("whiff", t, swingStart + WHIFF_TIME * BAT_THROUGH_ZONE, () => {
+      this.onSound?.("whoosh", strikeThree ? 1 : 0.72);
+      // Chips off the back foot as the hitter turns on nothing at all.
+      this.fx.spray(contactPoint(this.batSide()).setY(0.4), new Vector3(0, 1, -0.3), 9, 0.5);
+      this.knockCamera(strikeThree ? 0.34 : 0.24, 3.4);
+    });
   }
 
   /**
@@ -1478,6 +1531,14 @@ export class Director {
       hitter.dissolve = 0;
       hitter.arriving = false;
       hitter.visible = true;
+      // Back in the box. A swing is left standing at the end of itself so the
+      // finish can be looked at - a whiff especially, which spins the hitter
+      // most of the way round - and the next pitch is the point at which he
+      // has to have got up off it. The crossfade carries him there.
+      if (hitter.pose === "swing" || hitter.pose === "whiff") {
+        hitter.pose = "ready";
+        hitter.poseT = 0;
+      }
     }
     // Two strikes is worth a tight look at the hitter; every fourth pitch
     // otherwise gets the long lens on the pitcher, cut back at release.
@@ -1501,10 +1562,21 @@ export class Director {
     const swings =
       pitch.outcome === "swinging_strike" || pitch.outcome === "foul";
     const foul = pitch.outcome === "foul" ? foulBallFor(pitch) : null;
+    const whiff = pitch.outcome === "swinging_strike";
+    const strikeThree = whiff && pitch.count.strikes >= 2;
     // The catcher's mitt, which sits at the bottom of the zone.
     const mittSpot = fp(0, -5.5, zoneHeight(1.4));
-    const tail = foul ? 1.5 : 0.75;
-    const duration = flight.plateTime + tail;
+    const swingStart = flight.plateTime - SWING_LEAD;
+    // Long enough to let whatever just happened play out: a foul climbing out
+    // of the park, or a hitter unwinding out of a swing that caught nothing.
+    // Strike three holds longest - it is the end of the at-bat, and cutting
+    // off a punchout at the moment it lands is throwing away the best beat in
+    // the whole sequence.
+    const tail = foul ? 1.9 : whiff ? (strikeThree ? 1.8 : 1.4) : 0.75;
+    const duration = Math.max(
+      flight.plateTime + tail,
+      whiff ? swingStart + WHIFF_TIME + 0.3 : 0,
+    );
 
     return {
       label: `pitch:${pitch.id}`,
@@ -1514,24 +1586,43 @@ export class Director {
         flight.update(t);
         this.cutBackAtRelease(cue, t, flight.releaseAt);
         if (swings || pitch.outcome === "in_play") {
-          this.swingAt(t, flight.plateTime - SWING_LEAD, false);
+          // A foul was still struck: it follows through off the ball the same
+          // way a fair one does. A miss gets the swing that has no ball in it.
+          this.swingAt(t, swingStart, !whiff);
         }
+        if (whiff) this.whiffAt(t, cue, swingStart, strikeThree);
 
         cue.at("plate", t, flight.plateTime, () => {
-          if (foul) this.onSound?.("foul");
-          else this.onSound?.("mitt");
+          if (foul) {
+            // Wood on ball, whichever way it then went. The thinner report the
+            // foul sound used to make on its own read as a tipped ball on
+            // every foul, including the ones scalded into the seats.
+            this.onSound?.("crack", 0.62);
+            this.onSound?.("foul");
+            this.fx.spray(contactPoint(this.batSide()).setY(0.5), new Vector3(0, 1, 0.1), 9, 0.5);
+            this.knockCamera(0.32, 3);
+          } else this.onSound?.("mitt");
         });
 
         if (t > flight.plateTime) {
-          const u = clamp01((t - flight.plateTime) / (foul ? 1.1 : 0.32));
+          const u = clamp01((t - flight.plateTime) / (foul ? 1.5 : 0.32));
           if (foul) {
-            // Foul: kick the ball up and back out of play.
+            // Foul: the ball is not kicked out of play, it is hit out of it.
+            // Half the ground goes by in the first fifth of a second - the cube
+            // is what makes it leave rather than depart - and it climbs to
+            // twice the height the old hop reached before dropping into the
+            // seats. That is the difference between a ball handed out of play
+            // and one somebody in row eight has to get a hand to.
             const target = fp(foul.lateral, foul.depth, 0);
+            const off = 1 - (1 - u) ** 3;
             const p = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z))
-              .lerp(target, easeOut(u));
-            p.y = Math.max(0.5, zoneHeight(pitch.plate.z) + 46 * u * (1 - u) * 2.2 - u * u * 2);
+              .lerp(target, off);
+            p.y = Math.max(0.5, zoneHeight(pitch.plate.z) + 88 * u * (1 - u) * 2.2 - u * u * 3);
             this.ball.position.copy(p);
             this.ball.visible = true;
+            // Struck, not thrown: it leaves the bat bigger than the pitch was,
+            // and it is going away from every camera in the park.
+            this.ball.scale = 2.3;
             this.pushTrail();
           } else {
             this.ball.position.lerp(mittSpot, Math.min(1, u * 1.4));
@@ -1590,14 +1681,29 @@ export class Director {
         // park - and gave the pitch away before it was thrown.
         cue.at("contact", t, contactAt, () => inner.onStart?.());
         cue.at("crack", t, contactAt, () => {
-          this.onSound?.("crack");
-          // Chips of dirt off the back foot as the hitter turns on it.
-          this.fx.spray(contactPoint(this.batSide()).setY(0.5), new Vector3(0, 1, 0.2), 10, 0.55);
-          // The camera reacts to contact the way a crowd does, and how hard the
-          // ball was hit is most of that reaction.
           const heat = result.ball ? heatOf(result.ball) : 0;
           const big = result.kind === "home_run" || result.kind === "triple";
-          this.knockCamera(big ? 0.85 : result.ball ? 0.2 + heat * 0.55 : 0.2);
+          // Everything at contact is scaled by how hard the ball was struck: a
+          // squibber off the end of the bat and a ball hit into the second deck
+          // used to make exactly the same noise and throw exactly the same
+          // dirt, which flattened the one moment in an at-bat worth watching.
+          this.onSound?.("crack", big ? 1 : 0.45 + heat * 0.55);
+          const spot = contactPoint(this.batSide()).setY(0.5);
+          // Chips of dirt off the back foot as the hitter turns on it, and a
+          // low puff hanging in the box behind them for weight.
+          this.fx.spray(spot, new Vector3(0, 1, 0.2), 12 + Math.round(heat * 16), 0.55 + heat * 0.7);
+          this.fx.puff(spot.clone().setY(0.3), 6 + Math.round(heat * 10), {
+            spread: 3 + heat * 4,
+            lift: 2.4,
+            size: 0.8 + heat * 0.5,
+          });
+          // The camera reacts to contact the way a crowd does, and how hard the
+          // ball was hit is most of that reaction - in how hard the lens is
+          // knocked, and in how long it takes to settle afterwards.
+          this.knockCamera(
+            big ? 1.15 : result.ball ? 0.26 + heat * 0.72 : 0.24,
+            big ? 1.5 : 2.4,
+          );
           // A ball scalded on a line deserves an angle at the height it is
           // travelling at - nothing else sells a screamer. A home run does not
           // want that angle: from down there it is a speck against bare sky

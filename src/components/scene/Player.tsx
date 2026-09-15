@@ -614,8 +614,34 @@ function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/**
+ * The batting stance, with nothing on top of it - no breathing, no weight
+ * rolling foot to foot. It is both what a hitter stands in between pitches and
+ * what a swing has to hand back to, so it lives in one place: `poseValues`
+ * lays the idle life over it, and `swingPose` eases back to it.
+ */
+function battingStance(batSide: "R" | "L"): PoseValues {
+  return {
+    ...REST,
+    crouch: 0.2,
+    lean: 0.06,
+    twist: 0.34,
+    legL: -0.55,
+    legR: -0.55,
+    kneeL: 0.6,
+    kneeR: 0.6,
+    armL: BAT_STANCE.arm,
+    armR: BAT_STANCE.arm,
+    elbowL: BAT_STANCE.elbow,
+    elbowR: BAT_STANCE.elbow,
+    armSpread: BAT_STANCE.spread,
+    elbowIn: BAT_STANCE.elbowIn,
+    headYaw: batSide === "R" ? LOOK_AT_MOUND : -LOOK_AT_MOUND,
+  };
+}
+
 /** The only poses in which a hitter is still holding the bat. */
-const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing"]);
+const BATTING_POSES = new Set<Pose>(["ready", "idle", "swing", "whiff"]);
 
 /**
  * A squat that keeps its feet. Flexing the hip by `SQUAT_HIP` and the knee by
@@ -702,6 +728,102 @@ function clampUnit(v: number): number {
 }
 
 /**
+ * A cut at the ball, connected or missed.
+ *
+ * A coil that gathers rather than moving at one speed, an explosive turn, and
+ * then a finish that depends on whether there was a ball out there to stop the
+ * bat. A connected swing unwinds slightly out of full extension - freezing at
+ * maximum twist made the cut back to "ready" read as a snap rather than as a
+ * follow-through settling out. A miss has nothing to hit, so the turn keeps
+ * going: the barrel wraps all the way round, the shoulders carry past square,
+ * the weight spills onto the front foot and the head drops off the pitch -
+ * and then a beat the connected swing has no use for, where he gets back on
+ * his feet and into something like a stance again.
+ *
+ * The two run on different clocks - a whiff is held longer, because the
+ * spin-out is the point of it - so the beat fractions differ. They are chosen
+ * to put the coil and the turn at the same real-world speed in both: a whiff
+ * is not a slower swing, it is a swing with more after it. See `SWING_TIME`
+ * and `WHIFF_TIME` in the director.
+ */
+function swingPose(t: number, batSide: "R" | "L", missed: boolean): PoseValues {
+  const loadEnd = missed ? 0.17 : 0.28;
+  const fireEnd = missed ? 0.62 : 1;
+  const load = clamp01(t / loadEnd);
+  const loadEase = load * load;
+  const fireRaw = clamp01((t - loadEnd) / (fireEnd - loadEnd));
+  // easeOutCubic: the turn explodes rather than ramping at a constant rate,
+  // then eases off - closer to how a real swing decelerates once the bat is
+  // already out in front of the plate.
+  const fire = 1 - (1 - fireRaw) ** 3;
+  const unwind = !missed && fireRaw > 0.82 ? (fireRaw - 0.82) / 0.18 : 0;
+  // The spin-out, started just before the turn is spent so the two run into
+  // each other instead of the body pausing at full extension and then setting
+  // off again. Smoothstepped: momentum carries him, it does not shove him.
+  const spinRaw = missed ? clamp01((t - 0.46) / 0.34) : 0;
+  const spin = spinRaw * spinRaw * (3 - 2 * spinRaw);
+  const recover = missed ? clamp01((t - 0.8) / 0.2) : 0;
+  /** How far past the ball he has carried, backed off as he gathers himself. */
+  const over = spin * (1 - 0.55 * recover);
+  // Hips over the front foot, feet where they were - a stagger, not a slide.
+  const spill = lean(0.6 * over, 0.42);
+
+  // The turn: the coil, the swing through it, and - on a miss - however far
+  // past the ball it carried him. A whiff peaks a good thirty degrees beyond
+  // where a swing that connected finishes, chest round to the backstop.
+  const twist = (0.95 * loadEase - 3.35 * fire - 0.8 * over) * (1 - 0.16 * unwind);
+  const mound = batSide === "R" ? LOOK_AT_MOUND : -LOOK_AT_MOUND;
+  // `headYaw` is read back as `headYaw - twist` (see the render step below), so
+  // it only has to describe how far the head leads or trails the shoulders, not
+  // fight the torso's own rotation. Without the `+ twist` term the head would
+  // spin along with the torso instead of holding on the pitch - it starts
+  // looking where "ready" left it and eases toward square as the eyes come off
+  // the mound and onto the ball. On a miss it then lags the shoulders again,
+  // which is what watching a ball you have already swung through looks like.
+  const headYaw = twist + mound * (1 - 0.7 * fire + 0.42 * over);
+  const swung: PoseValues = {
+    ...REST,
+    ...spill,
+    // Down into the back leg on the coil, and down again on a miss: a swing
+    // that carries a man past the ball takes his legs out from under him.
+    crouch: 0.17 + 0.05 * fire + 0.26 * over,
+    lean: 0.08 + 0.1 * fire - 0.06 * unwind + 0.34 * over,
+    twist,
+    // The back leg pivots up onto the toe as the hips clear; the front one
+    // plants and takes the weight coming forward. A miss keeps turning them.
+    legL: -0.5 + 0.32 * loadEase + 0.14 * fire + 0.3 * over,
+    legR: -0.5 - 0.2 * fire - 0.28 * over,
+    kneeL: 0.55 - 0.1 * fire + 0.34 * over,
+    kneeR: 0.55 + 0.32 * fire + 0.2 * over,
+    // The arms barely leave the stance: the bat is anchored to where these
+    // angles put the hands, so anything more and the grip visibly lets go.
+    // The twist above is what carries the bat through the zone.
+    armL: BAT_STANCE.arm - 0.07 * loadEase + 0.2 * fire + 0.24 * over,
+    armR: BAT_STANCE.arm - 0.07 * loadEase + 0.2 * fire + 0.24 * over,
+    elbowL: BAT_STANCE.elbow - 0.08 * loadEase + 0.26 * fire + 0.3 * over,
+    elbowR: BAT_STANCE.elbow - 0.08 * loadEase + 0.26 * fire + 0.3 * over,
+    armSpread: BAT_STANCE.spread - 0.1 * fire,
+    elbowIn: BAT_STANCE.elbowIn - 0.14 * fire - 0.1 * over,
+    headYaw,
+    // Chin down onto the chest as he spins off: the eyes end up on the dirt
+    // where the ball was supposed to be.
+    headTilt: -0.06 * fire + 0.3 * over,
+    roll: 0.05 * fire + spill.roll,
+    chest: 0.03 * fire,
+    // Past 1 the bat is extrapolated beyond the levelled-out swing axis, which
+    // wraps the barrel on round the body instead of parking it in the zone.
+    batSwing: fire * (1 + 0.14 * unwind) + 0.42 * over,
+  };
+  // A miss ends with him getting back on his feet, easing toward the stance
+  // over its last beat. The crossfade out of the pose would cover the change
+  // either way, but it would be covering a hitter standing on the far side of
+  // a full turn; this is him gathering himself, which is the motion that
+  // actually happens. Mixed in place - `mixPose` reads each channel before it
+  // writes it, so the pose can be its own destination.
+  return recover > 0 ? mixPose(swung, battingStance(batSide), 0.72 * recover, swung) : swung;
+}
+
+/**
  * One frame of a gait, built from the same stride table its cadence is derived
  * from - see `@/lib/anim/gait`. `t` is the phase through the cycle, 0..1, and
  * the director advances it by however many cycles the ground under the figure
@@ -781,24 +903,11 @@ function poseValues(
     // by flexing the hip and letting the knee bring the shin back to vertical -
     // bending the knee alone just kicks the heels up behind.
     return {
-      ...REST,
+      ...battingStance(batSide),
       // A hitter rocks too, but only slightly - the stance is already loaded
       // and anything bigger reads as stepping out of the box.
       ...lean(life.weight, 0.14),
-      crouch: 0.2,
       chest: life.breath * 0.035,
-      lean: 0.06,
-      twist: 0.34,
-      legL: -0.55,
-      legR: -0.55,
-      kneeL: 0.6,
-      kneeR: 0.6,
-      armL: BAT_STANCE.arm,
-      armR: BAT_STANCE.arm,
-      elbowL: BAT_STANCE.elbow,
-      elbowR: BAT_STANCE.elbow,
-      armSpread: BAT_STANCE.spread,
-      elbowIn: BAT_STANCE.elbowIn,
       headYaw: (batSide === "R" ? LOOK_AT_MOUND : -LOOK_AT_MOUND) + life.headYaw * 0.16,
       headTilt: life.headTilt,
     };
@@ -938,57 +1047,10 @@ function poseValues(
         headYaw: 0.72 - 0.72 * whip,
       };
     }
-    case "swing": {
-      // Three beats instead of two: a coil that gathers rather than moving at
-      // one speed, an explosive turn through the ball, and a last fifth that
-      // unwinds slightly instead of holding at full extension. That last part
-      // is what the pose switch back to "ready" lands on when the swing ends -
-      // freezing at maximum twist made that cut read as a snap back rather
-      // than a follow-through settling out.
-      const load = clamp01(t / 0.28);
-      const loadEase = load * load;
-      const fireRaw = clamp01((t - 0.28) / 0.72);
-      // easeOutCubic: the turn explodes rather than ramping at a constant
-      // rate, then eases off - closer to how a real swing decelerates once
-      // the bat is already out in front of the plate.
-      const fire = 1 - (1 - fireRaw) ** 3;
-      const unwind = fireRaw > 0.82 ? (fireRaw - 0.82) / 0.18 : 0;
-      const twist = (0.7 * loadEase - 2.75 * fire) * (1 - 0.16 * unwind);
-      const mound = batSide === "R" ? LOOK_AT_MOUND : -LOOK_AT_MOUND;
-      // `headYaw` is read back as `headYaw - twist` (see the render step
-      // below), so it only has to describe how far the head leads or trails
-      // the shoulders, not fight the torso's own rotation. Without the
-      // `+ twist` term the head would spin along with the torso instead of
-      // holding on the pitch - it starts looking where "ready" left it and
-      // eases toward square as the eyes come off the mound and onto the ball.
-      const headYaw = twist + mound * (1 - 0.7 * fire);
-      return {
-        ...REST,
-        crouch: 0.17 + 0.05 * fire,
-        lean: 0.08 + 0.1 * fire - 0.06 * unwind,
-        twist,
-        // The back leg pivots up onto the toe as the hips clear; the front
-        // one plants and takes the weight coming forward.
-        legL: -0.5 + 0.32 * loadEase + 0.14 * fire,
-        legR: -0.5 - 0.2 * fire,
-        kneeL: 0.55 - 0.1 * fire,
-        kneeR: 0.55 + 0.32 * fire,
-        // The arms barely leave the stance: the bat is anchored to where these
-        // angles put the hands, so anything more and the grip visibly lets go.
-        // The twist above is what carries the bat through the zone.
-        armL: BAT_STANCE.arm - 0.07 * loadEase + 0.2 * fire,
-        armR: BAT_STANCE.arm - 0.07 * loadEase + 0.2 * fire,
-        elbowL: BAT_STANCE.elbow - 0.08 * loadEase + 0.26 * fire,
-        elbowR: BAT_STANCE.elbow - 0.08 * loadEase + 0.26 * fire,
-        armSpread: BAT_STANCE.spread - 0.1 * fire,
-        elbowIn: BAT_STANCE.elbowIn - 0.14 * fire,
-        headYaw,
-        headTilt: -0.06 * fire,
-        roll: 0.05 * fire,
-        chest: 0.03 * fire,
-        batSwing: fire,
-      };
-    }
+    case "swing":
+      return swingPose(t, batSide, false);
+    case "whiff":
+      return swingPose(t, batSide, true);
     case "dive": {
       // Laid out at a ball going past. Two beats: the arms are thrown out ahead
       // first and the body follows them down, so it reads as reaching rather
@@ -1340,6 +1402,7 @@ const POSE_BLEND_DEFAULT = 0.18;
 const POSE_BLEND: Partial<Record<Pose, number>> = {
   // Explosive. These start now, or they read as a flinch.
   swing: 0.06,
+  whiff: 0.06,
   throw: 0.07,
   dive: 0.07,
   catch: 0.09,

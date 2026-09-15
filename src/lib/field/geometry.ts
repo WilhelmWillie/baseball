@@ -23,6 +23,27 @@ export function toField(v: Vector3): { lateral: number; depth: number } {
 }
 
 export const BASE_DIST = 90;
+
+/**
+ * The bags, and home plate, in feet square.
+ *
+ * Not to scale, for the same reason nothing else around the plate is: a real
+ * base is eighteen inches and the figures standing on it are drawn at 2.35x
+ * life size, so a base measured off a tape disappears under the man on it and
+ * is a smudge from the centre-field camera a hundred and fifty feet away. These
+ * are about three times the real thing, which reads as a base from every shot
+ * the broadcast takes and still fits under a boot.
+ *
+ * `BASE_RISE` is how proud of the dirt they sit. Home plate is set flush the
+ * way a real one is, and is the one of the four that is not square - it is
+ * drawn square here anyway, because at this size nothing in the shot list ever
+ * gets close enough to the point of it to notice.
+ */
+export const BASE_SIZE = 4.8;
+export const BASE_RISE = 0.66;
+export const HOME_PLATE_SIZE = 4.2;
+export const HOME_PLATE_RISE = 0.3;
+
 /** Half the diagonal of the diamond: home -> first is 90ft at 45 degrees. */
 export const HALF_DIAG = BASE_DIST / Math.SQRT2; // 63.6396...
 
@@ -262,8 +283,17 @@ export function batterSpot(batSide: "R" | "L"): Vector3 {
  * box for the same reason the hitter stands deeper in it - the figure in it is
  * drawn at 2.4x and the chalk is not - and `batterSpot` puts him in its outer
  * half, off the plate, which is where the room is.
+ *
+ * Pulled in on every side from the first pass at it, which had gone far enough
+ * past the figure that the two boxes read as a pair of paddocks either side of
+ * the plate rather than as the chalk a hitter stands in. What it has to be is
+ * a box the hitter fits inside with room to stride, not one scaled by the same
+ * 2.4x as the man - so `outer` clears him by about a stride, `inner` leaves the
+ * plate its own margin, and `length` still takes the whole stance front to
+ * back. `depth` is untouched: it is where the hitter stands, not how big the
+ * box is, and moving it would move him.
  */
-export const BATTER_BOX = { inner: 2.6, outer: 13.2, depth: 2.4, length: 9.4 };
+export const BATTER_BOX = { inner: 3.1, outer: 12.5, depth: 2.4, length: 8.5 };
 
 /** How far off the plate the hitter is standing, signed. */
 export function batterOffset(batSide: "R" | "L"): number {

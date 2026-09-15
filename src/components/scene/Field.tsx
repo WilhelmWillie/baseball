@@ -12,7 +12,11 @@ import {
 } from "three";
 import {
   BASE_POSITIONS,
+  BASE_RISE,
+  BASE_SIZE,
   BATTER_BOX,
+  HOME_PLATE_RISE,
+  HOME_PLATE_SIZE,
   MOUND_DEPTH,
   MOUND_HEIGHT,
   MOUND_RADIUS,
@@ -201,18 +205,23 @@ export function Field() {
         )),
       )}
 
-      {/* Bags and home plate. */}
+      {/* Bags and home plate, off the same constants the base paths use. */}
       {(["first", "second", "third"] as const).map((base) => {
         const p = BASE_POSITIONS[base];
         return (
-          <mesh key={base} position={[p.x, 0.28, p.z]} rotation={[0, Math.PI / 4, 0]} castShadow>
-            <boxGeometry args={[3.4, 0.56, 3.4]} />
+          <mesh
+            key={base}
+            position={[p.x, BASE_RISE / 2, p.z]}
+            rotation={[0, Math.PI / 4, 0]}
+            castShadow
+          >
+            <boxGeometry args={[BASE_SIZE, BASE_RISE, BASE_SIZE]} />
             <meshLambertMaterial color={COLORS.base} />
           </mesh>
         );
       })}
-      <mesh position={[0, 0.2, 0]} castShadow>
-        <boxGeometry args={[3.1, 0.4, 3.1]} />
+      <mesh position={[0, HOME_PLATE_RISE / 2, 0]} castShadow>
+        <boxGeometry args={[HOME_PLATE_SIZE, HOME_PLATE_RISE, HOME_PLATE_SIZE]} />
         <meshLambertMaterial color={COLORS.base} />
       </mesh>
     </group>

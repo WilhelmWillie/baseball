@@ -318,6 +318,14 @@ stance his head comes round most of a right angle off his shoulders to watch the
 pitcher, which is what a hitter does and is also what puts his face toward the
 centre-field camera rather than the back of his helmet.
 
+The chalk does not follow him all the way out, though. A box scaled by the same
+2.4x as the man in it reads as a paddock rather than as a batter's box: what it
+has to be is a box he fits inside with room to stride, which is a good deal
+less. The bags go the other way. A base is eighteen inches and the figure
+standing on it is not, so one drawn to a tape vanishes under his boot and is a
+smudge from a camera a hundred and fifty feet out — they are drawn at about
+three times life size, which reads as a base from every shot in the list.
+
 Players are low-poly figures with jointed knees and elbows, drawn at roughly
 2.4x life size — they exist to communicate the state of the game from a camera
 80 feet up, not to be anatomically sensible next to a 90-foot base path. Two
@@ -544,6 +552,38 @@ before you have found the ball has not communicated anything.
 Real games leave ~20s between pitches, which is plenty of room. Recorded
 playback ignores that gap entirely and waits on the animation instead, so the
 pacing is whatever the ballpark needs rather than whatever the clock allowed.
+
+### Joining one motion to the next
+
+Every pose is a set of joint angles evaluated from scratch, and the director
+changes which one a figure is in on the frame the animation calls for it.
+Written straight onto the rig that is a teleport: every joint in the body
+arrives at its new angle in a sixtieth of a second, which is the one motion a
+body cannot make.
+So a change of pose is crossfaded — the pose being left keeps running on a clock
+of its own, so a throw follows through and a stride keeps striding while the
+body arrives at whatever is next. The spans are set per incoming pose, because
+what decides how long a transition may take is what is *starting*: a swing or a
+throw has to fire, and blending into one over a fifth of a second is how a
+hitter arrives late at every pitch. Standing back up out of one is in no hurry.
+
+Positions get the same treatment. A play leaves whoever made it standing
+wherever it ended, out in the gap or laid out by the line, and the next pitch
+needs the field back in its shape — so he jogs back, on the same gait ladder
+everything else runs on, over the hold the animation is already sitting through.
+Nothing puts him there: the snapshot promoted on the first idle frame after a
+play used to write his mark straight onto his position, which teleported a man
+two hundred feet. And nobody starts a play on the base path either. A hitter is
+stood in the box, nine feet off the plate and behind it, and a runner is a step
+up the line off the bag, so both are eased onto the path over the first stride
+rather than dropped onto it.
+
+The camera has one of its own. A ball put in play is compiled as a single
+animation running from the windup through the last runner, and the result's
+shot — the one tracking the ball — used to own all of it. That slid the camera
+the width of the park through the delivery, and told you which pitch was worth
+watching before it was thrown. The pitch is framed like any other pitch now, and
+the ball is handed the lens on contact.
 
 ### Walks, strikeouts and who is actually running
 

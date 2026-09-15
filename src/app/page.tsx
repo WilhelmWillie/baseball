@@ -22,17 +22,12 @@ export default function Home() {
             <span className="text-clay">Pocket</span>
             <span className="-ml-1 text-grass-deep">Ballpark</span>
           </span>
-          <span className="flex items-center gap-2">
-            <span className="hidden rounded-full border-2 border-grass-deep/10 bg-card px-3 py-1.5 text-xs font-semibold text-bark-soft sm:inline">
-              Powered by the MLB Stats API
-            </span>
-            <Link
-              href="/about"
-              className="rounded-full bg-grass px-3.5 py-1.5 text-xs font-bold text-card transition-transform lip-sm hover:-translate-y-0.5"
-            >
-              About
-            </Link>
-          </span>
+          <Link
+            href="/about"
+            className="rounded-full bg-grass px-3.5 py-1.5 text-xs font-bold text-card transition-transform lip-sm hover:-translate-y-0.5"
+          >
+            About
+          </Link>
         </nav>
 
         <header className="grid items-center gap-8 pb-12 pt-4 sm:pb-16 md:grid-cols-[1fr_1.15fr] md:gap-10">

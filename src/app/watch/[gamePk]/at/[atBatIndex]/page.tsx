@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   // The score *before* the play: this link drops someone into a situation, and
   // spoiling how it turns out would be a strange thing for it to do.
   const title = `${card.batter} — ${card.half} · ${scoreLine(card, card.scoreBefore)}`;
-  const description = `${card.batter} bats against ${card.pitcher}. Watch it unfold in a storybook ballpark.`;
+  const description = `${card.batter} bats against ${card.pitcher}. Watch it unfold in a 3D ballpark.`;
   return {
     title,
     description,

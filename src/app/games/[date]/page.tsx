@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { date } = await params;
   if (!seasonDate(date, easternDate())) return {};
   const title = `Games on ${dayLabel(date)}`;
-  const description = "Every game that day, playable pitch by pitch in a storybook ballpark.";
+  const description = "Every game that day, playable pitch by pitch in a 3D ballpark.";
   return { title, description, openGraph: { title, description } };
 }
 
@@ -72,6 +72,12 @@ export default async function GamesOnDatePage({ params }: { params: Params }) {
             <Ball className="h-8 w-8" />
             <span className="text-clay">Pocket</span>
             <span className="-ml-1 text-grass-deep">Ballpark</span>
+          </Link>
+          <Link
+            href="/about"
+            className="rounded-full bg-grass px-3.5 py-1.5 text-xs font-bold text-card transition-transform lip-sm hover:-translate-y-0.5"
+          >
+            About
           </Link>
         </nav>
 

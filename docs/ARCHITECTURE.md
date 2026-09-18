@@ -73,7 +73,8 @@ Roughly 15.4k lines across 56 source files. Two files dominate:
 
 | Route | File | Notes |
 | --- | --- | --- |
-| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate, the season's last nine games, and the way into every other day of it. Live and finished games are clickable; games before first pitch are not. |
+| `/` | `app/page.tsx` → `components/GameList.tsx` | Today's slate, the season's last nine games, and the way into every other day of it. Live and finished games are clickable; games before first pitch are not. The hero shot is `app/hero-ballpark.webp`, a screenshot of the viewer, linking into the recording it came from. |
+| `/about` | `app/about/page.tsx` | What the project is and where it came from. Static: no feed, no client component, one screenshot next to it. |
 | `/games/[date]` | `app/games/[date]/page.tsx` | One day of the season, server-rendered, bounded by `SEASON_OPENING_DAY` and today. |
 | `/watch/[gamePk]` | `app/watch/[gamePk]/page.tsx` → `components/Viewer.tsx` | The viewer. Server component; awaits `params`/`searchParams` (both are Promises) and hands plain props to the client. **The mode comes from the game's status** - final plays back, live tunes in, and a game that has not started gets a card saying when it does. |
 | `/watch/[gamePk]?replay=1` | same | Forces replay without consulting the schedule. No card mints it any more, but every link ever shared carries it, and it is still what plays a published recording when the Stats API cannot be reached. `?at=<n>` opens on the nth plate appearance. |

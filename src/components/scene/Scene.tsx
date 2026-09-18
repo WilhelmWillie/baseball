@@ -87,14 +87,27 @@ function CameraRig({ director }: { director: Director }) {
     const knock = director.cameraShake;
     if (knock > 0.001) {
       const t = state.clock.elapsedTime;
+      // The knock bites harder than it fades. Amplitude rises faster than the
+      // knock does, which keeps the small ones - a bat through air, a ball
+      // fouled off - to a tremor while letting a ball off the wall properly
+      // throw the lens, all off the one decay the director is running.
+      const amp = Math.pow(knock, 1.6) * 1.1;
+      // Two detuned frequencies per axis rather than one: a single sine is a
+      // wobble, and an impact is supposed to rattle.
       shake.current.set(
-        Math.sin(t * 47) * knock * 1.6,
-        Math.sin(t * 39 + 1.7) * knock * 1.2,
-        Math.sin(t * 53 + 0.6) * knock * 1.1,
+        (Math.sin(t * 61) + Math.sin(t * 37.3 + 2.1) * 0.6) * amp,
+        (Math.sin(t * 53 + 1.7) + Math.sin(t * 31.7 + 0.4) * 0.6) * amp * 0.8,
+        Math.sin(t * 47 + 0.6) * amp * 0.75,
       );
       state.camera.position.add(shake.current);
+      state.camera.lookAt(target.current);
+      // A jolt rolls the lens as well as moving it, and the roll goes on after
+      // the aim: `lookAt` levels the horizon every frame, so a roll applied
+      // before it is simply thrown away.
+      state.camera.rotateZ(Math.sin(t * 43 + 1.1) * amp * 0.02);
+    } else {
+      state.camera.lookAt(target.current);
     }
-    state.camera.lookAt(target.current);
   });
 
   return null;

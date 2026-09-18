@@ -69,7 +69,7 @@ export default function AboutPage() {
           <div className="overflow-hidden rounded-[28px] border-2 border-grass-deep/12 bg-grass-mist lip">
             <Image
               src={closeUp}
-              alt="A close view of the ballpark: an alien pitcher in Cubs blue on the mound, his alien catcher crouched behind the plate, and a robot hitter in White Sox grey waiting on the pitch."
+              alt="A close view of the ballpark: an alien pitcher in Cubs blue on the mound, his alien catcher behind the plate with the mitt up, and a robot hitter in White Sox grey waiting on the pitch."
               placeholder="blur"
               sizes="(min-width: 640px) 42rem, 92vw"
               className="block w-full"

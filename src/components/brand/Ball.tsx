@@ -42,7 +42,7 @@ export function ParkVignette({ className = "" }: { className?: string }) {
   );
 
   return (
-    <svg viewBox="0 0 400 280" className={className} role="img" aria-label="A storybook ballpark on a sunny afternoon">
+    <svg viewBox="0 0 400 280" className={className} role="img" aria-label="A 3D ballpark on a sunny afternoon">
       {/* Sky */}
       <defs>
         <clipPath id="park-clip">

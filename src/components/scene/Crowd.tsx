@@ -12,32 +12,23 @@ import {
   MeshLambertMaterial,
   Object3D,
   SphereGeometry,
+  TorusGeometry,
   Vector3,
 } from "three";
 import { FAN_HEIGHT, buildCrowd, type CrowdPalette, type Fan } from "@/lib/field/park";
 import type { Director } from "@/lib/anim/director";
 
 /**
- * The people in the seats.
- *
- * They used to be a single coloured box each, drawn in with the rest of the
- * park, and at a real person's size against a park built in real feet they came
- * out about three pixels tall: a bowl of confetti rather than a crowd. These are
- * drawn at the players' cartoon scale instead - a fan in the front row and a
- * fielder standing in front of them are the same species - and they have faces,
- * and they move.
- *
- * Four instanced meshes - a body, a head, a cap of hair and a pair of eyes.
- * Everything about a given fan - the seat, the facing, the size, the shirt, the
- * skin, where in the idle cycle they start - is baked once in `buildCrowd`; all
- * this file does per frame is breathe.
+ * Smooth, large-headed spectators with tiny smiles, rosy cheeks and mitten hands.
+ * Seven instanced batches share geometry across the bowl. Facial details follow
+ * the head; hands follow the body, including jumps, slumps and head shakes.
  */
 
 /** Proportions of one fan, as fractions of `FAN_HEIGHT`. */
-const BODY_H = 0.66;
-const BODY_W = 0.44;
-const BODY_D = 0.4;
-const HEAD_D = 0.35;
+const BODY_H = 0.53;
+const BODY_W = 0.38;
+const BODY_D = 0.32;
+const HEAD_D = 0.45;
 
 /**
  * How far a fan drifts up and down, in feet at scale 1, and how many cycles a
@@ -162,6 +153,8 @@ interface Parts {
   cropped: Hair;
   long: Hair;
   eyes: InstancedMesh;
+  cheeks: InstancedMesh;
+  hands: InstancedMesh;
   /** Clock at which the next idle step is due. */
   nextAt: number;
 }
@@ -197,6 +190,8 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
   const bodyM = parts.bodies.instanceMatrix.array as Float32Array;
   const headM = parts.heads.instanceMatrix.array as Float32Array;
   const eyeM = parts.eyes.instanceMatrix.array as Float32Array;
+  const cheekM = parts.cheeks.instanceMatrix.array as Float32Array;
+  const handM = parts.hands.instanceMatrix.array as Float32Array;
   const headC = parts.heads.instanceColor!.array as Float32Array;
   // The whole crowd shares one reaction; a fan's own excitement is that signal
   // read for their allegiance, shaped by the envelope and their phase. When the
@@ -255,6 +250,10 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
     // scale, so they are baked into the head's local frame and simply ride it.
     eyeM[m + 12] = headX;
     eyeM[m + 13] = headY;
+    cheekM[m + 12] = headX;
+    cheekM[m + 13] = headY;
+    handM[m + 12] = bodyM[m + 12];
+    handM[m + 13] = bodyM[m + 13];
 
     // A fuming fan's face flushes red, fading back to its own skin tone as
     // the envelope eases off - the same signal that drives the slump, read
@@ -280,6 +279,8 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
   parts.heads.instanceMatrix.needsUpdate = true;
   parts.heads.instanceColor!.needsUpdate = true;
   parts.eyes.instanceMatrix.needsUpdate = true;
+  parts.cheeks.instanceMatrix.needsUpdate = true;
+  parts.hands.instanceMatrix.needsUpdate = true;
 }
 
 /**
@@ -293,11 +294,32 @@ function breathe(parts: Parts, fans: Fan[], rest: Rest, t: number, react: Reacti
  * game without anything having to aim them.
  */
 function eyePair(headRadius: number): BufferGeometry {
-  const eye = new SphereGeometry(headRadius * 0.21, 6, 5);
-  eye.scale(0.9, 1.15, 0.5);
-  const left = eye.clone().translate(-headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
-  const right = eye.translate(headRadius * 0.36, -headRadius * 0.02, headRadius * 0.92);
-  return joinGeometries([left, right]);
+  const eye = new SphereGeometry(headRadius * 0.14, 12, 8);
+  eye.scale(0.85, 1.3, 0.55);
+  const left = eye.clone().translate(-headRadius * 0.35, 0, headRadius * 0.89);
+  const right = eye.translate(headRadius * 0.35, 0, headRadius * 0.89);
+  const smile = new TorusGeometry(headRadius * 0.17, headRadius * 0.026, 6, 12, Math.PI * 0.8);
+  smile.rotateZ(-Math.PI * 0.9);
+  smile.translate(0, -headRadius * 0.26, headRadius * 0.91);
+  return joinGeometries([left, right, smile]);
+}
+
+function cheekPair(r: number): BufferGeometry {
+  const cheek = new SphereGeometry(r * 0.18, 12, 8);
+  cheek.scale(1, 0.5, 0.2);
+  return joinGeometries([
+    cheek.clone().translate(-r * 0.59, -r * 0.22, r * 0.76),
+    cheek.translate(r * 0.59, -r * 0.22, r * 0.76),
+  ]);
+}
+
+function hands(): BufferGeometry {
+  const hand = new SphereGeometry(FAN_HEIGHT * 0.065, 12, 8);
+  hand.scale(0.9, 1.1, 1);
+  return joinGeometries([
+    hand.clone().translate(-FAN_HEIGHT * 0.2, -FAN_HEIGHT * 0.08, FAN_HEIGHT * 0.05),
+    hand.translate(FAN_HEIGHT * 0.2, -FAN_HEIGHT * 0.08, FAN_HEIGHT * 0.05),
+  ]);
 }
 
 /**
@@ -307,7 +329,7 @@ function eyePair(headRadius: number): BufferGeometry {
  * duty as a club cap when it is painted in the home colours.
  */
 function croppedHair(headRadius: number): BufferGeometry {
-  const cap = new SphereGeometry(headRadius * 1.05, 7, 3, 0, Math.PI * 2, 0, CAP_THETA);
+  const cap = new SphereGeometry(headRadius * 1.05, 20, 8, 0, Math.PI * 2, 0, CAP_THETA);
   cap.scale(1, 0.95, 1);
   return cap;
 }
@@ -323,14 +345,14 @@ function croppedHair(headRadius: number): BufferGeometry {
  */
 function longHair(headRadius: number): BufferGeometry {
   const r = headRadius * 1.05;
-  const cap = new SphereGeometry(r, 9, 3, 0, Math.PI * 2, 0, CAP_THETA);
+  const cap = new SphereGeometry(r, 20, 8, 0, Math.PI * 2, 0, CAP_THETA);
   cap.scale(1, 0.95, 1);
   // The face sits on +Z, which is phi = PI/2 in three's sphere; the fall covers
   // everything except a window either side of it.
   const fall = new SphereGeometry(
     r,
+    20,
     10,
-    4,
     Math.PI / 2 + FACE_OPEN,
     Math.PI * 2 - FACE_OPEN * 2,
     CAP_THETA,
@@ -405,15 +427,22 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
     const bodyGeometry = new CapsuleGeometry(
       bodyRadius,
       Math.max(0.01, FAN_HEIGHT * BODY_H - bodyRadius * 2),
-      3,
-      12,
+      6,
+      16,
     );
     bodyGeometry.scale(1, 1, BODY_D / BODY_W);
-    // A sphere is the wrong shape for a head and the right shape for a cheap
-    // one: seven segments around is enough to read as round at the size these
-    // are ever seen, and there are a thousand-odd of them.
-    const headGeometry = new SphereGeometry(radius, 7, 5);
-    headGeometry.scale(1, 1.06, 0.94);
+    // A large, smooth face with small ears and a button nose.
+    const skull = new SphereGeometry(radius, 20, 14);
+    skull.scale(1, 1.0, 0.94);
+    const ear = new SphereGeometry(radius * 0.2, 10, 8);
+    ear.scale(0.75, 1, 0.8);
+    const nose = new SphereGeometry(radius * 0.11, 10, 8);
+    const headGeometry = joinGeometries([
+      skull,
+      ear.clone().translate(-radius * 0.94, -radius * 0.08, 0),
+      ear.translate(radius * 0.94, -radius * 0.08, 0),
+      nose.translate(0, -radius * 0.12, radius * 0.93),
+    ]);
     const everyone = fans.map((_, i) => i);
     return {
       bodies: makeMesh(bodyGeometry, fans, everyone, (fan) => fan.shirt),
@@ -422,6 +451,8 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
       long: makeHair(longHair(radius), fans, true),
       // Unlit, so a fan in the shade of the upper deck still has eyes.
       eyes: makeMesh(eyePair(radius), fans, everyone, () => EYE, true),
+      cheeks: makeMesh(cheekPair(radius), fans, everyone, () => "#e79688"),
+      hands: makeMesh(hands(), fans, everyone, (fan) => fan.skin),
       nextAt: 0,
     };
   }, [fans]);
@@ -434,6 +465,8 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
         parts.cropped.mesh,
         parts.long.mesh,
         parts.eyes,
+        parts.cheeks,
+        parts.hands,
       ]) {
         mesh.geometry.dispose();
         (mesh.material as MeshLambertMaterial).dispose();
@@ -493,6 +526,8 @@ export function Crowd({ palette, director }: { palette: CrowdPalette; director: 
       <primitive object={parts.cropped.mesh} />
       <primitive object={parts.long.mesh} />
       <primitive object={parts.eyes} />
+      <primitive object={parts.cheeks} />
+      <primitive object={parts.hands} />
     </>
   );
 }
@@ -544,7 +579,7 @@ function makeMesh(
     geometry,
     unlit
       ? new MeshBasicMaterial({ toneMapped: false })
-      : new MeshLambertMaterial({ flatShading: true }),
+      : new MeshLambertMaterial(),
     who.length,
   );
   const dummy = new Object3D();

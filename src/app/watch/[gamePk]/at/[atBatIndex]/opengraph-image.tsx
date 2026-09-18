@@ -1,7 +1,7 @@
 import { brandCardImage, CARD_SIZE, playCardImage } from "@/lib/brand/playcard";
 import { tryAtBatCard } from "@/lib/share/atbat";
 
-export const alt = "Watch this at-bat in a low-poly ballpark";
+export const alt = "Watch this at-bat in a storybook ballpark";
 export const size = CARD_SIZE;
 export const contentType = "image/png";
 

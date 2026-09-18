@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { BALL_SRC, BRAND, PAGE_BACKGROUND, PARK_SRC, ogFonts } from "@/lib/brand/og";
 
 export const alt =
-  "Pocket Ballpark — Watch baseball come to life. Pick a game, grab a seat, and watch every pitch unfold in a charming low-poly ballpark.";
+  "Pocket Ballpark — Watch baseball come to life. Pick a game, grab a seat, and watch every pitch unfold in a charming storybook ballpark.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -71,7 +71,7 @@ export default async function Image() {
             }}
           >
             Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a
-            charming low-poly ballpark.
+            charming storybook ballpark.
           </div>
         </div>
 

@@ -3,7 +3,7 @@ import { summarizeGame, type GameSummary } from "@/lib/game/schedule";
 import { fetchScheduleGame } from "@/lib/mlb/client";
 import { BALL_SRC, BRAND, PAGE_BACKGROUND, ogFonts, teamDiscSrc } from "@/lib/brand/og";
 
-export const alt = "Watch this game in a low-poly ballpark";
+export const alt = "Watch this game in a storybook ballpark";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -172,7 +172,7 @@ export default async function Image({ params }: { params: Promise<{ gamePk: stri
         )}
 
         <div style={{ display: "flex", fontSize: 30, color: BRAND.barkSoft }}>
-          Every pitch, hit, and baserunner in a charming low-poly ballpark.
+          Every pitch, hit, and baserunner in a charming storybook ballpark.
         </div>
       </div>
     ),

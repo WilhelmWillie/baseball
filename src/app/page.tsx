@@ -25,7 +25,7 @@ export default function Home() {
             </h1>
             <p className="mt-5 max-w-md text-base leading-relaxed text-bark-soft sm:text-lg">
               Pick a game. Grab a seat. Watch every pitch, hit, and baserunner unfold in a
-              charming low-poly ballpark.
+              charming storybook ballpark.
             </p>
           </div>
 

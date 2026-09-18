@@ -8,9 +8,9 @@ import {
   CapsuleGeometry,
   CylinderGeometry,
   Group,
-  IcosahedronGeometry,
   Mesh,
   MeshPhongMaterial,
+  MeshBasicMaterial,
   PlaneGeometry,
   SphereGeometry,
   type PerspectiveCamera,
@@ -67,7 +67,7 @@ const LABEL_HEIGHT = 18.6;
  * single mass on the body and there is next to no neck under it - so this is
  * far lower than it would be on a figure built to human proportions.
  */
-const HEAD_Y = 1.62;
+const HEAD_Y = 1.58;
 const PLATE_AT = new Vector3();
 
 /**
@@ -161,12 +161,12 @@ function handAnchor(isAlien: boolean, stance: typeof BAT_STANCE): Vector3 {
 // warm-to-cool across a narrow band rather than a spread of hues, so a roster
 // reads as individuals without anyone looking radioactive.
 const ALIEN_SKIN = ["#8fd08a", "#a3d493", "#7fc7a0", "#9ad3a2", "#86cc92"];
-const ROBOT_METAL = "#c3cad2";
-const DARK_PART = "#31373f";
-const EYE_GLOW = "#7ff0ff";
+const ROBOT_METAL = "#ece4cd";
+const DARK_PART = "#50666a";
+const EYE_GLOW = "#b8ffdf";
 const GLOSS_BLACK = "#0d1014";
 /** The face screen a robot's eyes are drawn on - darker than any panel. */
-const SCREEN = "#14181e";
+const SCREEN = "#233f48";
 const BOOT = "#252930";
 
 /**
@@ -189,7 +189,7 @@ function robotFace(playerId: number): RobotFace {
  * cup - turn it over with a half rotation about Z for a cap.
  */
 function arc(sweep: number, tube = 0.12): BufferGeometry {
-  const geometry = new TorusGeometry(0.5, tube, 6, 18, sweep);
+  const geometry = new TorusGeometry(0.5, tube, 10, 32, sweep);
   geometry.rotateZ(-Math.PI / 2 - sweep / 2);
   return geometry;
 }
@@ -198,19 +198,19 @@ function arc(sweep: number, tube = 0.12): BufferGeometry {
 const GEO = {
   box: new BoxGeometry(1, 1, 1),
   plane: new PlaneGeometry(1, 1),
-  sphere: new SphereGeometry(0.5, 16, 12),
-  lowSphere: new IcosahedronGeometry(0.5, 1),
-  joint: new IcosahedronGeometry(0.5, 2),
-  capsule: new CapsuleGeometry(0.32, 0.6, 4, 10),
-  rod: new CylinderGeometry(0.5, 0.5, 1, 10),
-  disc: new CylinderGeometry(0.5, 0.5, 1, 18),
-  taper: new CylinderGeometry(0.42, 0.5, 1, 10),
-  dome: new SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI / 1.85),
+  sphere: new SphereGeometry(0.5, 32, 24),
+  bead: new SphereGeometry(0.5, 20, 14),
+  joint: new SphereGeometry(0.5, 24, 16),
+  capsule: new CapsuleGeometry(0.32, 0.6, 8, 20),
+  rod: new CylinderGeometry(0.5, 0.5, 1, 24),
+  disc: new CylinderGeometry(0.5, 0.5, 1, 32),
+  taper: new CylinderGeometry(0.42, 0.5, 1, 24),
+  dome: new SphereGeometry(0.5, 32, 20, 0, Math.PI * 2, 0, Math.PI / 1.85),
   ring: new TorusGeometry(0.5, 0.11, 8, 20),
   /** The bellows the head sits on, and the ribs of it. */
   bellows: new TorusGeometry(0.5, 0.17, 8, 16),
   /** The head an alien wears: one lathed surface, no seams to hide. */
-  cranium: egg(),
+  cranium: egg(0.08),
   smile: arc(1.5, 0.075),
   /** Three ways of lighting a face screen. */
   eyeHappy: arc(2.3, 0.13),
@@ -225,8 +225,8 @@ const GEO = {
   // a pile of pillows, and a hard edge anywhere on it reads as a different
   // character entirely.
   pelvis: roundedBox(1.46, 0.64, 1.02, 0.26),
-  chestSlim: roundedBox(1.66, 1.34, 1.0, 0.34),
-  chestWide: roundedBox(1.9, 1.42, 1.14, 0.34),
+  chestSlim: roundedBox(1.74, 1.4, 1.08, 0.48),
+  chestWide: roundedBox(1.9, 1.42, 1.2, 0.52),
   belt: roundedBox(1.7, 0.22, 0.98, 0.1),
   emblem: panel(0.52, 0.52, 0.1),
   /** A shoulder cap, rounded over the top rather than slabbed across it. */
@@ -234,12 +234,11 @@ const GEO = {
   limbBlock: roundedBox(0.58, 0.86, 0.58, 0.26),
   shinBlock: roundedBox(0.56, 0.82, 0.56, 0.25),
   thighBlock: roundedBox(0.7, 1.06, 0.7, 0.3),
-  /** A screen in a case: wide, deep and rounded like a little television. */
-  robotSkull: roundedBox(2.02, 1.0, 1.5, 0.34),
-  brow: roundedBox(1.74, 0.7, 1.32, 0.3),
+  /** A continuous, pill-shaped enamel shell around the face screen. */
+  robotSkull: roundedBox(2.12, 1.8, 1.62, 0.68, 6),
   /** The recess the screen sits in, and the glass itself. */
-  socket: roundedBox(1.7, 0.92, 0.16, 0.26),
-  screen: roundedBox(1.52, 0.78, 0.1, 0.22),
+  socket: roundedBox(1.86, 1.18, 0.64, 0.3),
+  screen: roundedBox(1.69, 1.02, 0.58, 0.28),
   eyeBar: roundedBox(0.6, 0.16, 0.1, 0.07),
   chestPanel: roundedBox(1.0, 0.72, 0.14, 0.14),
   /** Feet, which a chibi figure wears two sizes too big. */
@@ -300,26 +299,11 @@ type AddPart = (
   shadow?: boolean,
 ) => Mesh;
 
-/**
- * The robot's head, as the handful of heights everything on it is hung off: the
- * screen case, the narrower brow above it, the top of the domed crown over
- * that, and the line a helmet's rim takes across the lot. Writing them down
- * once is what keeps the screen, the ear discs, the brow trim and the helmet
- * fit from drifting apart the next time the head is resized.
- */
-const ROBOT_SCREEN_Y = 0.68;
+/** Face and helmet anchors, measured inside the continuous rounded shell. */
+const ROBOT_SCREEN_Y = 0.83;
 const ROBOT_BROW_Y = 1.32;
 const ROBOT_CROWN = 1.87;
-/**
- * The line a helmet's rim takes, just above the screen.
- *
- * Everything above it has to fit inside an ellipsoid - see {@link buildHelmet} -
- * and that is why the head narrows as it rises instead of being one box: a
- * shell wide enough to swallow the top corners of a case 2 units across is a
- * sombrero, and one that is not leaves the corners poking through the crown.
- * Stepping the case in above the screen lets the shell hug the head at the
- * head's own width.
- */
+/** Helmet rim just above the screen, around the shell's rounded crown. */
 const ROBOT_RIM_Y = 1.2;
 
 /**
@@ -404,7 +388,7 @@ function buildHelmet(
 
   // Raised centre ridge, vents either side, and a button on the crown.
   addTo(parent, GEO.helmetRidge, trim, [0, 1.02 * h, -0.04], [1, 1, 0.8], [0.06, 0, 0]);
-  addTo(parent, GEO.lowSphere, trim, [0, 1.14 * h, -0.04], [0.18, 0.18, 0.18]);
+  addTo(parent, GEO.bead, trim, [0, 1.14 * h, -0.04], [0.18, 0.18, 0.18]);
   for (const side of [-1, 1]) {
     for (const z of [0.34, 0, -0.34]) {
       addTo(parent, GEO.helmetVent, dark, [side * 0.42, 0.96 * h, z], [1, 1, 1], [0, 0, side * 0.12]);
@@ -461,7 +445,7 @@ function buildGlove(
 
   if (kind === "mitt") {
     // A catcher's mitt: a padded ring around a deep pocket.
-    addTo(parent, GEO.lowSphere, gloveDark, [0, 0.98, 0.1], [1.36, 1.36, 0.5]);
+    addTo(parent, GEO.bead, gloveDark, [0, 0.98, 0.1], [1.36, 1.36, 0.5]);
     addTo(parent, GEO.ring, glove, [0, 1.0, 0.12], [1.62, 1.62, 1.15], [0, 0, 0], true);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
@@ -1455,20 +1439,20 @@ export function Player({
       new MeshPhongMaterial({ color, shininess, specular, flatShading: false });
 
     return {
-      jersey: phong(uniform.jersey, 26, "#2a2a2a"),
+      jersey: phong(uniform.jersey, 12, "#252525"),
       pants: phong(uniform.pants, 18, "#242424"),
       trim: phong(uniform.trim, 34, "#333333"),
       helmet: new MeshPhongMaterial({ color: uniform.helmet, shininess: 78, specular: "#9a9a9a" }),
       skin: isAlien
-        ? phong(alienSkin(actor.playerId), 52, "#6a6d70")
-        : new MeshPhongMaterial({ color: ROBOT_METAL, shininess: 92, specular: "#b9c0c8" }),
+        ? phong(alienSkin(actor.playerId), 24, "#445747")
+        : new MeshPhongMaterial({ color: ROBOT_METAL, shininess: 48, specular: "#85816f" }),
       dark: phong(DARK_PART, 40, "#3a3a3a"),
       // Big glossy eyes are most of an alien's face.
-      eye: new MeshPhongMaterial({ color: GLOSS_BLACK, shininess: 140, specular: "#ffffff" }),
+      eye: new MeshPhongMaterial({ color: GLOSS_BLACK, shininess: 90, specular: "#777777" }),
       // The robot's face screen: darker than any panel on the figure and
       // polished, so the eyes on it read as lit rather than as painted.
       screen: new MeshPhongMaterial({ color: SCREEN, shininess: 34, specular: "#2b3440" }),
-      glint: new MeshPhongMaterial({ color: "#ffffff", emissive: "#8899aa" }),
+      glint: new MeshBasicMaterial({ color: "#fff9e9", toneMapped: false }),
       glow: new MeshPhongMaterial({
         color: EYE_GLOW,
         emissive: EYE_GLOW,
@@ -1481,6 +1465,8 @@ export function Player({
         emissive: uniform.trim,
         emissiveIntensity: 0.85,
       }),
+      faceInk: phong(GLOSS_BLACK, 4, "#101010"),
+      blush: phong("#edaaa0", 12, "#392a28"),
       boot: phong(BOOT, 30, "#3a3a3a"),
       glove: phong("#7a4f2a", 16, "#3a2a1c"),
       // Worn-in leather is darker in the pocket and at the heel.
@@ -1589,7 +1575,7 @@ export function Player({
 
     // Jersey number, on a plate across the shoulder blades.
     if (numberMaterial) {
-      const depth = isAlien ? 1.0 : 1.14;
+      const depth = isAlien ? 1.08 : 1.2;
       add(
         torso,
         GEO.plane,
@@ -1604,13 +1590,16 @@ export function Player({
       // A clean jersey: just the team emblem on the chest and a short neck
       // rising out of the collar. The neck is stubby on purpose - a long one
       // under a head this size reads as a lollipop.
-      add(torso, GEO.emblem, materials.trim, [0, 0.94, 0.51]);
+      add(torso, GEO.disc, materials.trim, [-0.38, 1.03, 0.56], [0.42, 0.08, 0.42], [Math.PI / 2, 0, 0]);
+      for (const y of [1.18, 0.92, 0.66]) {
+        add(torso, GEO.bead, materials.trim, [0.1, y, 0.535], [0.09, 0.09, 0.045]);
+      }
       add(torso, GEO.taper, materials.skin, [0, 1.56, 0], [0.62, 0.5, 0.62]);
     } else {
       // Chest plate with status lights and cooling vents.
       add(torso, GEO.chestPanel, materials.dark, [0, 0.92, 0.57]);
       for (const [i, x] of [-0.28, 0, 0.28].entries()) {
-        add(torso, GEO.lowSphere, i === 1 ? materials.glow : materials.lamp, [x, 1.08, 0.63], [0.17, 0.17, 0.12]);
+        add(torso, GEO.bead, i === 1 ? materials.glow : materials.lamp, [x, 1.08, 0.63], [0.17, 0.17, 0.12]);
       }
       for (const y of [0.7, 0.58]) {
         add(torso, GEO.vent, materials.dark, [0, y, 0.62]);
@@ -1647,7 +1636,7 @@ export function Player({
         add(elbow, GEO.capsule, materials.skin, [0, -0.4, 0], [0.68, 0.5, 0.68], undefined, true);
         // A soft mitt of a hand with three stubby fingers, rather than the
         // spider's hand the old three long ones made.
-        add(elbow, GEO.lowSphere, materials.skin, [0, -0.78, 0], [0.5, 0.46, 0.44]);
+        add(elbow, GEO.bead, materials.skin, [0, -0.78, 0], [0.5, 0.46, 0.44]);
         for (const finger of [-0.19, 0, 0.19]) {
           add(elbow, GEO.finger, materials.skin, [finger, -0.99, 0.04], [1, 0.78, 1]);
         }
@@ -1669,6 +1658,7 @@ export function Player({
     // --- Head -------------------------------------------------------------
     const head = new Group();
     head.position.y = HEAD_Y;
+    head.scale.setScalar(1.12);
     torso.add(head);
     const danglers: Group[] = [];
     let batGroup: Group | null = null;
@@ -1678,7 +1668,7 @@ export function Player({
       // out into the neck. It is a single lathed surface rather than a cranium
       // sat on a jaw, because the seam between those two lands exactly where a
       // second mouth would be - see `egg` in ./geometry.
-      add(head, GEO.cranium, materials.skin, [0, ALIEN_SKULL_Y, -0.02], [2.1, 2.16, 1.92], undefined, true);
+      add(head, GEO.cranium, materials.skin, [0, ALIEN_SKULL_Y, -0.02], [2.22, 2.16, 1.98], undefined, true);
       for (const side of [-1, 1]) {
         // Eyes, which are the whole face: big glossy domes standing proud of
         // the head, set wide and canted in toward each other.
@@ -1686,19 +1676,24 @@ export function Player({
           head,
           GEO.sphere,
           materials.eye,
-          [side * 0.47, ALIEN_EYE_Y, 0.62],
-          [0.96, 1.02, 0.58],
-          [0.12, side * 0.32, side * -0.26],
+          [side * 0.48, ALIEN_EYE_Y + 0.03, 0.80],
+          [0.64, 0.79, 0.34],
+          [0.03, side * 0.23, side * -0.10],
         );
         // Two highlights each - a big one up on the outside and a small one
         // low and inboard. One alone reads as a scratch on the paint; a pair
         // is what makes a black dome read as wet.
-        add(head, GEO.lowSphere, materials.glint, [side * 0.58, ALIEN_EYE_Y + 0.3, 0.82], [0.18, 0.22, 0.08]);
-        add(head, GEO.lowSphere, materials.glint, [side * 0.29, ALIEN_EYE_Y - 0.3, 0.8], [0.09, 0.11, 0.05]);
+        add(head, GEO.bead, materials.glint, [side * 0.54, ALIEN_EYE_Y + 0.22, 0.966], [0.13, 0.17, 0.055]);
+        add(head, GEO.bead, materials.glint, [side * 0.40, ALIEN_EYE_Y - 0.13, 0.97], [0.065, 0.08, 0.04]);
       }
+      for (const side of [-1, 1]) {
+        add(head, GEO.sphere, materials.blush, [side * 0.72, ALIEN_EYE_Y - 0.35, 0.73], [0.36, 0.18, 0.07], [0, side * 0.4, 0]);
+        add(head, GEO.sphere, materials.skin, [side * 1.02, 0.95, -0.02], [0.40, 0.58, 0.32], [0, 0, -side * 0.3]);
+      }
+      add(head, GEO.sphere, materials.skin, [0, ALIEN_EYE_Y - 0.21, 0.965], [0.20, 0.17, 0.16]);
       // A small closed smile, and nothing else: no nose, no brow, no jaw line.
       // Every extra feature on a face this size is another seam to explain.
-      add(head, GEO.smile, materials.eye, [0, ALIEN_EYE_Y - 0.62, 0.72], [0.46, 0.26, 0.26]);
+      add(head, GEO.smile, materials.faceInk, [0, ALIEN_EYE_Y - 0.48, 0.85], [0.53, 0.34, 0.32]);
 
       for (const side of [-1, 1]) {
         const antenna = new Group();
@@ -1713,7 +1708,7 @@ export function Player({
         }
         head.add(antenna);
         add(antenna, GEO.taper, materials.skin, [0, 0.26, 0], [0.12, 0.56, 0.12]);
-        add(antenna, GEO.lowSphere, materials.lamp, [0, 0.6, 0], [0.26, 0.26, 0.26]);
+        add(antenna, GEO.bead, materials.lamp, [0, 0.6, 0], [0.26, 0.26, 0.26]);
         danglers.push(antenna);
       }
 
@@ -1732,18 +1727,15 @@ export function Player({
         });
       }
     } else {
-      // A head that is most of the character: a wide, deep, heavily rounded
-      // case with a screen for a face, sat on a rubber bellows. The old one was
-      // a small box on a long neck, which from a camera in centre field read as
-      // a fencepost with a light on it.
-      add(head, GEO.robotSkull, materials.skin, [0, ROBOT_SCREEN_Y, 0], [1, 1, 1], undefined, true);
-      // The case steps in above the screen and finishes in a domed crown.
-      add(head, GEO.brow, materials.skin, [0, ROBOT_BROW_Y, -0.06], [1, 1, 1], undefined, true);
-      add(head, GEO.dome, materials.skin, [0, ROBOT_CROWN - 0.32, -0.06], [1.56, 0.64, 1.2], undefined, true);
-      // The screen, in its recess: a dark socket, then glass in front of it.
-      add(head, GEO.socket, materials.dark, [0, ROBOT_SCREEN_Y, 0.66]);
-      add(head, GEO.screen, materials.screen, [0, ROBOT_SCREEN_Y, 0.73]);
-      buildRobotEyes(add, head, materials.glow, ROBOT_SCREEN_Y + 0.06, 0.79, face);
+      // One continuous enamel shell, like a little retro radio.
+      add(head, GEO.robotSkull, materials.skin, [0, 0.94, -0.02], [1, 1, 1], undefined, true);
+      add(head, GEO.socket, materials.dark, [0, ROBOT_SCREEN_Y, 0.69], [1, 1, 0.28]);
+      add(head, GEO.screen, materials.screen, [0, ROBOT_SCREEN_Y, 0.765], [1, 1, 0.22]);
+      buildRobotEyes(add, head, materials.glow, ROBOT_SCREEN_Y + 0.13, 0.84, face);
+      add(head, GEO.smile, materials.glow, [0, ROBOT_SCREEN_Y - 0.18, 0.85], [0.38, 0.26, 0.3]);
+      for (const side of [-1, 1]) {
+        add(head, GEO.sphere, materials.blush, [side * 0.58, ROBOT_SCREEN_Y - 0.12, 0.836], [0.25, 0.11, 0.04]);
+      }
       // The bellows the whole head rides on. Three ribs, narrowing upward,
       // which is what makes the head read as *mounted* rather than balanced.
       for (const [i, y] of [-0.22, -0.06, 0.1].entries()) {
@@ -1754,13 +1746,11 @@ export function Player({
       for (const side of [-1, 1]) {
         add(head, GEO.disc, materials.dark, [side * 0.94, ROBOT_SCREEN_Y, 0.04], [0.74, 0.3, 0.74], [0, 0, Math.PI / 2]);
         add(head, GEO.disc, materials.trim, [side * 1.06, ROBOT_SCREEN_Y, 0.04], [0.56, 0.12, 0.56], [0, 0, Math.PI / 2]);
-        add(head, GEO.lowSphere, materials.glint, [side * 1.12, ROBOT_SCREEN_Y + 0.12, 0.12], [0.13, 0.13, 0.09]);
+        add(head, GEO.bead, materials.glint, [side * 1.12, ROBOT_SCREEN_Y + 0.12, 0.12], [0.13, 0.13, 0.09]);
       }
       // A trim strip down the crown, and vents in the side of the upper case.
       if (!wearsHelmet) add(head, GEO.crest, materials.trim, [0, ROBOT_CROWN - 0.12, -0.12], [1, 1, 0.9]);
-      for (const side of [-1, 1]) {
-        add(head, GEO.vent, materials.dark, [side * 0.56, ROBOT_BROW_Y, 0.58], [0.7, 1, 1]);
-      }
+
 
       const antenna = new Group();
       if (wearsHelmet) {
@@ -1772,7 +1762,7 @@ export function Player({
       }
       head.add(antenna);
       add(antenna, GEO.taper, materials.dark, [0, 0.3, 0], [0.1, 0.6, 0.1]);
-      add(antenna, GEO.lowSphere, materials.lamp, [0, 0.66, 0], [0.24, 0.24, 0.24]);
+      add(antenna, GEO.bead, materials.lamp, [0, 0.66, 0], [0.24, 0.24, 0.24]);
       danglers.push(antenna);
 
       if (wearsHelmet) {
@@ -1781,12 +1771,12 @@ export function Player({
         // needs the width to contain a box. Both numbers come off the skull.
         const lid = new Group();
         lid.position.set(0, ROBOT_RIM_Y, 0);
-        lid.scale.set(0.96, 1.0, 0.93);
+        lid.scale.set(1.08, 1.0, 1.04);
         head.add(lid);
         buildHelmet(add, lid, materials, {
           flaps: helmetFlaps,
           flapSide,
-          height: helmetHeight(ROBOT_CROWN - ROBOT_RIM_Y + 0.14, 1.0),
+          height: helmetHeight(ROBOT_CROWN - ROBOT_RIM_Y + 0.24, 1.0),
         });
       }
     }
@@ -1805,7 +1795,7 @@ export function Player({
       add(batGroup, GEO.batHandle, materials.dark, [0, -0.06, 0], [1.4, 0.68, 1.4]);
       add(batGroup, GEO.batHandle, materials.bat, [0, 0.58, 0], [1.1, 0.62, 1.1]);
       add(batGroup, GEO.batBarrel, materials.bat, [0, 1.74, 0], [1.15, 1.86, 1.15], undefined, true);
-      add(batGroup, GEO.lowSphere, materials.bat, [0, 2.66, 0], [0.46, 0.26, 0.46]);
+      add(batGroup, GEO.bead, materials.bat, [0, 2.66, 0], [0.46, 0.26, 0.46]);
     } else if (actor.role === "fielder") {
       // Built pointing "up" from the wrist, then flipped onto the end of the
       // forearm: rolling about Z keeps the pocket facing forward while the

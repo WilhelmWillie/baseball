@@ -48,9 +48,9 @@ export interface BoardState {
 
 /** The lamp-lit palette of a wooden board: warm cream on dark stained pine. */
 const FACE = {
-  panelTop: "#4b3822",
-  panel: "#38291a",
-  rule: "#6f5238",
+  panelTop: "#23483e",
+  panel: "#122f29",
+  rule: "#527367",
   ruleSoft: "rgba(246, 231, 198, 0.16)",
   head: "#e8d3a6",
   digit: "#f6e7c6",

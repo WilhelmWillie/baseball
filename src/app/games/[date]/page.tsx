@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { date } = await params;
   if (!seasonDate(date, easternDate())) return {};
   const title = `Games on ${dayLabel(date)}`;
-  const description = "Every game that day, playable pitch by pitch in a low-poly ballpark.";
+  const description = "Every game that day, playable pitch by pitch in a storybook ballpark.";
   return { title, description, openGraph: { title, description } };
 }
 

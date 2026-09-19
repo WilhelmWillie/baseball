@@ -6,6 +6,8 @@ export const INFIELD_ARCS: [number, number][] = [[-Math.PI, -FOUL_ANGLE], [FOUL_
 export const DUGOUT_ARCS: [number, number][] = [[-1.55, -1.17], [1.17, 1.55]];
 export const AISLES = Array.from({ length: 24 }, (_, i) => -Math.PI + i * Math.PI / 12);
 export const SEAT_PITCH = 8.6;
+/** How wide one chair is. `park.ts` builds the seats themselves to it. */
+export const SEAT_WIDTH = 5.7;
 
 export type Profile = (theta: number) => number;
 export interface Terrace {
@@ -56,8 +58,43 @@ export const TERRACES: Terrace[] = [
   })),
 ];
 
-export function onDugout(theta: number): boolean {
-  return DUGOUT_ARCS.some(([a, b]) => theta > a && theta < b);
+/**
+ * The dugouts, in radial offsets from the field outline and in feet off the
+ * grass. They fill the whole footprint of the field boxes, whose four rows are
+ * dropped across these arcs, and they are a closed box rather than a roof on
+ * legs: floor, back, ends and roof, so no camera ever finds a way in under one.
+ *
+ * `ceiling` is set by the figures rather than by the deck. A fan is a shade
+ * under fifteen feet tall here, so a roof flush with the back of the deck would
+ * come to a player's waist; this one lands just under the seat backs on the row
+ * behind, which is where a real dugout roof sits and which keeps the bowl's
+ * silhouette unbroken across the gap.
+ */
+export const DUGOUT = {
+  /** Behind the wall coping, which reaches 1.9. */
+  front: 1.9,
+  /** The back of the field boxes: row 3's tread ends here. */
+  back: 14.9,
+  /** How proud of the grass the floor slab sits. */
+  floor: 1.6,
+  /** Underside of the roof, and the top of the opening onto the field. */
+  soffit: 11.2,
+  /** Top of the roof, a touch below the seat backs on the row behind. */
+  ceiling: 12.9,
+  /** Flush with the front face of the padded wall. */
+  lip: -0.9,
+  /** How thick the end walls are, in radians of the arc they close. */
+  end: 0.012,
+};
+
+/**
+ * Whether an angle falls in a dugout. `margin` widens the arcs by that many
+ * radians at either end, which is how a *seat* asks the question: a chair is
+ * placed by its centre but is nearly six feet wide, and one whose centre clears
+ * the dugout by a hair still has half of itself buried in the end wall.
+ */
+export function onDugout(theta: number, margin = 0): boolean {
+  return DUGOUT_ARCS.some(([a, b]) => theta > a - margin && theta < b + margin);
 }
 
 /** Unit tangent of the actual outline, rather than of an imaginary circle. */
@@ -106,7 +143,8 @@ export function terraceSeats(terrace: Terrace): { theta: number; x: number; z: n
         const fraction = (next - walked) / length;
         const at = theta - (1 - fraction) * (to - from) / steps;
         const [tx, tz] = terraceTangent(terrace.radius, at);
-        if (!inAisle(at) && !(terrace.deck === "field" && onDugout(at))) {
+        const clearance = SEAT_WIDTH / 2 / terrace.radius(at);
+        if (!inAisle(at) && !(terrace.deck === "field" && onDugout(at, clearance))) {
           seats.push({ theta: at, x: lastX + (x - lastX) * fraction, z: lastZ + (z - lastZ) * fraction, yaw: Math.atan2(-tz, tx) });
         }
         next += SEAT_PITCH;

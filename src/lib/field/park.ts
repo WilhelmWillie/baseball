@@ -1,4 +1,4 @@
-import { AISLES, INFIELD_ARCS, TERRACES, outerRadius, roofHeight, stadiumEdge, terraceSeats, terraceTangent, upperRadius } from "./stadium";
+import { AISLES, INFIELD_ARCS, SEAT_WIDTH, TERRACES, outerRadius, roofHeight, stadiumEdge, terraceSeats, terraceTangent, upperRadius } from "./stadium";
 import {
   fieldRadius,
   wallDistance,
@@ -208,10 +208,10 @@ function stands(blocks: Block[], fans: Fan[], palette: CrowdPalette) {
       const longHair = noise(x, z, salt + 47) < 0.5;
       const capped = !longHair && hat < 0.34;
       const chair = index % 7 === 0 ? "#3c756b" : "#285e55";
-      blocks.push({ p: [x, y, z], s: [5.7, 0.7, 3.8], c: chair, r: yaw, shape: "round" });
+      blocks.push({ p: [x, y, z], s: [SEAT_WIDTH, 0.7, 3.8], c: chair, r: yaw, shape: "round" });
       blocks.push({
         p: [x - Math.sin(yaw) * 1.8, y + 2.3, z - Math.cos(yaw) * 1.8],
-        s: [5.7, 4.5, 0.85], c: chair, r: yaw, shape: "round",
+        s: [SEAT_WIDTH, 4.5, 0.85], c: chair, r: yaw, shape: "round",
       });
       if (noise(x, z, salt + 70) < 0.09) continue;
       fans.push({
@@ -474,9 +474,9 @@ function scoreboard(blocks: Block[]) {
     s: [SCOREBOARD_FACE.width, SCOREBOARD_FACE.height, 2],
     c: COLORS.scoreboardFace,
   });
-  // Flat steel cornice and ballpark name above the live line-score panel.
-  blocks.push({ p: [0, base + height + 8, z], s: [width, 16, 5], c: COLORS.scoreboard, shape: "round" });
-  blocks.push({ p: [0, base + height + 17, z], s: [width + 8, 2, 9], c: "#d6c69f", shape: "round" });
+  // A flat steel rail top and bottom, and nothing above the panel: the board
+  // used to carry an empty cornice up there with nothing written on it.
+  blocks.push({ p: [0, base + height + 1, z], s: [width + 5, 2, 8], c: "#d6c69f", shape: "round" });
   blocks.push({ p: [0, base - 1, z], s: [width + 5, 2, 8], c: "#d6c69f", shape: "round" });
 }
 

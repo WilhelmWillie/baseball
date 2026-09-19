@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { BufferGeometry, Color, Float32BufferAttribute, MeshLambertMaterial } from "three";
 import {
-  AISLES, DUGOUT_ARCS, FOUL_ANGLE, INFIELD_ARCS, TERRACES,
+  AISLES, DUGOUT, DUGOUT_ARCS, FOUL_ANGLE, INFIELD_ARCS, TERRACES,
   aisleHalfWidth, lowerRadius, outerRadius, roofHeight, stadiumEdge, upperRadius,
   type Profile,
 } from "@/lib/field/stadium";
@@ -156,13 +156,29 @@ function buildStadium(): BufferGeometry {
   mesh.band(lowerRadius, 81, 84, 0, 39, [-FOUL_ANGLE, FOUL_ANGLE], "#bda78c");
   mesh.band(lowerRadius, 80, 85, 38, 40, [-FOUL_ANGLE, FOUL_ANGLE], "#e3dbc8");
 
+  // The dugouts, cut into the field boxes rather than stood on top of them.
+  // The four seat rows are already missing across these arcs; this fills the
+  // hole they leave with a closed recess, so there is no angle that sees under
+  // a floating roof or through an open end into the grass behind.
+  const { front, back, floor, soffit, ceiling, lip, end } = DUGOUT;
   for (const arc of DUGOUT_ARCS) {
-    mesh.band(stadiumEdge, 14, 16, 0, 12, arc, fascia);
-    mesh.band(stadiumEdge, 2, 16, 11.5, 13, arc, "#285f53");
-    mesh.band(stadiumEdge, 10, 14, 2.6, 3.2, arc, "#b88a5c");
-    mesh.band(stadiumEdge, 2, 2.7, 12, 13.2, arc, "#e4d7b8");
-    for (const end of [arc[0], arc[1]]) {
-      mesh.band(stadiumEdge, 2, 16, 0, 12, [end, end + 0.008], fascia);
+    // Floor, back wall and bench. The inside is far darker than the trim
+    // around it: in the roof's own green the whole thing reads as a slab hung
+    // on the bowl rather than as the hole in it that a dugout is.
+    mesh.band(stadiumEdge, front, back, 0, floor, arc, "#9c937f");
+    mesh.band(stadiumEdge, back - 1.8, back, floor, soffit, arc, "#10302c");
+    mesh.band(stadiumEdge, back - 6.4, back - 1.8, 3.5, 4.1, arc, "#b88a5c");
+    // The roof, and a pale nosing along its front edge. The nosing stands a
+    // little proud of the fascia rather than sharing its plane with it, which
+    // leaves the fascia clear for the sign that names the dugout.
+    mesh.band(stadiumEdge, lip, back, soffit, ceiling, arc, fascia);
+    mesh.band(stadiumEdge, lip - 0.3, lip, ceiling - 0.5, ceiling + 0.1, arc, "#e4d7b8");
+    // Both ends close *inside* the arc. Reaching past it would drive a slab
+    // through the seat rows next door and leave them z-fighting through it.
+    for (const [edge, into] of [[arc[0], 1], [arc[1], -1]] as const) {
+      const other = edge + into * end;
+      mesh.band(stadiumEdge, front, back, 0, ceiling,
+        [Math.min(edge, other), Math.max(edge, other)], "#14352f");
     }
   }
   return mesh.geometry();

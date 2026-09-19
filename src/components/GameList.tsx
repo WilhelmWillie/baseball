@@ -6,6 +6,7 @@ import type { GameSummary } from "@/lib/game/schedule";
 import { Ball } from "@/components/brand/Ball";
 import { easternDate } from "@/lib/mlb/client";
 import { GameCard } from "@/components/GameCard";
+import { CalendarIcon } from "@/components/icons/Calendar";
 
 interface SchedulePayload {
   date: string;
@@ -133,10 +134,26 @@ export function GameList() {
               it does need to look like a season rather than a date picker,
               which is what the last nine games are doing here. */}
           <section className="mt-10">
-            <SectionTitle>Previous games</SectionTitle>
-            <p className="-mt-1 mb-3 text-sm text-bark-soft">
-              Re-live any past game from this 2026 season.
-            </p>
+            {/* The way into the rest of the season leads the section rather
+                than closing it. Nine games is a taste of what is back there;
+                the button is the whole of it, and it was easy to read the grid
+                as the offer and scroll past the door. */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <SectionTitle>Previous games</SectionTitle>
+                <p className="-mt-1 text-sm text-bark-soft">
+                  Re-live any past game from this 2026 season.
+                </p>
+              </div>
+              <Link
+                href={`/games/${data?.date ?? easternDate()}`}
+                className="group flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-grass px-4 py-2.5 font-display text-sm font-extrabold text-card transition-transform lip-sm hover:-translate-y-0.5 sm:w-auto"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                Browse any day of 2026
+                <span className="transition-transform group-hover:translate-x-0.5">→</span>
+              </Link>
+            </div>
 
             {recent === null ? (
               <div className="flex items-center justify-center gap-3 rounded-3xl border-2 border-grass-deep/12 bg-card p-10 text-sm text-bark-soft lip">
@@ -155,28 +172,10 @@ export function GameList() {
                   Nothing has finished lately.
                 </p>
                 <p className="mt-1">
-                  Pick a date instead — every game since Opening Day is still there.
+                  Browse any day above — every game since Opening Day is still there.
                 </p>
               </div>
             )}
-
-            <Link
-              href={`/games/${data?.date ?? easternDate()}`}
-              className="group mt-4 flex items-center justify-between gap-4 rounded-3xl border-2 border-grass-deep/12 bg-card p-5 transition-all duration-200 lip hover:-translate-y-1 hover:border-grass/60"
-            >
-              <span>
-                <span className="block font-display text-lg font-bold text-bark">
-                  Browse any day of 2026
-                </span>
-                <span className="mt-1 block text-sm leading-relaxed text-bark-soft">
-                  Every game since Opening Day plays in the ballpark — pick a date and
-                  watch it back.
-                </span>
-              </span>
-              <span className="shrink-0 text-lg font-bold text-grass transition-transform group-hover:translate-x-1">
-                →
-              </span>
-            </Link>
           </section>
 
           {rest.length > 0 && (

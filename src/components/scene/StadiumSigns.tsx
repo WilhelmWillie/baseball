@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { BufferGeometry, CanvasTexture, Float32BufferAttribute, MeshBasicMaterial, SRGBColorSpace } from "three";
-import { AISLES, FOUL_ANGLE, stadiumEdge, upperRadius, type Profile } from "@/lib/field/stadium";
+import { DUGOUT, stadiumEdge, type Profile } from "@/lib/field/stadium";
 
 interface Sign {
   theta: number;
@@ -11,41 +11,45 @@ interface Sign {
   width: number;
   height: number;
   text: string;
-  background?: string;
 }
 
-/** One atlas and one draw for the deck ribbon, section and dugout signs. */
+/** One cell of the atlas, and how much of it the quad is allowed to sample. */
+const CELL_W = 1024;
+const CELL_H = 128;
+const INSET = 6;
+
+/** One atlas and one draw for the pair of dugout signs. */
 export function StadiumSigns() {
   const { geometry, material, texture } = useMemo(() => {
-    const signs: Sign[] = [];
-    for (const [i, theta] of AISLES.entries()) {
-      if (Math.abs(theta) < FOUL_ANGLE + 0.1) continue;
-      signs.push({ theta, radius: (t) => upperRadius(t) - 4.6, y: 41.3, width: 15, height: 4, text: `${201 + i}` });
-      const middle = theta + Math.PI / 24;
-      if (Math.abs(middle) > FOUL_ANGLE && middle < Math.PI) {
-        signs.push({ theta: middle, radius: (t) => upperRadius(t) - 4.6, y: 41.3, width: 28, height: 3.7, text: i % 3 ? "POCKET BALLPARK" : "THE BIG LEAGUES", background: "#244c48" });
-      }
-    }
-    for (const side of [-1, 1]) {
-      signs.push({ theta: side * 1.36, radius: (t) => stadiumEdge(t) + 1.9, y: 12.5, width: 20, height: 2, text: side < 0 ? "VISITORS" : "HOME" });
-    }
+    // Sat on the dugout fascia, a shade proud of it so the two never z-fight.
+    const face = DUGOUT.lip - 0.15;
+    const y = DUGOUT.soffit + 0.6;
+    const signs: Sign[] = [-1, 1].map((side) => ({
+      theta: side * 1.36,
+      radius: (t) => stadiumEdge(t) + face,
+      y,
+      width: 24,
+      height: 1.05,
+      text: side < 0 ? "VISITORS" : "HOME",
+    }));
+
+    // One sign per row, and no painted backing: the lettering is laid straight
+    // onto the fascia. A plate of its own would be lit flat while the wood
+    // behind it is shaded, and the two never match at any hour of the day.
     const canvas = document.createElement("canvas");
-    canvas.width = 2048;
-    canvas.height = 1024;
+    canvas.width = CELL_W;
+    canvas.height = CELL_H * signs.length;
     const ctx = canvas.getContext("2d")!;
     const positions: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
     for (const [i, sign] of signs.entries()) {
-      const cx = (i % 8) * 256;
-      const cy = Math.floor(i / 8) * 128;
-      ctx.fillStyle = sign.background ?? "#214f47";
-      ctx.fillRect(cx, cy, 256, 128);
+      const cy = i * CELL_H;
       ctx.fillStyle = "#fff1d3";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `700 ${sign.text.length > 8 ? 24 : 64}px sans-serif`;
-      ctx.fillText(sign.text, cx + 128, cy + 65, 236);
+      ctx.font = `700 ${CELL_H * 0.55}px sans-serif`;
+      ctx.fillText(sign.text, CELL_W / 2, cy + CELL_H / 2, CELL_W * 0.8);
       const start = positions.length / 3;
       const steps = 16;
       const d = 0.001;
@@ -60,7 +64,8 @@ export function StadiumSigns() {
         const pz = -Math.cos(at) * sign.radius(at);
         for (const v of [0, 1]) {
           positions.push(px, sign.y + (v - 0.5) * sign.height, pz);
-          uvs.push((cx + u * 252 + 2) / canvas.width, 1 - (cy + (1 - v) * 124 + 2) / canvas.height);
+          uvs.push((u * (CELL_W - INSET * 2) + INSET) / canvas.width,
+            1 - (cy + (1 - v) * (CELL_H - INSET * 2) + INSET) / canvas.height);
         }
         if (j < steps) {
           const n = start + j * 2;
@@ -75,7 +80,10 @@ export function StadiumSigns() {
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
     texture.anisotropy = 4;
-    const material = new MeshBasicMaterial({ map: texture, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const material = new MeshBasicMaterial({
+      map: texture, transparent: true,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    });
     return { geometry, material, texture };
   }, []);
   useEffect(() => () => { geometry.dispose(); material.dispose(); texture.dispose(); }, [geometry, material, texture]);

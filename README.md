@@ -85,6 +85,19 @@ runs long keeps playing and the board stops adding columns; the extra runs land
 in R behind a small `+2` marker, so the total never looks like it disagrees with
 the nine innings above it.
 
+**Strike zone** — the pitch tracker under the scorebug: the plate appearance's
+pitches as white balls on the hitter's own zone, numbered in order, the one that
+just arrived ringed and named underneath with its speed and type. It is MLB's
+measurement, not the animation's - the feed publishes where each pitch crossed
+and the zone it was judged against, fitted to that hitter's stance - so a
+two-inch miss is readable off it in a way it never could be off figures drawn at
+twice life size. Green for a ball, clay for a strike, brown for one put in play.
+The box is drawn the way the broadcast camera sees it, out in centre field
+looking in, which is why a right-hander's box is the one on the right. A pitch
+lands on the plot as it reaches the plate, not when the feed reports it, so the
+plot is never ahead of the pitch you are watching; a viewer who joins in the
+middle of an at-bat still gets everything thrown so far, read off the feed.
+
 **Game log** — the last play sits under the scorebug; hover it to open the full
 log, grouped by half-inning with the running score, scoring plays highlighted.
 Click to pin it open.

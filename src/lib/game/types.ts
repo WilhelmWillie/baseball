@@ -131,6 +131,8 @@ export interface GameSnapshot {
   bullpen: Record<TeamSide, PlayerRef[]>;
   lineScore: Array<{ num: number; home: number | null; away: number | null }>;
   lastPlay: string | null;
+  /** The plate appearance's pitches so far, oldest first. */
+  pitches: TrackedPitch[];
   boxscore: Record<TeamSide, TeamBoxscore>;
 }
 
@@ -168,6 +170,37 @@ export type PitchOutcome =
   | "hit_by_pitch"
   | "other";
 
+/**
+ * One pitch, the way the strike-zone box draws it: where it crossed, how tall
+ * the hitter's zone was at the time, and what became of it.
+ *
+ * Kept separate from `PitchEvent` because the two answer different questions.
+ * An event is something that just happened and is animated once; this is a mark
+ * that stays on the plot for the rest of the plate appearance, and it has to be
+ * readable off a feed the viewer joined halfway through, with nothing animated
+ * at all.
+ */
+export interface TrackedPitch {
+  id: string;
+  /** The plate appearance it belongs to - MLB's index, so the plot knows when to clear. */
+  atBatIndex: number;
+  /** Which pitch of that plate appearance, 1-based, as MLB numbers them. */
+  number: number;
+  /**
+   * Where it crossed the plate, in feet. `x` is positive toward right field
+   * (the catcher's right, which is MLB's own sign); `z` is height off the dirt.
+   */
+  x: number;
+  z: number;
+  /** The hitter's zone for this pitch, in feet. MLB measures it per pitch. */
+  zone: { top: number; bottom: number };
+  /** Which box the hitter was standing in, so the plot can show that side. */
+  batSide: "R" | "L";
+  outcome: PitchOutcome;
+  pitchType?: string;
+  speed?: number;
+}
+
 export type NormalizedEventType =
   | "pitch"
   | "play_result"
@@ -184,10 +217,21 @@ export interface PitchEvent {
   atBatIndex: number;
   eventIndex: number;
   outcome: PitchOutcome;
+  /** Which pitch of the plate appearance this is, 1-based. */
+  number: number;
   pitchType?: string;
   speed?: number;
   /** Where the ball crossed the plate, in feet. */
   plate: { x: number; z: number };
+  /**
+   * Whether `plate` is a measurement rather than a stand-in. An automatic ball
+   * - a pitch-timer violation, a pitch nobody threw - is a pitch in the feed
+   * with no coordinates behind it. The animation still has to put the ball
+   * somewhere, so `plate` falls back to the middle of the zone; the strike-zone
+   * plot leaves an unlocated pitch off rather than drawing a mark down the
+   * middle that nobody threw.
+   */
+  located: boolean;
   strikeZone: { top: number; bottom: number };
   batterId?: number;
   pitcherId?: number;

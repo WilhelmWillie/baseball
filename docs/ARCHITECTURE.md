@@ -131,6 +131,9 @@ and emits what is new. The subtle part of the codebase. It re-counts balls and
 strikes from the pitches rather than trusting the feed's `count` field (which is
 documented inconsistently), and it decides which pitch ended an at-bat *before*
 MLB publishes the result, so the pitch and its outcome can animate as one motion.
+Also `trackedPitches(feed)` — the plate appearance's pitches as the strike-zone
+box plots them, which `buildSnapshot` carries and the store reveals one at a
+time.
 
 **`lib/game/schedule.ts`** — `summarizeGame()` / `sortGames()` for the home page,
 plus `recentFinals()`, which is the home page's nine-game grid, and the season
@@ -150,10 +153,11 @@ whole thing work:
 > snapshot is only promoted once the director's queue has drained.
 
 That is why a home run plays as pitch → swing → flight → runners → score rather
-than the scoreboard jumping and the field catching up. Two things deliberately
+than the scoreboard jumping and the field catching up. Three things deliberately
 update early, via director callbacks, because they should track what is on
-screen: `onCount` advances the count as each pitch resolves, and `onPlayResolved`
-advances outs and score when a play's animation finishes.
+screen: `onCount` advances the count as each pitch resolves, `onPlayResolved`
+advances outs and score when a play's animation finishes, and `onPitch` marks
+the strike-zone box as the ball reaches the plate.
 
 ### Animation
 
@@ -169,7 +173,7 @@ advances outs and score when a play's animation finishes.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
 - The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
-- Callbacks out: `onCount`, `onPlayResolved`, `onSound`.
+- Callbacks out: `onCount`, `onPitch`, `onPlayResolved`, `onSound`.
 
 Timing constants live near the top with the reasoning attached (runner speed,
 swing duration, throw release fraction, the plate-height mapping that fits a
@@ -258,7 +262,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `textures.ts` | Canvas textures for jersey numbers and name plates |
 
 HUD components are plain DOM over the canvas: `hud/Scorebug.tsx`,
-`hud/Callout.tsx`, `hud/History.tsx`, `hud/GameOver.tsx`.
+`hud/Callout.tsx`, `hud/PitchZone.tsx`, `hud/History.tsx`, `hud/GameOver.tsx`.
 
 **`lib/audio/sfx.ts`** — the `sfx` singleton. Every sound is synthesized with
 Web Audio primitives; there are no audio files. Cued off the animation clock, so
@@ -440,6 +444,8 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | What the board in the park says | `components/scene/scoreboardFace.ts` |
 | Lighting, time of day, weather | `lib/field/sky.ts` |
 | What a player looks like | `components/scene/Player.tsx` |
+| What the strike-zone box draws, and which way round | `components/hud/PitchZone.tsx` |
+| Which pitches that box knows about | `trackedPitches` in `lib/game/events.ts` |
 | Sounds | `lib/audio/sfx.ts` |
 | Club colors | `lib/mlb/teams.ts` |
 | Polling behaviour | `hooks/useLiveFeed.ts` |

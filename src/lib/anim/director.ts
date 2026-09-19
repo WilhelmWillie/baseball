@@ -704,6 +704,12 @@ export class Director {
    */
   onCount?: (count: { balls: number; strikes: number }) => void;
   onPlayResolved?: (result: PlayResultEvent) => void;
+  /**
+   * Fired as the ball reaches the plate, so the strike-zone plot marks a pitch
+   * at the moment it arrives rather than when the feed reported it. Same
+   * reasoning as `onCount`: it belongs to what is on screen.
+   */
+  onPitch?: (pitch: PitchEvent) => void;
   /** Fired at the moment a sound should be heard, not when an event arrives. */
   onSound?: (name: SoundName, intensity?: number) => void;
 
@@ -1593,6 +1599,7 @@ export class Director {
         if (whiff) this.whiffAt(t, cue, swingStart, strikeThree);
 
         cue.at("plate", t, flight.plateTime, () => {
+          this.onPitch?.(pitch);
           if (foul) {
             // Wood on ball, whichever way it then went. The thinner report the
             // foul sound used to make on its own read as a tipped ball on
@@ -1677,6 +1684,9 @@ export class Director {
       duration: contactAt + inner.duration,
       onStart: () => this.openPitch(pitch),
       update: (t, dt) => {
+        // Contact is where this pitch crossed, so it goes on the zone plot
+        // there, the same as one nobody swung at.
+        cue.at("plate", t, contactAt, () => this.onPitch?.(pitch));
         // The result owns the camera from contact, not from the top of the
         // windup. Its opening shot is a ball-tracking one, so handing it the
         // lens early spent the whole delivery sliding backwards across the

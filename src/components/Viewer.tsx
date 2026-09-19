@@ -13,6 +13,7 @@ import { useWatchTimer } from "@/lib/analytics/useWatchTimer";
 import { Ball } from "@/components/brand/Ball";
 import { Scorebug, type ScoreMode } from "./hud/Scorebug";
 import { Callout } from "./hud/Callout";
+import { PitchZone } from "./hud/PitchZone";
 import { History } from "./hud/History";
 import { GameOver } from "./hud/GameOver";
 import { Intermission } from "./hud/Intermission";
@@ -195,6 +196,10 @@ export function Viewer({
           ) : (
             <>
               <Scorebug snapshot={snapshot} mode={scoreMode} onMode={chooseScoreMode} />
+              {/* Its own panel under the scoreboard rather than a corner of
+                  it: the box has a shape of its own to keep, and it belongs
+                  with the game state, so hiding the scoreboard hides it too. */}
+              <PitchZone snapshot={snapshot} />
               {scoreMode === "full" && (
                 <History history={history} snapshot={snapshot} gamePk={gamePk} />
               )}

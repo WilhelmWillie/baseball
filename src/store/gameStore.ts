@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { Director } from "@/lib/anim/director";
 import { DEFAULT_CAMERA_VIEW, rememberCameraView, type CameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
-import { extractEvents, seedCursor } from "@/lib/game/events";
+import { extractEvents, seedCursor, trackPitch } from "@/lib/game/events";
 import { buildHistory, buildSnapshot, inningLabel, ordinalFor } from "@/lib/game/normalize";
 import {
   EMPTY_CURSOR,
@@ -63,6 +63,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
           : {},
       );
     director.onSound = (name, intensity) => sfx.play(name, { intensity });
+    // A pitch joins the strike-zone plot as it crosses the plate, for the same
+    // reason the count does: both describe the pitch the viewer just watched,
+    // and the feed is often several pitches ahead of it. Pitches earlier in the
+    // same plate appearance stay; anything from a previous one is dropped,
+    // which is what clears the plot for a new hitter. A pitch the feed never
+    // located has nowhere honest to sit and is left off entirely.
+    director.onPitch = (pitch) =>
+      set((state) => {
+        if (!state.snapshot || !pitch.located) return {};
+        const kept = state.snapshot.pitches.filter(
+          (p) => p.atBatIndex === pitch.atBatIndex && p.number < pitch.number,
+        );
+        return { snapshot: { ...state.snapshot, pitches: [...kept, trackPitch(pitch)] } };
+      });
     director.onPlayResolved = (result) =>
       set((state) => {
         if (!state.snapshot) return {};

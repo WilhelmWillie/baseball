@@ -12,6 +12,7 @@ import { Ball } from "@/components/brand/Ball";
 import { BackLink } from "@/components/BackLink";
 import { ShareMenu } from "@/components/ShareMenu";
 import { Callout } from "./hud/Callout";
+import { PitchZone } from "./hud/PitchZone";
 
 const Scene = dynamic(() => import("./scene/Scene").then((m) => m.Scene), {
   ssr: false,
@@ -103,6 +104,10 @@ export function ClipViewer({
             {statcast ? ` · ${statcast}` : ""}
           </div>
         </div>
+
+        {/* One plate appearance is exactly what the zone plots, so a clip gets
+            the whole sequence that led to the pitch it was opened for. */}
+        {snapshot && <PitchZone snapshot={snapshot} />}
 
         {replay.status === "error" && (
           <div className="rounded-2xl border-2 border-clay/40 bg-card/95 px-3.5 py-2.5 text-xs font-bold text-clay lip-float">

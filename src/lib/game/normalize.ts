@@ -3,6 +3,7 @@ import {
   type PositionKey,
 } from "@/lib/field/geometry";
 import { readConditions } from "@/lib/field/sky";
+import { trackedPitches } from "@/lib/game/events";
 import { deriveGameOver } from "@/lib/game/gameOver";
 import { buildUniforms, paletteFor } from "@/lib/mlb/teams";
 import type {
@@ -403,6 +404,7 @@ export function buildSnapshot(feed: MlbLiveFeed): GameSnapshot {
     },
     lineScore,
     lastPlay: lastCompleted?.result?.description ?? null,
+    pitches: trackedPitches(feed),
     boxscore: {
       home: buildBoxscore(index, boxHome, decisions),
       away: buildBoxscore(index, boxAway, decisions),

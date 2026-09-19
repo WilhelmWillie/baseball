@@ -767,16 +767,25 @@ export class Director {
 
   /**
    * Translate "who did something good" into what the home crowd does about it.
-   * `favorsBatter` is whether the play helped the batting side.
+   * `favorsBatter` is whether the play helped the batting side, and `kind` is
+   * the play itself - a couple of outcomes have a voice of their own rather
+   * than a louder or quieter version of the general one.
    */
   private crowdVoice(
     favorsBatter: boolean,
     magnitude: number,
+    kind?: PlayResultEvent["kind"],
   ): { sound: SoundName; intensity: number } {
     const homeIsBatting = this.snapshot?.battingSide === "home";
     const goodForHome = favorsBatter === homeIsBatting;
     if (!goodForHome) {
       return { sound: "groan", intensity: magnitude };
+    }
+    // A punchout is not a small cheer. The park goes up on the call and is
+    // finished a second later, where a cheer for a hit keeps building while
+    // the ball is still out there deciding what it is going to be.
+    if (kind === "strikeout") {
+      return { sound: "strikeout", intensity: magnitude };
     }
     return {
       sound: magnitude >= 0.9 ? "bigCheer" : "cheer",
@@ -1017,6 +1026,10 @@ export class Director {
       const half = snapshot.isTopInning ? "Top" : "Bottom";
       this.setCallout("PLAY BALL", "neutral", `${half} ${snapshot.inningOrdinal}`);
       this.setShot("center", { cut: true, force: true });
+      // The home club coming up to bat is what "Charge!" is for: it is a
+      // rally cue, not a celebration, so it belongs at the top of a half the
+      // home side is about to hit in and nowhere else.
+      if (snapshot.battingSide === "home") this.onSound?.("charge");
     } else if (hadWorld && snapshot.batter && prevBatterId !== snapshot.batter.id) {
       // A new hitter is at the plate. Rather than pop the last one out and the
       // next one in, beam the newcomer up the way the retired batter beamed
@@ -1871,7 +1884,7 @@ export class Director {
           favorsBatter: weight.favorsBatter,
           magnitude: weight.magnitude,
           tier: reactionTierFor(result, this.snapshot, weight.tier),
-          ...this.crowdVoice(weight.favorsBatter, weight.magnitude),
+          ...this.crowdVoice(weight.favorsBatter, weight.magnitude, result.kind),
         }
       : null;
 
@@ -2159,6 +2172,9 @@ export class Director {
             this.setCallout("SIDE RETIRED", "neutral", "Change of sides");
             departingField = [...this.actors.values()].filter((a) => a.visible);
             this.beamRoster(departingField);
+            // What a ballpark does with an empty field. The riff waits out the
+            // transporters on its own - see the lead-in in `organ`.
+            this.onSound?.("organ");
           });
           if (departingField) {
             const u = clamp01((t - fieldBeamStart) / INNING_BEAM_OUT);
@@ -2441,6 +2457,7 @@ export class Director {
         this.awaitingReturn = true;
         this.awaitingSide = this.snapshot?.fieldingSide ?? fielderSide;
         if (departing.length > 0) this.beamRoster(departing);
+        this.onSound?.("organ");
       },
       update: (t) => {
         if (redundant || t >= INNING_BEAM_OUT) return;

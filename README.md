@@ -107,16 +107,45 @@ colour, and the figure shrinks up into it.
 inning-by-inning line score, and both clubs' box scores (batting and pitching,
 with W/L/S decisions). It can be dismissed to keep watching the park.
 
-**Sound** — bat crack, mitt pop, pitch whoosh, firework booms and a crowd with
-an allegiance: it is the *home* crowd, so it cheers what helps the home club
-and groans at everything else. A strikeout by the home pitcher gets a cheer;
-a home run by the visitors gets a groan. Everything
-is synthesized with Web Audio; there are no audio files. There is no continuous
-ambience bed — see the TODO in `src/lib/audio/sfx.ts`, which wants real recorded
-material rather than the filtered noise that used to sit there. Sounds are cued off the
-animation clock, so the crack lands with the swing rather than with the poll that
-reported it. Browsers block audio until the page is interacted with, so the first
-click anywhere starts it. The 🔊 button mutes.
+**Sound** — bat crack, mitt pop, pitch whoosh, firework booms, a ballpark organ
+and a crowd with an allegiance: it is the *home* crowd, so it cheers what helps
+the home club and groans at everything else. A strikeout by the home pitcher
+gets a cheer; a home run by the visitors gets a groan. Everything is
+synthesized with Web Audio; there are no audio files.
+
+The organizing idea in `src/lib/audio/sfx.ts` is that **a crowd is voices, not
+noise**, and there are two crowd generators because of it. `crowd` is filtered
+noise — right for a roar, where hundreds of separate pitches really do average
+out to broadband. `voices` is a cluster of detuned sawtooths pushed through
+three bandpass filters parked on a vowel's formants — right for anything where
+you are meant to hear people rather than volume. A groan needs the second one:
+it is pitched, it has a vowel in it, and it *falls*, and filtered noise cannot
+express any of the three. As a dark cheer it read as a dark hiss.
+
+The park now has a continuous ambient bed, which the TODO here used to say
+synthesis could not do. It was right about the method it had in mind — noise
+with an LFO on it is tape hiss, because nothing in it ever *happens*. What
+sells a crowd is discrete events, so the bed is a slow formant-shaped wash plus
+a scheduler that drops real voices, applause and the odd whistle into it every
+few seconds. It stops when the tab is hidden, and it swells for a few seconds
+after the park has just cheered.
+
+Everything lands on a shared bus: a convolution reverb with a generated impulse
+so sounds sit in a stadium rather than in a vacuum, and a gentle compressor,
+which a home run needs — it fires a crack, a cheer, a whistle, twelve booms and
+a cheer per run inside two seconds.
+
+Sounds are cued off the animation clock, so the crack lands with the swing
+rather than with the poll that reported it. Browsers block audio until the page
+is interacted with, so the first click anywhere starts it. The 🔊 button mutes.
+
+Levels are tuned by measurement rather than by ear-in-a-vacuum: rendering the
+module through an `OfflineAudioContext` in headless Chromium and reading peak,
+RMS and spectral centroid back out. That is how the ambient bed was caught
+sitting at a 4.2kHz centroid — brighter than forty thousand people shouting at
+once, which is the hiss failure mode wearing a different hat — and how a
+one-sample click 15× louder than the organ note it was attached to turned up
+under every scheduled sound. See `gate()` for what that one was.
 
 **Camera modes** — the 🎥 button picks where you watch from. **Broadcast** is
 the default and is the directed feed: it sits out in center field behind the

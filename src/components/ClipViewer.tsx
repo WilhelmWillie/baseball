@@ -64,6 +64,21 @@ export function ClipViewer({
     };
   }, []);
 
+  // The park itself, under everything else. It is the one sound here that runs
+  // continuously, so it is also the one that has to stop when the tab goes
+  // away - a murmur from a page nobody is looking at is just a noise coming
+  // out of a laptop. `setAmbience` copes with being called before the audio
+  // context is unlocked and starts the bed once it is.
+  useEffect(() => {
+    const apply = () => sfx.setAmbience(soundOn && !document.hidden);
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      document.removeEventListener("visibilitychange", apply);
+      sfx.setAmbience(false);
+    };
+  }, [soundOn]);
+
   /**
    * Where "watch the whole game" goes.
    *
@@ -133,7 +148,7 @@ export function ClipViewer({
               sfx.setMuted(!next);
               if (next) sfx.resume();
             }}
-            title="Bat, mitt and crowd audio"
+            title="Bat, mitt, organ and crowd audio"
             className={`rounded-full px-3 py-2 text-xs font-bold transition-colors sm:py-1.5 ${
               soundOn ? "bg-grass text-card" : "text-bark hover:bg-grass-mist"
             }`}

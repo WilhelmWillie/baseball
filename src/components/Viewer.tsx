@@ -174,6 +174,21 @@ export function Viewer({
     };
   }, []);
 
+  // The park itself, under everything else. It is the one sound here that runs
+  // continuously, so it is also the one that has to stop when the tab goes
+  // away - a murmur from a page nobody is looking at is just a noise coming
+  // out of a laptop. `setAmbience` copes with being called before the audio
+  // context is unlocked and starts the bed once it is.
+  useEffect(() => {
+    const apply = () => sfx.setAmbience(soundOn && !document.hidden);
+    apply();
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      document.removeEventListener("visibilitychange", apply);
+      sfx.setAmbience(false);
+    };
+  }, [soundOn]);
+
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-grass-mist">
       <Scene />
@@ -293,7 +308,7 @@ export function Viewer({
               track("sound_toggled", { on: next, gamePk });
             }}
             active={soundOn}
-            title="Bat, mitt and crowd audio"
+            title="Bat, mitt, organ and crowd audio"
           >
             {soundOn ? "🔊" : "🔇"}
             <span className="hidden sm:inline">{soundOn ? " Sound" : " Muted"}</span>

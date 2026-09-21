@@ -131,8 +131,8 @@ export interface GameSnapshot {
   bullpen: Record<TeamSide, PlayerRef[]>;
   lineScore: Array<{ num: number; home: number | null; away: number | null }>;
   lastPlay: string | null;
-  /** The plate appearance's pitches so far, oldest first. */
-  pitches: TrackedPitch[];
+  /** The last pitch anybody has seen cross the plate, for the strike-zone box. */
+  pitch: TrackedPitch | null;
   boxscore: Record<TeamSide, TeamBoxscore>;
 }
 
@@ -171,21 +171,18 @@ export type PitchOutcome =
   | "other";
 
 /**
- * One pitch, the way the strike-zone box draws it: where it crossed, and how
- * tall the hitter's zone was at the time.
+ * The pitch the strike-zone box is drawn around: where it crossed, and how tall
+ * the hitter's zone was when it did.
  *
  * Kept separate from `PitchEvent` because the two answer different questions.
  * An event is something that just happened and is animated once; this is a mark
- * that hangs over the plate for the rest of the plate appearance, and it has to
- * be there for a feed the viewer joined halfway through, with nothing animated
- * at all.
+ * that hangs over the plate until the next pitch replaces it, and it has to be
+ * there for a feed the viewer joined halfway through, with nothing animated at
+ * all. `id` is the event's, so the box can tell a new pitch from the same one
+ * read again.
  */
 export interface TrackedPitch {
   id: string;
-  /** The plate appearance it belongs to - MLB's index, so the plot knows when to clear. */
-  atBatIndex: number;
-  /** Which pitch of that plate appearance, 1-based, as MLB numbers them. */
-  number: number;
   /**
    * Where it crossed the plate, in feet. `x` is positive toward right field
    * (the catcher's right, which is MLB's own sign); `z` is height off the dirt.
@@ -194,6 +191,8 @@ export interface TrackedPitch {
   z: number;
   /** The hitter's zone for this pitch, in feet. MLB measures it per pitch. */
   zone: { top: number; bottom: number };
+  /** What it was thrown at, for the chip under the box. */
+  speed?: number;
 }
 
 export type NormalizedEventType =
@@ -212,8 +211,6 @@ export interface PitchEvent {
   atBatIndex: number;
   eventIndex: number;
   outcome: PitchOutcome;
-  /** Which pitch of the plate appearance this is, 1-based. */
-  number: number;
   pitchType?: string;
   speed?: number;
   /** Where the ball crossed the plate, in feet. */

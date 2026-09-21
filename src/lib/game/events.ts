@@ -229,22 +229,6 @@ function isLocated(event: MlbPlayEvent): boolean {
   return typeof at?.pX === "number" && typeof at?.pZ === "number";
 }
 
-/**
- * Which pitch of the plate appearance `playEvents[upTo]` is, 1-based.
- *
- * MLB numbers them itself and that is what a broadcast prints, so it is used
- * where the feed gives it. Counting the pitches ahead of this one is only the
- * fallback, and it is correct as long as the whole play is in hand - which it
- * is here: an event is always read out of its own play's event list.
- */
-function pitchNumber(playEvents: MlbPlayEvent[], upTo: number): number {
-  const stated = playEvents[upTo]?.pitchNumber;
-  if (typeof stated === "number") return stated;
-  let n = 0;
-  for (let i = 0; i <= upTo; i++) if (playEvents[i]?.isPitch) n++;
-  return n;
-}
-
 function pitchOutcome(event: MlbPlayEvent): PitchOutcome {
   const d = event.details;
   if (d?.isInPlay) return "in_play";
@@ -434,7 +418,6 @@ export function extractEvents(
           atBatIndex,
           eventIndex,
           outcome,
-          number: pitchNumber(playEvents, j),
           pitchType: event.details?.type?.description,
           speed: event.pitchData?.startSpeed,
           plate: {
@@ -552,70 +535,58 @@ export function foulBallFor(pitch: PitchEvent): BattedBall {
   );
 }
 
-/** One pitch of a plate appearance, as the strike-zone plot draws it. */
-function trackedPitch(
-  event: MlbPlayEvent,
-  atBatIndex: number,
-  eventIndex: number,
-  number: number,
-): TrackedPitch {
-  const at = event.pitchData?.coordinates;
-  return {
-    id: `${atBatIndex}-${eventIndex}-pitch`,
-    atBatIndex,
-    number,
-    x: at?.pX ?? 0,
-    z: at?.pZ ?? DEFAULT_ZONE.middle,
-    zone: {
-      top: event.pitchData?.strikeZoneTop ?? DEFAULT_ZONE.top,
-      bottom: event.pitchData?.strikeZoneBottom ?? DEFAULT_ZONE.bottom,
-    },
-  };
-}
-
 /**
- * The pitches of the plate appearance the feed is on, oldest first.
+ * The last pitch the feed has a plate location for, which is what the
+ * strike-zone box is drawn around.
  *
  * Read straight off the play rather than accumulated from `PitchEvent`s,
- * because the plot has to be right for somebody who joined in the middle of an
+ * because the box has to be right for somebody who joined in the middle of an
  * at-bat, or opened a clip cued to its last pitch: neither of them ever sees an
- * event for the pitches already thrown. While the game is being animated the
- * store reveals these one at a time instead - see `Director.onPitch` - and this
- * is what a promoted snapshot corrects that reveal against.
+ * event for what came before. While the game is being animated the store puts
+ * each pitch up as it crosses instead - see `Director.onPitch` - and this is
+ * what a promoted snapshot corrects that against.
  *
- * A pitch the feed gave no coordinates for is left out; see `PitchEvent.located`.
+ * Null once a new hitter is up and nothing has been thrown to them yet, which
+ * is what empties the box. A pitch the feed gave no coordinates for is passed
+ * over rather than drawn down the middle (see `PitchEvent.located`), so an
+ * automatic ball leaves the last real pitch showing.
  */
-export function trackedPitches(feed: MlbLiveFeed): TrackedPitch[] {
+export function trackedPitch(feed: MlbLiveFeed): TrackedPitch | null {
   const plays = feed.liveData?.plays;
   const all = plays?.allPlays ?? [];
   const play = plays?.currentPlay ?? all[all.length - 1];
-  if (!play) return [];
+  if (!play) return null;
   const atBatIndex = atBatIndexOf(play, all.length - 1);
   const playEvents = play.playEvents ?? [];
-  const out: TrackedPitch[] = [];
-  let seen = 0;
-  for (let i = 0; i < playEvents.length; i++) {
+  for (let i = playEvents.length - 1; i >= 0; i--) {
     const event = playEvents[i];
-    if (!event.isPitch) continue;
-    seen++;
-    if (!isLocated(event)) continue;
-    out.push(trackedPitch(event, atBatIndex, event.index ?? i, event.pitchNumber ?? seen));
+    if (!event.isPitch || !isLocated(event)) continue;
+    const at = event.pitchData?.coordinates;
+    return {
+      id: `${atBatIndex}-${event.index ?? i}-pitch`,
+      x: at?.pX ?? 0,
+      z: at?.pZ ?? DEFAULT_ZONE.middle,
+      zone: {
+        top: event.pitchData?.strikeZoneTop ?? DEFAULT_ZONE.top,
+        bottom: event.pitchData?.strikeZoneBottom ?? DEFAULT_ZONE.bottom,
+      },
+      speed: event.pitchData?.startSpeed,
+    };
   }
-  return out;
+  return null;
 }
 
 /**
  * The same mark, built from the event the animator just played, so a pitch
- * lands on the plot as it crosses the plate rather than when the feed is next
+ * reaches the box as it crosses the plate rather than when the feed is next
  * promoted.
  */
 export function trackPitch(pitch: PitchEvent): TrackedPitch {
   return {
     id: pitch.id,
-    atBatIndex: pitch.atBatIndex,
-    number: pitch.number,
     x: pitch.plate.x,
     z: pitch.plate.z,
     zone: pitch.strikeZone,
+    speed: pitch.speed,
   };
 }

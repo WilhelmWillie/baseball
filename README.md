@@ -87,18 +87,18 @@ the nine innings above it.
 
 **Strike zone** — the box a broadcast hangs in front of the catcher, and it is
 hung in the park rather than drawn over it: a frame over the plate at the
-hitter's own zone, and a white ball at every pitch of the plate appearance, the
-last one full size and the ones before it small. The measurements are MLB's, not
-the animation's - the feed publishes where each pitch crossed and the zone it
-was judged against, fitted to that hitter's stance - and the box is built from
-the same mapping the pitch is flown through, so a mark sits exactly where the
-ball was a moment ago. Being a thing in the world, it needs no opinion about
-which way round to draw: a pitch inside to a right-hander is inside from every
-seat. A mark lands as the ball reaches the plate rather than when the feed
-reports it, and a viewer who joins mid-at-bat still gets everything thrown so
-far. The box goes up when a hitter stands in and is gone the instant the ball is
-put in play - and, like a real K-zone, it only appears on the shots square
-enough to the plate to have something to show.
+hitter's own zone, a white ball where the last pitch crossed it, and what that
+pitch was thrown at on a chip underneath. The measurements are MLB's, not the
+animation's - the feed publishes where each pitch crossed and the zone it was
+judged against, fitted to that hitter's stance - and the box is built from the
+same mapping the pitch is flown through, so the mark sits exactly where the ball
+was a moment ago. Being a thing in the world, it needs no opinion about which
+way round to draw: a pitch inside to a right-hander is inside from every seat.
+The mark lands as the ball reaches the plate rather than when the feed reports
+it, and a viewer who joins mid-at-bat gets the last pitch thrown without waiting
+for the next. The box goes up when a hitter stands in and is gone the instant
+the ball is put in play - and, like a real K-zone, it only appears on the shots
+square enough to the plate to have something to show.
 
 **Game log** — the last play sits under the scorebug; hover it to open the full
 log, grouped by half-inning with the running score, scoring plays highlighted.

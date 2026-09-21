@@ -10,11 +10,15 @@ import {
   MeshBasicMaterial,
   PlaneGeometry,
   SphereGeometry,
+  Sprite,
+  SpriteMaterial,
   Vector3,
+  type PerspectiveCamera,
 } from "three";
 import { platePoint, type Director } from "@/lib/anim/director";
 import type { TrackedPitch } from "@/lib/game/types";
 import { useGameStore } from "@/store/gameStore";
+import { getLabelTexture, labelAspect } from "./textures";
 
 /**
  * Half the zone's width, in feet. The plate is seventeen inches across and a
@@ -34,27 +38,22 @@ const DEFAULT_ZONE = { top: 3.4, bottom: 1.6 };
  * A line of fixed thickness is the wrong thing twice over: over the catcher's
  * shoulder it is a plank, and from the centre-field camera a hundred and fifty
  * feet out - where most of the pitches in this game are watched from - it is
- * under two pixels and reads as a smudge. Growing it part of the way toward the
- * distance holds the apparent width somewhere sensible at both ends. Same idea
- * as the floor `<Ball>` keeps under its own size on a long shot, and the same
- * lie every broadcast tells with a line drawn at a constant screen width.
+ * well under a pixel. Growing it part of the way toward the distance holds the
+ * apparent width at around two pixels from either. Same idea as the floor
+ * `<Ball>` keeps under its own size on a long shot, and the same lie every
+ * broadcast tells with a line drawn at a constant screen width.
  */
-const RAIL = 0.16;
+const RAIL = 0.09;
 const RAIL_REF = 60;
 const RAIL_MAX = 2.2;
 
 /**
- * Marker radii. The ball itself is drawn at 0.42, so the pitch that just
- * crossed is a little larger than life and the ones before it are a good deal
- * smaller - which is the whole reading: this one, and the ones already taken.
+ * The mark's radius. The ball itself is drawn at 0.42, so the pitch that just
+ * crossed sits in the frame a little larger than life.
  */
-const LAST_MARK = 0.55;
-const PAST_MARK = 0.32;
+const MARK = 0.55;
 
-/** As many as one plate appearance can need. A 20-pitch at-bat is a legend. */
-const MAX_MARKS = 22;
-
-/** How long a mark takes to land, in seconds. */
+/** How long the mark takes to land, in seconds. */
 const POP = 0.22;
 
 /**
@@ -71,11 +70,18 @@ const FACE_FROM = 0.46;
 const FACE_FULL = 0.78;
 
 /** Opacities at full strength. */
-const FRAME_ALPHA = 0.85;
+const FRAME_ALPHA = 0.9;
 const FILL_ALPHA = 0.07;
-const PAST_ALPHA = 0.42;
 
-const NO_PITCHES: TrackedPitch[] = [];
+/** The lens the name plates are sized against; the speed chip matches them. */
+const BASE_LENS = Math.tan((50 * Math.PI) / 360);
+
+/**
+ * How far under the frame the speed hangs. Enough to clear a pitch that missed
+ * below the knees, which is where a mark most often ends up.
+ */
+const CHIP_DROP = 1.9;
+
 const TO_CAMERA = new Vector3();
 const SPOT = new Vector3();
 
@@ -83,11 +89,12 @@ interface Zone {
   root: Group;
   bars: Mesh[];
   fill: Mesh;
-  marks: Mesh[];
+  mark: Mesh;
+  chip: Sprite;
   frameMat: MeshBasicMaterial;
   fillMat: MeshBasicMaterial;
-  pastMat: MeshBasicMaterial;
-  lastMat: MeshBasicMaterial;
+  markMat: MeshBasicMaterial;
+  chipMat: SpriteMaterial;
   /** How faded in it is, 0..1. */
   fade: number;
   /** The zone the frame is currently built to, so it is only re-laid when it moves. */
@@ -97,10 +104,11 @@ interface Zone {
   width: number;
   height: number;
   rail: number;
-  /** The pitch list the marks are currently placed for. */
-  placed: TrackedPitch[] | null;
-  /** When each mark landed, so it pops in once and then holds. */
-  born: Map<string, number>;
+  /** The pitch the mark is currently sitting on, and when it landed there. */
+  shown: string;
+  bornAt: number;
+  /** What the chip reads, so its texture is only swapped when it changes. */
+  says: string;
 }
 
 function white(alpha: number, doubleSided = false): MeshBasicMaterial {
@@ -143,49 +151,50 @@ function buildZone(): Zone {
   fill.renderOrder = 1;
   root.add(fill);
 
-  const pastMat = white(PAST_ALPHA);
-  const lastMat = white(1);
-  const ball = new SphereGeometry(1, 18, 12);
-  const marks: Mesh[] = [];
-  for (let i = 0; i < MAX_MARKS; i++) {
-    const mesh = new Mesh(ball, pastMat);
-    mesh.renderOrder = 3;
-    mesh.visible = false;
-    marks.push(mesh);
-    root.add(mesh);
-  }
+  const markMat = white(1);
+  const mark = new Mesh(new SphereGeometry(1, 18, 12), markMat);
+  mark.renderOrder = 3;
+  mark.visible = false;
+  root.add(mark);
+
+  const chipMat = new SpriteMaterial({ transparent: true, depthTest: false });
+  const chip = new Sprite(chipMat);
+  chip.visible = false;
+  root.add(chip);
 
   return {
     root,
     bars,
     fill,
-    marks,
+    mark,
+    chip,
     frameMat,
     fillMat,
-    pastMat,
-    lastMat,
+    markMat,
+    chipMat,
     fade: 0,
     top: 0,
     bottom: 0,
     width: 0,
     height: 0,
     rail: 0,
-    placed: null,
-    born: new Map(),
+    shown: "",
+    bornAt: 0,
+    says: "",
   };
 }
 
 function disposeZone(zone: Zone) {
   zone.bars[0].geometry.dispose();
   zone.fill.geometry.dispose();
-  zone.marks[0].geometry.dispose();
+  zone.mark.geometry.dispose();
   zone.frameMat.dispose();
   zone.fillMat.dispose();
-  zone.pastMat.dispose();
-  zone.lastMat.dispose();
+  zone.markMat.dispose();
+  zone.chipMat.dispose();
 }
 
-/** Lay the frame out for a zone of this height. */
+/** Lay the frame out for a zone of this height, and hang the chip under it. */
 function layOut(zone: Zone, top: number, bottom: number) {
   zone.top = top;
   zone.bottom = bottom;
@@ -204,6 +213,7 @@ function layOut(zone: Zone, top: number, bottom: number) {
   right.position.set(width / 2, 0, 0);
 
   zone.fill.scale.set(width, height, 1);
+  zone.chip.position.set(0, -height / 2 - CHIP_DROP, 0);
 }
 
 /** Draw the frame at this bar thickness. See `RAIL`. */
@@ -216,29 +226,7 @@ function setRail(zone: Zone, rail: number) {
   right.scale.copy(left.scale);
 }
 
-/** Put a mark at every pitch this hitter has seen, and park the rest. */
-function placeMarks(zone: Zone, pitches: TrackedPitch[], now: number) {
-  zone.placed = pitches;
-  const live = new Set<string>();
-  for (let i = 0; i < zone.marks.length; i++) {
-    const mark = zone.marks[i];
-    const pitch = i < pitches.length ? pitches[i] : null;
-    if (!pitch) {
-      mark.visible = false;
-      continue;
-    }
-    live.add(pitch.id);
-    if (!zone.born.has(pitch.id)) zone.born.set(pitch.id, now);
-    SPOT.copy(platePoint(pitch.x, pitch.z)).sub(zone.root.position);
-    mark.position.set(SPOT.x, SPOT.y, 0);
-    mark.material = i === pitches.length - 1 ? zone.lastMat : zone.pastMat;
-    mark.visible = true;
-  }
-  // The marks go when the hitter they were thrown to does.
-  for (const id of zone.born.keys()) if (!live.has(id)) zone.born.delete(id);
-}
-
-/** A little past its size and back, so a mark lands rather than appears. */
+/** A little past its size and back, so the mark lands rather than appears. */
 function pop(t: number): number {
   if (t >= 1) return 1;
   return 1 - (1 - t) * (1 - t) * (1 - t * 1.6);
@@ -253,8 +241,13 @@ function smoothstep(v: number, from: number, to: number): number {
   return t * t * (3 - 2 * t);
 }
 
-function paint(zone: Zone, director: Director, pitches: TrackedPitch[], state: RootState, dt: number) {
-  const last = pitches.length > 0 ? pitches[pitches.length - 1] : null;
+function paint(
+  zone: Zone,
+  director: Director,
+  last: TrackedPitch | null,
+  state: RootState,
+  dt: number,
+) {
   const top = last?.zone.top ?? DEFAULT_ZONE.top;
   const bottom = last?.zone.bottom ?? DEFAULT_ZONE.bottom;
   if (top !== zone.top || bottom !== zone.bottom) {
@@ -263,7 +256,15 @@ function paint(zone: Zone, director: Director, pitches: TrackedPitch[], state: R
   }
 
   const now = state.clock.elapsedTime;
-  if (pitches !== zone.placed) placeMarks(zone, pitches, now);
+  if ((last?.id ?? "") !== zone.shown) {
+    zone.shown = last?.id ?? "";
+    zone.mark.visible = Boolean(last);
+    if (last) {
+      SPOT.copy(platePoint(last.x, last.z)).sub(zone.root.position);
+      zone.mark.position.set(SPOT.x, SPOT.y, 0);
+      zone.bornAt = now;
+    }
+  }
 
   // Square-on to the plane, and only while somebody is standing in.
   TO_CAMERA.copy(state.camera.position).sub(zone.root.position);
@@ -280,39 +281,53 @@ function paint(zone: Zone, director: Director, pitches: TrackedPitch[], state: R
 
   zone.frameMat.opacity = FRAME_ALPHA * zone.fade;
   zone.fillMat.opacity = FILL_ALPHA * zone.fade;
-  zone.pastMat.opacity = PAST_ALPHA * zone.fade;
-  zone.lastMat.opacity = zone.fade;
+  zone.markMat.opacity = zone.fade;
+  if (zone.mark.visible) {
+    zone.mark.scale.setScalar(MARK * pop(clamp01((now - zone.bornAt) / POP)));
+  }
 
-  for (let i = 0; i < pitches.length && i < zone.marks.length; i++) {
-    const size = i === pitches.length - 1 ? LAST_MARK : PAST_MARK;
-    const at = zone.born.get(pitches[i].id) ?? now;
-    zone.marks[i].scale.setScalar(size * pop(clamp01((now - at) / POP)));
+  // The speed, on a chip under the box - the number a broadcast prints there.
+  // Sized the way the name plates are, so it reads the same from the shot over
+  // the catcher and from the one a hundred and fifty feet out in centre field.
+  const says = last?.speed ? `${Math.round(last.speed)} MPH` : "";
+  if (says !== zone.says) {
+    zone.says = says;
+    zone.chip.visible = says.length > 0;
+    if (says) zone.chipMat.map = getLabelTexture(says, "#3f8f5b");
+  }
+  if (zone.chip.visible) {
+    const camera = state.camera as PerspectiveCamera;
+    const lens = Math.min(1, Math.tan((camera.fov * Math.PI) / 360) / BASE_LENS);
+    const size = 2.8 * lens * Math.max(0.15, Math.min(1.75, distance / 95));
+    zone.chip.scale.set(labelAspect(says) * size, size, 1);
+    zone.chipMat.opacity = zone.fade;
   }
 }
 
 /**
  * The strike zone, hung in front of the catcher the way a broadcast hangs it:
- * a frame over the plate, and a white ball at every pitch this hitter has seen,
- * the last one full size and the ones before it small.
+ * a frame over the plate, a white ball where the last pitch crossed it, and
+ * what that pitch was thrown at on a chip underneath. One mark, not a season of
+ * them - the pitches before it are what the count is for.
  *
  * It is a thing in the park rather than a graphic pasted over one, which is
  * what makes it honest. The box is built from the same `platePoint` the pitch
- * animation flies the ball through, so a mark sits exactly where the ball was a
- * moment ago rather than near it. And being in the world it needs no opinion
+ * animation flies the ball through, so the mark sits exactly where the ball was
+ * a moment ago rather than near it. And being in the world it needs no opinion
  * about which way round to draw: a pitch inside to a right-hander is inside
  * from every seat in the house, which a flat plot has to be told.
  *
- * Marks arrive from `Director.onPitch` by way of the snapshot, so one lands as
- * the ball reaches the plate rather than when the feed gets round to reporting
- * it. `Director.atPlate` is what puts the box up and takes it away.
+ * The mark arrives from `Director.onPitch` by way of the snapshot, so it lands
+ * as the ball reaches the plate rather than when the feed gets round to
+ * reporting it. `Director.atPlate` is what puts the box up and takes it away.
  */
 export function StrikeZone({ director }: { director: Director }) {
-  const pitches = useGameStore((s) => s.snapshot?.pitches) ?? NO_PITCHES;
+  const pitch = useGameStore((s) => s.snapshot?.pitch) ?? null;
   const zone = useMemo(() => buildZone(), []);
 
   useEffect(() => () => disposeZone(zone), [zone]);
 
-  useFrame((state, delta) => paint(zone, director, pitches, state, delta));
+  useFrame((state, delta) => paint(zone, director, pitch, state, delta));
 
   return <primitive object={zone.root} />;
 }

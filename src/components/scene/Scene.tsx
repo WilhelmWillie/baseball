@@ -10,6 +10,7 @@ import { DEFAULT_CONDITIONS, skyLook } from "@/lib/field/sky";
 import { advancePaint, paintTint } from "@/lib/field/paint";
 import { Park } from "./Park";
 import { Crowd } from "./Crowd";
+import { Dugouts } from "./Dugout";
 import { Backstop } from "./Backstop";
 import { Scoreboard } from "./Scoreboard";
 import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
@@ -304,6 +305,7 @@ export function Scene() {
       <Park lampsLit={look.lampsLit} crowd={crowd} />
       <Scoreboard />
       <Crowd palette={crowd} director={director} />
+      {teams && <Dugouts home={teams.home.uniform} away={teams.away.uniform} />}
       <Backstop />
       <ContactShadows director={director} />
       <Actors director={director} />

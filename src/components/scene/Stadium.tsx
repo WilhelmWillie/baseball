@@ -160,14 +160,17 @@ function buildStadium(): BufferGeometry {
   // The four seat rows are already missing across these arcs; this fills the
   // hole they leave with a closed recess, so there is no angle that sees under
   // a floating roof or through an open end into the grass behind.
-  const { front, back, floor, soffit, ceiling, lip, end } = DUGOUT;
+  const { front, back, floor, wall, bench, benchDepth, soffit, ceiling, lip, end } = DUGOUT;
   for (const arc of DUGOUT_ARCS) {
     // Floor, back wall and bench. The inside is far darker than the trim
     // around it: in the roof's own green the whole thing reads as a slab hung
     // on the bowl rather than as the hole in it that a dugout is.
     mesh.band(stadiumEdge, front, back, 0, floor, arc, "#9c937f");
-    mesh.band(stadiumEdge, back - 1.8, back, floor, soffit, arc, "#10302c");
-    mesh.band(stadiumEdge, back - 6.4, back - 1.8, 3.5, 4.1, arc, "#b88a5c");
+    mesh.band(stadiumEdge, back - wall, back, floor, soffit, arc, "#10302c");
+    // Solid from the floor up rather than a plank on legs: there is no light
+    // in here to model a shadow under it with, and a floating board is the one
+    // thing a camera low enough to see beneath the roof would catch.
+    mesh.band(stadiumEdge, back - wall - benchDepth, back - wall, floor, bench, arc, "#b88a5c");
     // The roof, and a pale nosing along its front edge. The nosing stands a
     // little proud of the fascia rather than sharing its plane with it, which
     // leaves the fascia clear for the sign that names the dugout.

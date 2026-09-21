@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
-  BufferAttribute,
   BufferGeometry,
   CapsuleGeometry,
   Color,
@@ -15,6 +14,7 @@ import {
   TorusGeometry,
   Vector3,
 } from "three";
+import { joinGeometries } from "./geometry";
 import { FAN_HEIGHT, buildCrowd, type CrowdPalette, type Fan } from "@/lib/field/park";
 import type { Director } from "@/lib/anim/director";
 
@@ -363,28 +363,6 @@ function longHair(headRadius: number): BufferGeometry {
   fall.scale(1, stretch, 1);
   fall.translate(0, r * Math.cos(CAP_THETA) * (0.95 - stretch), 0);
   return joinGeometries([cap, fall]);
-}
-
-/**
- * Concatenate non-indexed geometries. three ships a utility for this in its
- * examples, but pulling that path in to weld a few spheres together is not
- * worth it.
- */
-function joinGeometries(parts: BufferGeometry[]): BufferGeometry {
-  const flat = parts.map((g) => g.toNonIndexed());
-  const out = new BufferGeometry();
-  for (const name of ["position", "normal"]) {
-    const arrays = flat.map((g) => g.getAttribute(name).array as Float32Array);
-    const merged = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
-    let at = 0;
-    for (const a of arrays) {
-      merged.set(a, at);
-      at += a.length;
-    }
-    out.setAttribute(name, new BufferAttribute(merged, 3));
-  }
-  for (const g of [...parts, ...flat]) g.dispose();
-  return out;
 }
 
 export function Crowd({ palette, director }: { palette: CrowdPalette; director: Director }) {

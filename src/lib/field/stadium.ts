@@ -75,12 +75,28 @@ export const DUGOUT = {
   front: 1.9,
   /** The back of the field boxes: row 3's tread ends here. */
   back: 14.9,
-  /** How proud of the grass the floor slab sits. */
-  floor: 1.6,
-  /** Underside of the roof, and the top of the opening onto the field. */
-  soffit: 11.2,
+  /**
+   * How proud of the grass the floor slab sits. A real dugout is dug in below
+   * the field; this one cannot be, so it stays as thin as a floor can be - the
+   * height it does not spend is headroom for the bench, and headroom is what
+   * decides how far the roof has to stand over the seats beside it.
+   */
+  floor: 0.5,
+  /** How thick the rear wall is. The bench is set against its inside face. */
+  wall: 1.8,
+  /** Top of the bench, and so the hips of everyone sitting on it. */
+  bench: 1.9,
+  /** How deep the bench is. */
+  benchDepth: 4.6,
+  /**
+   * Underside of the roof, and the top of the opening onto the field. It
+   * clears a seated player's head by half a foot: a figure is sixteen feet tall
+   * with its hips at seven, so one sitting on the bench comes to a shade under
+   * twelve. See `SEATED` in `components/scene/Dugout.tsx`.
+   */
+  soffit: 12.4,
   /** Top of the roof, a touch below the seat backs on the row behind. */
-  ceiling: 12.9,
+  ceiling: 14.1,
   /** Flush with the front face of the padded wall. */
   lip: -0.9,
   /** How thick the end walls are, in radians of the arc they close. */
@@ -123,6 +139,50 @@ export function inAisle(theta: number): boolean {
     const distance = Math.abs(Math.atan2(Math.sin(theta - a), Math.cos(theta - a)));
     return distance < aisleHalfWidth(a) + 0.012;
   });
+}
+
+/**
+ * Where a player on the bench sits, as a radial offset: back against the rear
+ * wall, with the rest of the bench left in front of them for their knees.
+ */
+export const BENCH_OFFSET = DUGOUT.back - DUGOUT.wall - DUGOUT.benchDepth * 0.3;
+
+/**
+ * Places along a dugout bench, walked by arc length the way the terraces are,
+ * with the ends left clear so nobody is jammed against a wall. `pitch` is how
+ * much room each figure gets.
+ */
+export function benchSeats(arc: [number, number], pitch: number):
+  { x: number; z: number; yaw: number }[] {
+  const radius: Profile = (theta) => stadiumEdge(theta) + BENCH_OFFSET;
+  const at = (theta: number): [number, number] =>
+    [Math.sin(theta) * radius(theta), -Math.cos(theta) * radius(theta)];
+  // Arc length of the bench, measured rather than assumed: the outline drops
+  // by sixty feet across a dugout, so the chord is nothing like the sweep.
+  const steps = 96;
+  const lengths: number[] = [0];
+  let [lastX, lastZ] = at(arc[0]);
+  for (let i = 1; i <= steps; i++) {
+    const [x, z] = at(arc[0] + (i / steps) * (arc[1] - arc[0]));
+    lengths.push(lengths[i - 1] + Math.hypot(x - lastX, z - lastZ));
+    lastX = x;
+    lastZ = z;
+  }
+  const total = lengths[steps];
+  const count = Math.floor(total / pitch);
+  const seats = [];
+  for (let n = 0; n < count; n++) {
+    // Centre the row in whatever the bench's length leaves over.
+    const along = (total - (count - 1) * pitch) / 2 + n * pitch;
+    let i = 1;
+    while (i < steps && lengths[i] < along) i++;
+    const span = lengths[i] - lengths[i - 1] || 1;
+    const theta = arc[0] + ((i - 1 + (along - lengths[i - 1]) / span) / steps) * (arc[1] - arc[0]);
+    const [x, z] = at(theta);
+    const [tx, tz] = terraceTangent(radius, theta);
+    seats.push({ x, z, yaw: Math.atan2(-tz, tx) });
+  }
+  return seats;
 }
 
 /** Arc-length spacing keeps seats separated even along the long foul lines. */

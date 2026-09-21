@@ -1,4 +1,4 @@
-import { LatheGeometry, Vector2, type BufferGeometry } from "three";
+import { BufferAttribute, BufferGeometry, LatheGeometry, Vector2 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 /** Smooth analytic corner normals keep highlights continuous across the shell. */
@@ -38,4 +38,30 @@ export function egg(bulge = 0.22, rings = 32, radial = 40): BufferGeometry {
   }
   // LatheGeometry provides smooth profile normals, including the closing seam.
   return new LatheGeometry(points, radial, Math.PI);
+}
+
+/**
+ * Concatenate non-indexed geometries. three ships a utility for this in its
+ * examples, but pulling that path in to weld a few spheres together is not
+ * worth it.
+ *
+ * The point of it is instancing: a face is several spheres, and welded into
+ * one geometry a whole bowl of them - or a whole bench - costs one draw rather
+ * than one per feature.
+ */
+export function joinGeometries(parts: BufferGeometry[]): BufferGeometry {
+  const flat = parts.map((g) => g.toNonIndexed());
+  const out = new BufferGeometry();
+  for (const name of ["position", "normal"]) {
+    const arrays = flat.map((g) => g.getAttribute(name).array as Float32Array);
+    const merged = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
+    let at = 0;
+    for (const a of arrays) {
+      merged.set(a, at);
+      at += a.length;
+    }
+    out.setAttribute(name, new BufferAttribute(merged, 3));
+  }
+  for (const g of [...parts, ...flat]) g.dispose();
+  return out;
 }

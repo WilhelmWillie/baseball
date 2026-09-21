@@ -106,7 +106,7 @@ function crowdShirt(roll: number, palette: CrowdPalette): string {
 }
 
 /** Deterministic noise so the park looks identical on every render. */
-function noise(x: number, z: number, salt = 0): number {
+export function noise(x: number, z: number, salt = 0): number {
   const v = Math.sin(x * 12.9898 + z * 78.233 + salt * 3.719) * 43758.5453;
   return v - Math.floor(v);
 }

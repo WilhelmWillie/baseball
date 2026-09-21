@@ -558,7 +558,6 @@ function trackedPitch(
   atBatIndex: number,
   eventIndex: number,
   number: number,
-  batSide: "R" | "L",
 ): TrackedPitch {
   const at = event.pitchData?.coordinates;
   return {
@@ -571,10 +570,6 @@ function trackedPitch(
       top: event.pitchData?.strikeZoneTop ?? DEFAULT_ZONE.top,
       bottom: event.pitchData?.strikeZoneBottom ?? DEFAULT_ZONE.bottom,
     },
-    batSide,
-    outcome: pitchOutcome(event),
-    pitchType: event.details?.type?.description,
-    speed: event.pitchData?.startSpeed,
   };
 }
 
@@ -596,7 +591,6 @@ export function trackedPitches(feed: MlbLiveFeed): TrackedPitch[] {
   const play = plays?.currentPlay ?? all[all.length - 1];
   if (!play) return [];
   const atBatIndex = atBatIndexOf(play, all.length - 1);
-  const batSide = batSideOf(play);
   const playEvents = play.playEvents ?? [];
   const out: TrackedPitch[] = [];
   let seen = 0;
@@ -605,9 +599,7 @@ export function trackedPitches(feed: MlbLiveFeed): TrackedPitch[] {
     if (!event.isPitch) continue;
     seen++;
     if (!isLocated(event)) continue;
-    out.push(
-      trackedPitch(event, atBatIndex, event.index ?? i, event.pitchNumber ?? seen, batSide),
-    );
+    out.push(trackedPitch(event, atBatIndex, event.index ?? i, event.pitchNumber ?? seen));
   }
   return out;
 }
@@ -625,9 +617,5 @@ export function trackPitch(pitch: PitchEvent): TrackedPitch {
     x: pitch.plate.x,
     z: pitch.plate.z,
     zone: pitch.strikeZone,
-    batSide: pitch.batSide,
-    outcome: pitch.outcome,
-    pitchType: pitch.pitchType,
-    speed: pitch.speed,
   };
 }

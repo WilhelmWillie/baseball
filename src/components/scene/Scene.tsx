@@ -15,6 +15,7 @@ import { Scoreboard } from "./Scoreboard";
 import { DEFAULT_CROWD, type CrowdPalette } from "@/lib/field/park";
 import { Field } from "./Field";
 import { Ball } from "./Ball";
+import { StrikeZone } from "./StrikeZone";
 import { Player } from "./Player";
 import { Effects } from "./Effects";
 import { ContactShadows, GroundOcclusion } from "./Shadows";
@@ -308,6 +309,7 @@ export function Scene() {
       <ContactShadows director={director} />
       <Actors director={director} />
       <Ball director={director} />
+      <StrikeZone director={director} />
       <Effects fx={director.fx} />
       <Weather conditions={conditions} />
 

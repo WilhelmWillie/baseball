@@ -171,13 +171,13 @@ export type PitchOutcome =
   | "other";
 
 /**
- * One pitch, the way the strike-zone box draws it: where it crossed, how tall
- * the hitter's zone was at the time, and what became of it.
+ * One pitch, the way the strike-zone box draws it: where it crossed, and how
+ * tall the hitter's zone was at the time.
  *
  * Kept separate from `PitchEvent` because the two answer different questions.
  * An event is something that just happened and is animated once; this is a mark
- * that stays on the plot for the rest of the plate appearance, and it has to be
- * readable off a feed the viewer joined halfway through, with nothing animated
+ * that hangs over the plate for the rest of the plate appearance, and it has to
+ * be there for a feed the viewer joined halfway through, with nothing animated
  * at all.
  */
 export interface TrackedPitch {
@@ -194,11 +194,6 @@ export interface TrackedPitch {
   z: number;
   /** The hitter's zone for this pitch, in feet. MLB measures it per pitch. */
   zone: { top: number; bottom: number };
-  /** Which box the hitter was standing in, so the plot can show that side. */
-  batSide: "R" | "L";
-  outcome: PitchOutcome;
-  pitchType?: string;
-  speed?: number;
 }
 
 export type NormalizedEventType =

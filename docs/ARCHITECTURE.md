@@ -157,7 +157,9 @@ than the scoreboard jumping and the field catching up. Three things deliberately
 update early, via director callbacks, because they should track what is on
 screen: `onCount` advances the count as each pitch resolves, `onPlayResolved`
 advances outs and score when a play's animation finishes, and `onPitch` marks
-the strike-zone box as the ball reaches the plate.
+the strike-zone box as the ball reaches the plate. (`atPlate` is the fourth of
+these and needs no store at all: the box polls the director for it on a frame
+loop, the way the callout and the intermission card poll theirs.)
 
 ### Animation
 
@@ -173,6 +175,9 @@ the strike-zone box as the ball reaches the plate.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
 - The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
+- `platePoint(x, z)` — plate coordinates in real feet onto figures drawn at more
+  than twice life size. The pitch and the strike-zone box share it, which is
+  what makes the ball and the box agree.
 - Callbacks out: `onCount`, `onPitch`, `onPlayResolved`, `onSound`.
 
 Timing constants live near the top with the reasoning attached (runner speed,
@@ -254,6 +259,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat. Owns the crossfade between poses (`POSE_BLEND`), since the director only ever says *which* pose |
 | `Ball.tsx` | The ball and its comet trail, held to a minimum apparent size so a long fly stays visible |
+| `StrikeZone.tsx` | The strike zone in front of the catcher, and a white ball at every pitch of the plate appearance. Hangs on `Director.atPlate`, and fades out on any camera too far round to see the plane it is drawn in |
 | `Effects.tsx` | Pushes `Fx` particles into instanced meshes |
 | `Weather.tsx` | Rain and snow |
 | `Shadows.tsx` | Contact blobs and the ground-occlusion band |
@@ -262,7 +268,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `textures.ts` | Canvas textures for jersey numbers and name plates |
 
 HUD components are plain DOM over the canvas: `hud/Scorebug.tsx`,
-`hud/Callout.tsx`, `hud/PitchZone.tsx`, `hud/History.tsx`, `hud/GameOver.tsx`.
+`hud/Callout.tsx`, `hud/History.tsx`, `hud/GameOver.tsx`.
 
 **`lib/audio/sfx.ts`** — the `sfx` singleton. Every sound is synthesized with
 Web Audio primitives; there are no audio files. Cued off the animation clock, so
@@ -444,7 +450,8 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | What the board in the park says | `components/scene/scoreboardFace.ts` |
 | Lighting, time of day, weather | `lib/field/sky.ts` |
 | What a player looks like | `components/scene/Player.tsx` |
-| What the strike-zone box draws, and which way round | `components/hud/PitchZone.tsx` |
+| What the strike-zone box looks like, and which shots show it | `components/scene/StrikeZone.tsx` |
+| Where a pitch crosses, in world space | `platePoint` in `lib/anim/director.ts` |
 | Which pitches that box knows about | `trackedPitches` in `lib/game/events.ts` |
 | Sounds | `lib/audio/sfx.ts` |
 | Club colors | `lib/mlb/teams.ts` |

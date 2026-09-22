@@ -15,6 +15,15 @@ const IDLE_INTERVAL = 15000;
 const CHASE_INTERVAL = 1500;
 
 /**
+ * A hidden tab pauses the animation engine (it runs off `requestAnimationFrame`)
+ * while polling keeps filling the queue, so returning to a tab that was away for
+ * more than a moment means a backlog to replay. Past this long hidden, cut
+ * straight to the live edge instead of animating through everything missed; a
+ * short blip stays under it and replays normally.
+ */
+const RESYNC_AFTER_HIDDEN_MS = 10000;
+
+/**
  * Polls the live feed. The spec's V0 guidance is plain polling, so that is what
  * this does - the interval tightens while the game is actually in progress.
  */
@@ -24,6 +33,7 @@ export function useLiveFeed(
   enabled = true,
 ) {
   const ingest = useGameStore((s) => s.ingest);
+  const seek = useGameStore((s) => s.seek);
   const failed = useGameStore((s) => s.failed);
   const reset = useGameStore((s) => s.reset);
 
@@ -34,7 +44,9 @@ export function useLiveFeed(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
 
-    const poll = async () => {
+    // When the fetched feed should cut straight to the live edge rather than
+    // animate through the backlog - set on returning from a long time hidden.
+    const poll = async (resync = false) => {
       try {
         const res = await fetch(`/api/game/${gamePk}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`Feed responded ${res.status}`);
@@ -42,7 +54,8 @@ export function useLiveFeed(
         if (feed.error) throw new Error(feed.error);
         if (cancelled) return;
         failures = 0;
-        ingest(feed);
+        if (resync) seek(feed);
+        else ingest(feed);
       } catch (error) {
         if (cancelled) return;
         failures += 1;
@@ -65,18 +78,26 @@ export function useLiveFeed(
 
     poll();
 
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        clearTimeout(timer);
-        poll();
+    let hiddenAt: number | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
       }
+      // Back in view: catch up now rather than waiting out the throttled timer.
+      // If the tab was hidden long enough for a backlog to build, cut to the
+      // live edge instead of replaying everything the animation queue missed.
+      const away = hiddenAt == null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      clearTimeout(timer);
+      poll(away > RESYNC_AFTER_HIDDEN_MS);
     };
-    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [gamePk, enabled, ingest, failed, reset]);
+  }, [gamePk, enabled, ingest, seek, failed, reset]);
 }

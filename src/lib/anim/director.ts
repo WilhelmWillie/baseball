@@ -387,6 +387,21 @@ const RELEASE_HEIGHT = 10.6;
 const RELEASE_DEPTH = RUBBER_DEPTH - 2 - 4.7;
 const RELEASE_LATERAL = 2.3;
 const PLATE_DEPTH = 1.35;
+
+/**
+ * Where a pitch at plate coordinates - `x` across, `z` up, both in real feet as
+ * MLB measures them - sits in this park.
+ *
+ * The one place that knows how a measurement off a real plate maps onto figures
+ * drawn at more than twice life size. The pitch animation and the strike-zone
+ * box in front of the catcher both go through it, which is what makes the ball
+ * and the box drawn around it agree: a pitch the feed calls a strike crosses
+ * inside the frame, and one it calls a ball does not.
+ */
+export function platePoint(x: number, z: number): Vector3 {
+  return fp(x * PLATE_RISE, PLATE_DEPTH, zoneHeight(z));
+}
+
 /**
  * Where the bat meets the ball, out in front of the plate. It shifts toward
  * whichever box the hitter is in: he stands further off the plate than a real
@@ -691,6 +706,17 @@ export class Director {
     | null = null;
   crowdReactionId = 0;
   callout: CallOut | null = null;
+  /**
+   * True while a hitter is standing in waiting on a pitch or taking one, and
+   * false from the moment the ball is put in play until the next hitter is set.
+   *
+   * What the strike-zone box in front of the catcher hangs on. A broadcast puts
+   * its box up before the pitch and takes it away the instant the ball is hit -
+   * the box is about the pitch, and once the ball is in play the play is the
+   * shot. Polled off a frame loop like `intermission`, so nothing about it has
+   * to travel through the store.
+   */
+  atPlate = false;
   snapshot: GameSnapshot | null = null;
   /** Set while an animation is playing, so the store holds back new state. */
   busy = false;
@@ -704,6 +730,12 @@ export class Director {
    */
   onCount?: (count: { balls: number; strikes: number }) => void;
   onPlayResolved?: (result: PlayResultEvent) => void;
+  /**
+   * Fired as the ball reaches the plate, so the strike-zone plot marks a pitch
+   * at the moment it arrives rather than when the feed reported it. Same
+   * reasoning as `onCount`: it belongs to what is on screen.
+   */
+  onPitch?: (pitch: PitchEvent) => void;
   /** Fired at the moment a sound should be heard, not when an event arrives. */
   onSound?: (name: SoundName, intensity?: number) => void;
 
@@ -956,6 +988,16 @@ export class Director {
         pose: isCatcher ? "crouch" : "ready",
       });
     }
+
+    // Somebody is in the box, the half is under way and the game is not over:
+    // the next thing to happen here is a pitch, so the zone goes up. A play in
+    // flight takes it away again below, and this is what puts it back once the
+    // world has caught up with the feed - including for a viewer who tuned in
+    // mid-at-bat, who has no pitch of their own to animate yet.
+    this.atPlate =
+      Boolean(snapshot.batter) &&
+      !isBetweenInnings(snapshot.inningState) &&
+      !snapshot.status.isFinal;
 
     if (snapshot.batter) {
       seen.add("bat");
@@ -1419,7 +1461,7 @@ export class Director {
     // The arm needs a moment to come over before the ball can leave it.
     const releaseAt = windupEnd + THROW_TIME * THROW_RELEASE;
     const release = this.releasePoint();
-    const plate = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z));
+    const plate = platePoint(pitch.plate.x, pitch.plate.z);
     const hand = this.snapshot?.defense.pitcher?.pitchHand ?? "R";
     const arc = pitchArc(release, plate, pitch.pitchType, pitch.speed, hand);
     const plateTime = releaseAt + arc.flightTime;
@@ -1524,6 +1566,7 @@ export class Director {
    */
   private openPitch(pitch: PitchEvent) {
     this.pitchCount += 1;
+    this.atPlate = true;
     // Whoever is hitting is solid again: the previous batter may have been
     // beamed out with the queue still backed up behind them.
     const hitter = this.batter();
@@ -1593,6 +1636,7 @@ export class Director {
         if (whiff) this.whiffAt(t, cue, swingStart, strikeThree);
 
         cue.at("plate", t, flight.plateTime, () => {
+          this.onPitch?.(pitch);
           if (foul) {
             // Wood on ball, whichever way it then went. The thinner report the
             // foul sound used to make on its own read as a tipped ball on
@@ -1617,8 +1661,7 @@ export class Director {
             // rather than in them.
             const target = fp(foul.lateral, foul.depth, 0);
             const off = 1 - (1 - u) ** 3;
-            const p = fp(pitch.plate.x * PLATE_RISE, PLATE_DEPTH, zoneHeight(pitch.plate.z))
-              .lerp(target, off);
+            const p = platePoint(pitch.plate.x, pitch.plate.z).lerp(target, off);
             p.y = Math.max(0.5, zoneHeight(pitch.plate.z) + 88 * u * (1 - u) * 2.2 - u * u * 3);
             this.ball.position.copy(p);
             this.ball.visible = true;
@@ -1677,6 +1720,9 @@ export class Director {
       duration: contactAt + inner.duration,
       onStart: () => this.openPitch(pitch),
       update: (t, dt) => {
+        // Contact is where this pitch crossed, so it goes on the zone plot
+        // there, the same as one nobody swung at.
+        cue.at("plate", t, contactAt, () => this.onPitch?.(pitch));
         // The result owns the camera from contact, not from the top of the
         // windup. Its opening shot is a ball-tracking one, so handing it the
         // lens early spent the whole delivery sliding backwards across the
@@ -1879,6 +1925,8 @@ export class Director {
       label: `result:${result.id}`,
       duration,
       onStart: () => {
+        // Whatever this play is, the pitch is over.
+        this.atPlate = false;
         if (ball) {
           // A ball that never gets above the infielders' heads needs the
           // diamond in shot to read at all; one in the air can be chased.
@@ -2435,6 +2483,7 @@ export class Director {
       label: `inning:${event.id}`,
       duration,
       onStart: () => {
+        this.atPlate = false;
         if (redundant) return;
         this.setCallout(event.description.toUpperCase(), "neutral", "Change of sides");
         this.setShot("wide", { cut: true, force: true });

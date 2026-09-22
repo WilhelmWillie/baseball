@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { Director } from "@/lib/anim/director";
 import { DEFAULT_CAMERA_VIEW, rememberCameraView, type CameraView } from "@/lib/anim/views";
 import { sfx } from "@/lib/audio/sfx";
-import { extractEvents, seedCursor } from "@/lib/game/events";
+import { extractEvents, seedCursor, trackPitch } from "@/lib/game/events";
 import { buildHistory, buildSnapshot, inningLabel, ordinalFor } from "@/lib/game/normalize";
 import {
   EMPTY_CURSOR,
@@ -63,6 +63,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
           : {},
       );
     director.onSound = (name, intensity) => sfx.play(name, { intensity });
+    // The strike-zone box takes a pitch as it crosses the plate, for the same
+    // reason the count does: both describe the pitch the viewer just watched,
+    // and the feed is often several pitches ahead of it. A pitch the feed never
+    // located has nowhere honest to put a mark, so it leaves the last one up.
+    director.onPitch = (pitch) =>
+      set((state) =>
+        state.snapshot && pitch.located
+          ? { snapshot: { ...state.snapshot, pitch: trackPitch(pitch) } }
+          : {},
+      );
     director.onPlayResolved = (result) =>
       set((state) => {
         if (!state.snapshot) return {};

@@ -131,6 +131,8 @@ export interface GameSnapshot {
   bullpen: Record<TeamSide, PlayerRef[]>;
   lineScore: Array<{ num: number; home: number | null; away: number | null }>;
   lastPlay: string | null;
+  /** The last pitch anybody has seen cross the plate, for the strike-zone box. */
+  pitch: TrackedPitch | null;
   boxscore: Record<TeamSide, TeamBoxscore>;
 }
 
@@ -168,6 +170,31 @@ export type PitchOutcome =
   | "hit_by_pitch"
   | "other";
 
+/**
+ * The pitch the strike-zone box is drawn around: where it crossed, and how tall
+ * the hitter's zone was when it did.
+ *
+ * Kept separate from `PitchEvent` because the two answer different questions.
+ * An event is something that just happened and is animated once; this is a mark
+ * that hangs over the plate until the next pitch replaces it, and it has to be
+ * there for a feed the viewer joined halfway through, with nothing animated at
+ * all. `id` is the event's, so the box can tell a new pitch from the same one
+ * read again.
+ */
+export interface TrackedPitch {
+  id: string;
+  /**
+   * Where it crossed the plate, in feet. `x` is positive toward right field
+   * (the catcher's right, which is MLB's own sign); `z` is height off the dirt.
+   */
+  x: number;
+  z: number;
+  /** The hitter's zone for this pitch, in feet. MLB measures it per pitch. */
+  zone: { top: number; bottom: number };
+  /** What it was thrown at, for the chip under the box. */
+  speed?: number;
+}
+
 export type NormalizedEventType =
   | "pitch"
   | "play_result"
@@ -188,6 +215,15 @@ export interface PitchEvent {
   speed?: number;
   /** Where the ball crossed the plate, in feet. */
   plate: { x: number; z: number };
+  /**
+   * Whether `plate` is a measurement rather than a stand-in. An automatic ball
+   * - a pitch-timer violation, a pitch nobody threw - is a pitch in the feed
+   * with no coordinates behind it. The animation still has to put the ball
+   * somewhere, so `plate` falls back to the middle of the zone; the strike-zone
+   * plot leaves an unlocated pitch off rather than drawing a mark down the
+   * middle that nobody threw.
+   */
+  located: boolean;
   strikeZone: { top: number; bottom: number };
   batterId?: number;
   pitcherId?: number;

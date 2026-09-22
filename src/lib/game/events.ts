@@ -17,6 +17,7 @@ import type {
   PitchOutcome,
   PlayResultEvent,
   RunnerMove,
+  TrackedPitch,
 } from "./types";
 
 /** Stable hash so a given play always synthesizes the same trajectory. */
@@ -214,6 +215,20 @@ function battedBallFrom(
   };
 }
 
+/**
+ * The zone to fall back on when the feed has not measured one: the rule book's
+ * knees-to-letters on an average hitter, and the middle of it. MLB publishes a
+ * zone per pitch, fitted to the stance, and these only stand in for a pitch it
+ * tracked nothing for.
+ */
+const DEFAULT_ZONE = { top: 3.4, bottom: 1.6, middle: 2.5 };
+
+/** Whether the feed measured where this pitch crossed. See `PitchEvent.located`. */
+function isLocated(event: MlbPlayEvent): boolean {
+  const at = event.pitchData?.coordinates;
+  return typeof at?.pX === "number" && typeof at?.pZ === "number";
+}
+
 function pitchOutcome(event: MlbPlayEvent): PitchOutcome {
   const d = event.details;
   if (d?.isInPlay) return "in_play";
@@ -407,11 +422,12 @@ export function extractEvents(
           speed: event.pitchData?.startSpeed,
           plate: {
             x: event.pitchData?.coordinates?.pX ?? 0,
-            z: event.pitchData?.coordinates?.pZ ?? 2.5,
+            z: event.pitchData?.coordinates?.pZ ?? DEFAULT_ZONE.middle,
           },
+          located: isLocated(event),
           strikeZone: {
-            top: event.pitchData?.strikeZoneTop ?? 3.4,
-            bottom: event.pitchData?.strikeZoneBottom ?? 1.6,
+            top: event.pitchData?.strikeZoneTop ?? DEFAULT_ZONE.top,
+            bottom: event.pitchData?.strikeZoneBottom ?? DEFAULT_ZONE.bottom,
           },
           batterId: play.matchup?.batter?.id,
           pitcherId: play.matchup?.pitcher?.id,
@@ -517,4 +533,60 @@ export function foulBallFor(pitch: PitchEvent): BattedBall {
     seed,
     { isHomeRun: false, isFoul: true, batSide: pitch.batSide },
   );
+}
+
+/**
+ * The last pitch the feed has a plate location for, which is what the
+ * strike-zone box is drawn around.
+ *
+ * Read straight off the play rather than accumulated from `PitchEvent`s,
+ * because the box has to be right for somebody who joined in the middle of an
+ * at-bat, or opened a clip cued to its last pitch: neither of them ever sees an
+ * event for what came before. While the game is being animated the store puts
+ * each pitch up as it crosses instead - see `Director.onPitch` - and this is
+ * what a promoted snapshot corrects that against.
+ *
+ * Null once a new hitter is up and nothing has been thrown to them yet, which
+ * is what empties the box. A pitch the feed gave no coordinates for is passed
+ * over rather than drawn down the middle (see `PitchEvent.located`), so an
+ * automatic ball leaves the last real pitch showing.
+ */
+export function trackedPitch(feed: MlbLiveFeed): TrackedPitch | null {
+  const plays = feed.liveData?.plays;
+  const all = plays?.allPlays ?? [];
+  const play = plays?.currentPlay ?? all[all.length - 1];
+  if (!play) return null;
+  const atBatIndex = atBatIndexOf(play, all.length - 1);
+  const playEvents = play.playEvents ?? [];
+  for (let i = playEvents.length - 1; i >= 0; i--) {
+    const event = playEvents[i];
+    if (!event.isPitch || !isLocated(event)) continue;
+    const at = event.pitchData?.coordinates;
+    return {
+      id: `${atBatIndex}-${event.index ?? i}-pitch`,
+      x: at?.pX ?? 0,
+      z: at?.pZ ?? DEFAULT_ZONE.middle,
+      zone: {
+        top: event.pitchData?.strikeZoneTop ?? DEFAULT_ZONE.top,
+        bottom: event.pitchData?.strikeZoneBottom ?? DEFAULT_ZONE.bottom,
+      },
+      speed: event.pitchData?.startSpeed,
+    };
+  }
+  return null;
+}
+
+/**
+ * The same mark, built from the event the animator just played, so a pitch
+ * reaches the box as it crosses the plate rather than when the feed is next
+ * promoted.
+ */
+export function trackPitch(pitch: PitchEvent): TrackedPitch {
+  return {
+    id: pitch.id,
+    x: pitch.plate.x,
+    z: pitch.plate.z,
+    zone: pitch.strikeZone,
+    speed: pitch.speed,
+  };
 }

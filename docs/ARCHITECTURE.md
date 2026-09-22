@@ -131,6 +131,8 @@ and emits what is new. The subtle part of the codebase. It re-counts balls and
 strikes from the pitches rather than trusting the feed's `count` field (which is
 documented inconsistently), and it decides which pitch ended an at-bat *before*
 MLB publishes the result, so the pitch and its outcome can animate as one motion.
+Also `trackedPitch(feed)` — the last pitch the feed has a plate location for,
+which `buildSnapshot` carries and the strike-zone box is drawn around.
 
 **`lib/game/schedule.ts`** — `summarizeGame()` / `sortGames()` for the home page,
 plus `recentFinals()`, which is the home page's nine-game grid, and the season
@@ -150,10 +152,13 @@ whole thing work:
 > snapshot is only promoted once the director's queue has drained.
 
 That is why a home run plays as pitch → swing → flight → runners → score rather
-than the scoreboard jumping and the field catching up. Two things deliberately
+than the scoreboard jumping and the field catching up. Three things deliberately
 update early, via director callbacks, because they should track what is on
-screen: `onCount` advances the count as each pitch resolves, and `onPlayResolved`
-advances outs and score when a play's animation finishes.
+screen: `onCount` advances the count as each pitch resolves, `onPlayResolved`
+advances outs and score when a play's animation finishes, and `onPitch` puts a
+pitch in the strike-zone box as the ball reaches the plate. (`atPlate` is the fourth of
+these and needs no store at all: the box polls the director for it on a frame
+loop, the way the callout and the intermission card poll theirs.)
 
 ### Animation
 
@@ -169,7 +174,10 @@ advances outs and score when a play's animation finishes.
 - Compilation — `compilePitch`, `compileAtBat`, `compileResult`,
   `compileAction`, `compileInningChange` turn events into timed animations.
 - The camera shot list — `desiredCamera(view)`, `cameraCut`, `cameraShake`.
-- Callbacks out: `onCount`, `onPlayResolved`, `onSound`.
+- `platePoint(x, z)` — plate coordinates in real feet onto figures drawn at more
+  than twice life size. The pitch and the strike-zone box share it, which is
+  what makes the ball and the box agree.
+- Callbacks out: `onCount`, `onPitch`, `onPlayResolved`, `onSound`.
 
 Timing constants live near the top with the reasoning attached (runner speed,
 swing duration, throw release fraction, the plate-height mapping that fits a
@@ -250,6 +258,7 @@ it, applies the shot's lens and widens framing on portrait viewports.
 | `Backstop.tsx` | The dark scrim behind the plate; hidden for cameras standing behind it |
 | `Player.tsx` | The jointed figures — two species on one skeleton, plus helmets, gloves, bat. Owns the crossfade between poses (`POSE_BLEND`), since the director only ever says *which* pose |
 | `Ball.tsx` | The ball and its comet trail, held to a minimum apparent size so a long fly stays visible |
+| `StrikeZone.tsx` | The strike zone in front of the catcher: a frame over the plate, a white ball where the last pitch crossed it, and that pitch's speed on a chip underneath. Hangs on `Director.atPlate`, and fades out on any camera too far round to see the plane it is drawn in |
 | `Effects.tsx` | Pushes `Fx` particles into instanced meshes |
 | `Weather.tsx` | Rain and snow |
 | `Shadows.tsx` | Contact blobs and the ground-occlusion band |
@@ -440,6 +449,9 @@ an arbitrary moment via `seedCursor` without replaying what came before.
 | What the board in the park says | `components/scene/scoreboardFace.ts` |
 | Lighting, time of day, weather | `lib/field/sky.ts` |
 | What a player looks like | `components/scene/Player.tsx` |
+| What the strike-zone box looks like, and which shots show it | `components/scene/StrikeZone.tsx` |
+| Where a pitch crosses, in world space | `platePoint` in `lib/anim/director.ts` |
+| Which pitch that box knows about | `trackedPitch` in `lib/game/events.ts` |
 | Sounds | `lib/audio/sfx.ts` |
 | Club colors | `lib/mlb/teams.ts` |
 | Polling behaviour | `hooks/useLiveFeed.ts` |

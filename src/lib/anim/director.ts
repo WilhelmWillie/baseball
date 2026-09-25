@@ -99,6 +99,8 @@ export type Pose =
 const CELEBRATIONS: Pose[] = ["celebrate", "dance", "rain", "wacky"];
 const BIG_CELEBRATIONS: Pose[] = ["dance", "rain", "wacky", "celebrate", "celebrate"];
 const DEJECTIONS: Pose[] = ["dejected", "frustrated", "facepalm"];
+/** MLB id for Seiya Suzuki, whose home runs are called "SEIYANARA!". */
+const SEIYA_SUZUKI = 673548;
 /** What a pitcher does about a hit. Home runs get their own, below. */
 const SULKS: Pose[] = ["annoyed", "frustrated", "facepalm", "annoyed"];
 
@@ -2384,7 +2386,11 @@ export class Director {
       hit_by_pitch: ["HIT BY PITCH", "neutral"],
       sac_fly: ["SAC FLY", "good"],
     };
-    const entry = map[result.kind] ?? [result.event.toUpperCase(), "neutral" as const];
+    let entry = map[result.kind] ?? [result.event.toUpperCase(), "neutral" as const];
+    // The batter is the one runner who set off from home.
+    const batterId =
+      result.runners.find((m) => m.from === "home")?.playerId ?? this.batter()?.playerId;
+    if (result.kind === "home_run" && batterId === SEIYA_SUZUKI) entry = ["SEIYANARA!", "big"];
     const extra =
       result.ball?.launchSpeed && result.ball.distance > 100
         ? `${Math.round(result.ball.launchSpeed)} MPH · ${Math.round(result.ball.distance)} FT`

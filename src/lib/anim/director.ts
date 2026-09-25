@@ -328,6 +328,23 @@ const RETURN_EASE = 9;
 const RETURN_SNAP = 0.4;
 
 /**
+ * A home run is still chased. The outfielder nearest where it is coming down
+ * breaks on it off the bat, runs out of room at the wall, and goes up for it
+ * as it clears - which is most of what sells how far it went. The speed and
+ * the read match the chase on a ball in play (see `./batted`).
+ */
+const WALL_CHASE_SPEED = 34;
+const WALL_CHASE_REACT = 0.25;
+/** How far short of the wall he pulls up: room for the figure and the glove. */
+const WALL_CHASE_MARGIN = 7;
+/** The jump at the wall, timed on the ball going over. */
+const WALL_LEAP_TIME = 0.6;
+const WALL_LEAP_HEIGHT = 3.5;
+/** How long he stands at the wall about it before jogging back. */
+const WALL_SULK = 2.4;
+const OUTFIELD_KEYS: PositionKey[] = ["left", "center", "right"];
+
+/**
  * How long a runner takes to join the base path he is about to be run down.
  *
  * None of them start on it. A hitter is stood in the box - nine feet off the
@@ -1819,6 +1836,35 @@ export class Director {
     const restPoint = plan ? plan.rest : null;
     const fielderKey = plan && !ball?.isHomeRun ? `def:${plan.fielder}` : null;
 
+    // A home run gets a chaser of its own: whichever outfielder is nearest the
+    // spot it comes down, running at the wall that is going to stop him.
+    let wallChase: {
+      key: string;
+      /** Where he pulls up, on the warning track below the landing spot. */
+      stop: Vector3;
+      /** When the ball crosses the wall above him. */
+      over: number;
+      /** Where it comes down, which is what he watches go. */
+      seats: Vector3;
+    } | null = null;
+    if (ball?.isHomeRun && landing) {
+      const ground = landing.clone().setY(0);
+      const nearest = OUTFIELD_KEYS.reduce((best, key) =>
+        FIELDING_SPOTS[key].distanceTo(ground) < FIELDING_SPOTS[best].distanceTo(ground)
+          ? key
+          : best,
+      );
+      const stop = playableSpot(ground.clone(), WALL_CHASE_MARGIN);
+      const reach = Math.hypot(ground.x, ground.z);
+      const wall = wallDistance(sprayAngle(ground.x, -ground.z));
+      wallChase = {
+        key: `def:${nearest}`,
+        stop,
+        over: ballDuration * clamp01(wall / Math.max(1, reach)),
+        seats: ground,
+      };
+    }
+
     // A runner cannot be out before the play that retires him. Pushing the
     // out tracks past the catch (or past the throw arriving) is what stops a
     // flyout resolving while the ball is still in the air.
@@ -2075,6 +2121,59 @@ export class Director {
                 fielder.poseT = 0;
               }
               if (!REACTIONS.has(fielder.pose)) fielder.facing = fielder.homeFacing;
+            }
+          }
+        }
+
+        // A home run, run down anyway. He goes flat out at the landing spot,
+        // runs out of field at the track, and if he got there in time goes up
+        // at the wall as it sails over him - then stands there about it.
+        if (wallChase) {
+          const chaser = this.actors.get(wallChase.key);
+          if (chaser) {
+            chaseFrom ??= chaser.position.clone().setY(0);
+            const run = chaseFrom.distanceTo(wallChase.stop);
+            const arrive = WALL_CHASE_REACT + run / WALL_CHASE_SPEED;
+            const leapStart = wallChase.over - WALL_LEAP_TIME / 2;
+            const leaps = arrive <= leapStart;
+            const gone = Math.max(arrive, wallChase.over) + 0.4;
+            if (t < arrive) {
+              const s = clamp01(((t - WALL_CHASE_REACT) * WALL_CHASE_SPEED) / Math.max(1, run));
+              STEP_FROM.copy(chaser.position);
+              chaser.position.copy(chaseFrom).lerp(wallChase.stop, s);
+              chaser.facing = yawToward(chaseFrom, wallChase.stop);
+              if (t >= WALL_CHASE_REACT) this.stride(chaser, STEP_FROM, dt);
+            } else if (t < gone) {
+              // Back to the wall, eyes on the ball going over it.
+              chaser.position.copy(wallChase.stop);
+              chaser.facing = yawToward(wallChase.stop, wallChase.seats);
+              const k = (t - leapStart) / WALL_LEAP_TIME;
+              if (leaps && k >= 0 && k <= 1) {
+                chaser.position.y = WALL_LEAP_HEIGHT * Math.sin(Math.PI * k);
+                chaser.pose = "catch";
+                chaser.poseT = clamp01(k * 2);
+              } else {
+                chaser.pose = "ready";
+                chaser.poseT = 0;
+              }
+            } else if (t < gone + WALL_SULK) {
+              chaser.position.copy(wallChase.stop);
+              chaser.facing = yawToward(wallChase.stop, wallChase.seats);
+              chaser.pose = pickPose(DEJECTIONS, chaser.playerId, result.atBatIndex);
+              chaser.poseT = t - gone;
+            } else {
+              // Over it. Jog back in, the same way every fielder goes home.
+              if (REACTIONS.has(chaser.pose)) {
+                chaser.pose = this.restPose(chaser);
+                chaser.poseT = 0;
+              }
+              if (!this.walkHome(chaser, dt)) {
+                if (OWN_POSES.has(chaser.pose)) {
+                  chaser.pose = this.restPose(chaser);
+                  chaser.poseT = 0;
+                }
+                chaser.facing = chaser.homeFacing;
+              }
             }
           }
         }
